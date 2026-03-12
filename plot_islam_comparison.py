@@ -125,6 +125,7 @@ def main() -> None:
     nc_path = Path(args.nc_path)
     obs_path = Path(args.obs_path)
     output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     observed = load_observed_series(obs_path, args.sim_start)
     model = load_model_series(nc_path, args.sim_start, args.space_index)
