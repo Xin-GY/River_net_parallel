@@ -1,0 +1,12 @@
+{
+  "result_dir": "/Users/xingy/Downloads/River_net_gpt/result/exp_handoff_core_nofine_rfix_40h_20260312",
+  "real_dir": "/Users/xingy/Downloads/River_net_gpt/result/Islam_real_data",
+  "out_dir": "/Users/xingy/Downloads/River_net_gpt/result/report_packages/exp_handoff_core_nofine_rfix_40h_20260312",
+  "branch_flow_mean": 11.916428100244415,
+  "branch_flow_min": 0.0,
+  "branch_flow_max": 15.358280224995752,
+  "branch_flow_pos_frac": 0.9995833333333334,
+  "branch_flow_neg_frac": 0.0,
+  "applied_flow_sign": 1,
+  "flow_direction_mode": "auto_dominant_positive"
+}

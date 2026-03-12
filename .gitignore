@@ -13,3 +13,10 @@ result/
 *.interp_cache.meta.json
 *.Zone.Identifier
 *.Zone.Identifier:Zone.Identifier
+old_use/
+*.csv
+*.log
+*.hdf5
+*.h5
+*.hdf
+*.hdf4
