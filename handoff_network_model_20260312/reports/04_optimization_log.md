@@ -806,3 +806,195 @@ conda run -n python311 python tools/compare_results.py \
 - 这是当前最快且逐点一致的 CPU 方案
 - 仍然远未达到 1 分钟目标，但已经把进程后端从“略快于串行”推进到“明显快于当前最佳串行”
 - 后续若继续加速，更值得继续沿着“进程通信与结点耦合开销”这条线深入，而不是回到线程方案
+
+## 优化 7：Cython 重写断面表标量查表链，编译加速高频 `np.interp` 热点
+
+### 修改点
+
+- 文件：`river_for_net.py`
+  - 新增可选导入 `CrossSectionTableCython`
+  - `CrossSectionTableManagerV2` 改为通过 `self._table_class` 构造断面表
+  - 仅在 `ISLAM_USE_CYTHON_TABLE=1` 且扩展成功导入时启用 Cython 后端
+- 新增文件：`cython_cross_section.pyx`
+  - 用 Cython 重写 `CrossSectionTable` 的高频标量查表方法
+  - 覆盖：
+    - `get_area_by_depth`
+    - `get_area_by_level`
+    - `get_level_by_area`
+    - `get_DEB_by_area`
+    - `get_depth_by_area`
+    - `get_width_by_area`
+    - `get_wetted_perimeter_by_area`
+    - `get_hydraulic_radius_by_area`
+    - `get_press_by_area`
+    - `get_value_by_area`
+  - 使用手写二分查找 + 线性插值，避免热路径频繁进入 `np.interp`
+  - 保留 `CrossSectionTable` 现有数组属性名，确保上层逻辑无需改动
+  - 补充 `__reduce__`，使其可在持久化进程池回传 `River` 时被 pickle
+- 新增文件：`build_cython_cross_section.py`
+  - 提供 `build_ext --inplace` 构建入口
+
+### 修改原因
+
+原始 full-case `cProfile` 已明确显示：
+
+- `numpy.lib._function_base_impl.interp` `tt=173.831 s`
+- `get_width_by_area` `ct=190.685 s`
+- `get_depth_by_area` `ct=177.313 s`
+- `get_press_by_area` `ct=171.194 s`
+- `get_hydraulic_radius_by_area` `ct=87.281 s`
+
+这些热点都集中在断面表的高频标量查表链，而不是一次性的断面预处理逻辑。因此本轮把目标放在：
+
+- 保持现有表结构与调用口径不变
+- 只替换最热的标量插值实现
+- 保留原始 Python 路径作对照与回退
+
+### 为什么不改变计算原理
+
+本改动没有改变：
+
+- 控制方程
+- 离散格式
+- CFL 逻辑
+- 边界条件处理
+- 结点耦合数学含义
+- 输出定义
+
+它只是在断面表查表这一步，把原本基于 `np.interp` 的 Python/NumPy 标量查询，换成了等价的编译后线性插值实现。表数据、查表轴、返回量和调用顺序都保持不变。
+
+### 验证命令
+
+构建：
+
+```bash
+cd handoff_network_model_20260312
+conda run -n python311 python -m pip install Cython
+conda run -n python311 python build_cython_cross_section.py build_ext --inplace
+```
+
+10 分钟 smoke：
+
+```bash
+/usr/bin/time -p -o result/tmp_cython_table_process2_10m_time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_cython_table_process2_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_parallel_process_cython_table_py311_40h_time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_parallel_process_cython_table_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+结果对比：
+
+```bash
+cd handoff_network_model_20260312
+MPLCONFIGDIR=/tmp/mplconfig conda run -n python311 python result/eval_river11_nse.py result/exp_parallel_process_cython_table_py311_40h
+conda run -n python311 python tools/compare_results.py \
+  result/exp_parallel_process_tuple_py311_40h \
+  result/exp_parallel_process_cython_table_py311_40h \
+  --out result/exp_parallel_process_cython_table_py311_40h/compare_to_prev_best_strict.json
+```
+
+### 10 分钟 smoke 结果
+
+- 优化 6：`6.53 s`
+- 优化 7：`6.01 s`
+- 绝对减少：`0.52 s`
+- 相对减少：`7.96%`
+
+`tools/compare_results.py` 严格比较下：
+
+- `allclose = true`
+- `cfl_history.csv` 完全一致
+- `river11_raw_output.nc`
+- `river11_interpolated_output.nc`
+- 控制点
+- 最终状态
+
+均保持一致
+
+### 实测收益
+
+40 小时 full-case：
+
+- 优化 6（进程，4 workers）：`612.93 s`
+- 优化 7（进程，4 workers + Cython table）：`542.10 s`
+- 相对优化 6：
+  - 绝对减少：`70.83 s`
+  - 相对减少：`11.56%`
+  - 提速倍数：`1.13x`
+- 相对当前最佳串行：
+  - 绝对减少：`147.76 s`
+  - 相对减少：`21.42%`
+  - 提速倍数：`1.27x`
+- 相对原始基线：
+  - 绝对减少：`348.27 s`
+  - 相对减少：`39.12%`
+  - 提速倍数：`1.64x`
+
+模型内部自报时间：
+
+- 优化 6：`569.99 s`
+- 优化 7：`499.99 s`
+- 相对优化 6 进一步减少：`70.00 s`
+
+### 结果校验结论
+
+- `result/eval_river11_nse.py`：
+  - `node11_level = 0.873332`
+  - `node11_Q = -0.089159`
+  - `node12_level = 0.911626`
+  - `node12_Q = -0.105344`
+  - `mean_nse = 0.3976138544055814`
+- `tools/compare_results.py` 对：
+  - `exp_parallel_process_tuple_py311_40h`
+  - `exp_parallel_process_cython_table_py311_40h`
+  返回 `allclose = true`
+- 关键文件：
+  - `cfl_history.csv`
+  - `internal_node_history.csv`
+  - `river11_raw_output.nc`
+  - `river11_interpolated_output.nc`
+  - `boundary_supercritical_counts.csv`
+  - 控制点时序
+  - 最终状态
+
+全部通过
+
+说明：
+- `internal_node_history.csv` 的少数 `face_Q` 列存在 `1e-13` 级舍入差异，但在当前严格比较容差下仍然 `allclose = true`
+- 若后续继续向更深层 Cython/C 扩展推进，可接受误差上限按用户新要求可放宽到 `1e-5`，但当前这一版实际上仍保持了严格可接受结果
+
+### 阶段结论
+
+优化 7 可以接受：
+
+- 它直接命中了当前 profile 明确给出的 `np.interp` 热点簇
+- 在不改河网逻辑和单河道数值原理的前提下，带来了本轮最明显的一次收益
+- 当前最快严格校验通过的 CPU 方案更新为：
+  - `process backend`
+  - `4 workers`
+  - `ISLAM_USE_CYTHON_TABLE=1`

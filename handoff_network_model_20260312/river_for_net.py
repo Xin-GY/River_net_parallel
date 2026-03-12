@@ -21,6 +21,11 @@ from scipy.interpolate import UnivariateSpline, CubicSpline
 from pyproj import Transformer
 from multiprocessing import Process, Queue
 
+try:
+    from cython_cross_section import CrossSectionTableCython
+except Exception:
+    CrossSectionTableCython = None
+
 class CrossSectionModel_V3:
 
     def __init__(self, section_data, section_pos, n_samples=100, use_spline_interpolator=True):
@@ -308,9 +313,21 @@ class CrossSectionTableManagerV2:
 
     def __init__(self):
         self.tables = {}
+        self._table_class = CrossSectionTable
+        if os.environ.get('ISLAM_USE_CYTHON_TABLE', '0') == '1' and CrossSectionTableCython is not None:
+            self._table_class = CrossSectionTableCython
 
     def add_table(self, name, depths, level, areas, width, wetted_perimeter, hydraulic_radius, press, DEB):
-        self.tables[name] = CrossSectionTable(depths, level, areas, width, wetted_perimeter, hydraulic_radius, press, DEB)
+        self.tables[name] = self._table_class(
+            depths,
+            level,
+            areas,
+            width,
+            wetted_perimeter,
+            hydraulic_radius,
+            press,
+            DEB,
+        )
 
     def get_area_by_depth(self, name, depth, method='interp'):
         tbl = self.tables.get(name)

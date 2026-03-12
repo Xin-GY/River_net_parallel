@@ -20,3 +20,6 @@ old_use/
 *.h5
 *.hdf
 *.hdf4
+handoff_network_model_20260312/build/
+handoff_network_model_20260312/cython_cross_section.c
+handoff_network_model_20260312/cython_cross_section*.so

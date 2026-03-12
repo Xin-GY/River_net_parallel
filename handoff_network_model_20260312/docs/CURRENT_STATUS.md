@@ -17,6 +17,15 @@
 - `node12_Q = -0.105344`
 - `mean = 0.397614`
 
+性能：
+- 当前最快严格校验通过的 CPU 路径：
+  - `ISLAM_USE_PARALLEL=1`
+  - `ISLAM_PARALLEL_BACKEND=process`
+  - `ISLAM_N_WORKERS=4`
+  - `ISLAM_USE_CYTHON_TABLE=1`
+- Islam 40h full-case wall time：`542.10 s`
+- 模型内部自报时间：`499.99 s`
+
 解释：
 - 水位两条线已经进入可接受区间，但流量两条线仍明显不达标
 - `river11` 两端流量同步偏高，说明是整条 branch 的输水能力偏大
