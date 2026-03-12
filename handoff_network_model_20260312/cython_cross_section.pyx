@@ -63,6 +63,8 @@ cdef class CrossSectionTableCython:
     cdef public object _press_a
     cdef public object _area_axis_wet
     cdef public object _width_a_wet
+    cdef object _chi_area_axis
+    cdef object _chi_axis
 
     cdef double[:] _depth_axis_mv
     cdef double[:] _area_d_mv
@@ -78,11 +80,22 @@ cdef class CrossSectionTableCython:
     cdef double[:] _press_a_mv
     cdef double[:] _area_axis_wet_mv
     cdef double[:] _width_a_wet_mv
+    cdef double[:] _chi_area_axis_mv
+    cdef double[:] _chi_axis_mv
 
     cdef double _bed_level
     cdef double _top_level
     cdef double _min_depth
     cdef double _max_depth
+    cdef bint _chi_cache_ready
+    cdef double _chi_cache_g
+    cdef double _chi_cache_tinyA
+    cdef double _chi_cache_tinyT
+    cdef double _chi_A0
+    cdef double _chi_Amax
+    cdef double _chi_w0
+    cdef double _chi_max
+    cdef double _chi_kmax
 
     def __init__(self, depths, levels, areas, widths, wetted_perimeters, hydraulic_radii, presses, DEBs):
         cdef cnp.ndarray[cnp.float64_t, ndim=1] depths_arr
@@ -141,6 +154,17 @@ cdef class CrossSectionTableCython:
         self._press_a_mv = self._press_a
         self._area_axis_wet_mv = self._area_axis_wet
         self._width_a_wet_mv = self._width_a_wet
+        self._chi_area_axis = None
+        self._chi_axis = None
+        self._chi_cache_ready = False
+        self._chi_cache_g = -1.0
+        self._chi_cache_tinyA = -1.0
+        self._chi_cache_tinyT = -1.0
+        self._chi_A0 = 0.0
+        self._chi_Amax = 0.0
+        self._chi_w0 = 0.0
+        self._chi_max = 0.0
+        self._chi_kmax = 0.0
 
         self._bed_level = float(self._level_axis_mv[0]) if self._level_axis_mv.shape[0] else 0.0
         self._top_level = float(self._level_axis_mv[self._level_axis_mv.shape[0] - 1]) if self._level_axis_mv.shape[0] else 0.0
@@ -256,6 +280,96 @@ cdef class CrossSectionTableCython:
                 return None
             return float(self._press_a_mv[idx])
         return float(_interp_sorted(area, self._area_axis_mv, self._press_a_mv))
+
+    cdef void _ensure_general_chi_cache(self, double g, double tinyA, double tinyT):
+        cdef cnp.ndarray area_axis
+        cdef cnp.ndarray width_axis
+        cdef cnp.ndarray integrand
+        cdef cnp.ndarray chi_axis
+        cdef Py_ssize_t i, n
+        cdef double area
+        cdef double width
+
+        if (
+            self._chi_cache_ready
+            and self._chi_cache_g == g
+            and self._chi_cache_tinyA == tinyA
+            and self._chi_cache_tinyT == tinyT
+        ):
+            return
+
+        area_axis = np.unique(np.asarray(self._area_axis, dtype=np.float64))
+        area_axis = area_axis[np.isfinite(area_axis)]
+        area_axis = area_axis[area_axis > tinyA]
+        if area_axis.size == 0:
+            self._chi_cache_ready = False
+            self._chi_area_axis = None
+            self._chi_axis = None
+            return
+
+        n = area_axis.shape[0]
+        width_axis = np.empty(n, dtype=np.float64)
+        for i in range(n):
+            area = float(area_axis[i])
+            width = float(self.get_width_by_area(area))
+            if width < tinyT:
+                width = tinyT
+            width_axis[i] = width
+
+        integrand = np.sqrt(g * area_axis / width_axis) / np.maximum(area_axis, tinyA)
+        chi_axis = np.zeros_like(area_axis)
+        if n > 1:
+            chi_axis[1:] = np.cumsum(0.5 * (integrand[1:] + integrand[:-1]) * np.diff(area_axis))
+        chi_axis = chi_axis + 2.0 * np.sqrt(g * area_axis[0] / width_axis[0])
+
+        self._chi_area_axis = np.ascontiguousarray(area_axis, dtype=np.float64)
+        self._chi_axis = np.ascontiguousarray(chi_axis, dtype=np.float64)
+        self._chi_area_axis_mv = self._chi_area_axis
+        self._chi_axis_mv = self._chi_axis
+        self._chi_cache_ready = True
+        self._chi_cache_g = g
+        self._chi_cache_tinyA = tinyA
+        self._chi_cache_tinyT = tinyT
+        self._chi_A0 = float(self._chi_area_axis_mv[0])
+        self._chi_Amax = float(self._chi_area_axis_mv[self._chi_area_axis_mv.shape[0] - 1])
+        self._chi_w0 = float(width_axis[0])
+        self._chi_max = float(self._chi_axis_mv[self._chi_axis_mv.shape[0] - 1])
+        self._chi_kmax = float(integrand[n - 1])
+
+    cpdef double get_general_chi_by_area(self, double area, double g, double tinyA=1e-12, double tinyT=1e-08):
+        cdef double A
+        cdef double width
+        A = area if area > tinyA else tinyA
+        self._ensure_general_chi_cache(g, tinyA, tinyT)
+        if not self._chi_cache_ready:
+            width = float(self.get_width_by_area(A))
+            if width < tinyT:
+                width = tinyT
+            return 2.0 * sqrt(g * A / width)
+        if A <= self._chi_A0:
+            return 2.0 * sqrt(g * A / self._chi_w0)
+        if A >= self._chi_Amax:
+            return self._chi_max + self._chi_kmax * (A - self._chi_Amax)
+        return _interp_sorted(A, self._chi_area_axis_mv, self._chi_axis_mv)
+
+    cpdef tuple get_char_triplet_by_area(self, double area, double g, double tinyA=1e-12, double tinyT=1e-08):
+        cdef double A
+        cdef double width
+        cdef double depth
+        cdef double width_chi
+        cdef double general_chi
+        cdef double depth_ref_chi
+        A = area if area > tinyA else tinyA
+        width = float(self.get_width_by_area(A))
+        if width < tinyT:
+            width = tinyT
+        depth = float(self.get_depth_by_area(A))
+        if depth < 0.0:
+            depth = 0.0
+        width_chi = 2.0 * sqrt(g * A / width)
+        general_chi = self.get_general_chi_by_area(A, g, tinyA=tinyA, tinyT=tinyT)
+        depth_ref_chi = 2.0 * sqrt(g * depth)
+        return (width_chi, general_chi, depth_ref_chi)
 
     cpdef double get_bed_level(self):
         return self._bed_level

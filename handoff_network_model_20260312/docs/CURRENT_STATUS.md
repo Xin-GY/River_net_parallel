@@ -23,8 +23,8 @@
   - `ISLAM_PARALLEL_BACKEND=process`
   - `ISLAM_N_WORKERS=4`
   - `ISLAM_USE_CYTHON_TABLE=1`
-- Islam 40h full-case wall time：`542.10 s`
-- 模型内部自报时间：`499.99 s`
+- Islam 40h full-case wall time：`521.17 s`
+- 模型内部自报时间：`478.50 s`
 
 解释：
 - 水位两条线已经进入可接受区间，但流量两条线仍明显不达标

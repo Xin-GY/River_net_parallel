@@ -3044,6 +3044,9 @@ class River(Process):
 
     def _char_potential_from_general_cache(self, section_name, area, tinyA=1e-12, tinyT=1e-08):
         A = float(max(area, tinyA))
+        tbl = self.cross_section_table.tables.get(section_name)
+        if tbl is not None and hasattr(tbl, 'get_general_chi_by_area'):
+            return float(tbl.get_general_chi_by_area(A, self.g, tinyA=tinyA, tinyT=tinyT))
         cache = self._char_potential_cache.get(section_name)
         if cache is None:
             cache = self._build_char_potential_cache(section_name)
@@ -3069,6 +3072,14 @@ class River(Process):
 
     def _stage_boundary_char_triplet(self, section_name, area):
         A = float(max(area, 1.0e-12))
+        tbl = self.cross_section_table.tables.get(section_name)
+        if tbl is not None and hasattr(tbl, 'get_char_triplet_by_area'):
+            width, general, depth_ref = tbl.get_char_triplet_by_area(A, self.g)
+            return {
+                'width': float(width),
+                'general': float(general),
+                'depth_ref': float(depth_ref),
+            }
         return {
             'width': self._char_potential_from_width(section_name, A),
             'general': self._char_potential_from_general_cache(section_name, A),

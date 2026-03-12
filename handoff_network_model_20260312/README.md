@@ -49,7 +49,7 @@
 - 当前最快且结果保持一致的 CPU 路径是：
   - `4 workers` 持久化进程池
   - 可选 `Cython` 断面表查表后端
-  - 40h full-case wall time `542.10 s`
+  - 40h full-case wall time `521.17 s`
 - 当前问题主要不是水位，而是 `river11` 两端流量系统性偏高。
 - 该问题更像 `river11 / river12` 分流比例或 conveyance 偏差，而不是流量符号问题。
 - 当前还没有达到四条曲线 `NSE > 0.95`。

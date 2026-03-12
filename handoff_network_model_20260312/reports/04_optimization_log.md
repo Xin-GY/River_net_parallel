@@ -998,3 +998,201 @@ conda run -n python311 python tools/compare_results.py \
   - `process backend`
   - `4 workers`
   - `ISLAM_USE_CYTHON_TABLE=1`
+
+## 优化 8：把 boundary-chi 的 general cache 查询下沉到 Cython 断面表
+
+### 修改点
+
+- 文件：`cython_cross_section.pyx`
+  - 为 `CrossSectionTableCython` 新增 section-local `general chi` lazy cache
+  - 新增：
+    - `get_general_chi_by_area(...)`
+    - `get_char_triplet_by_area(...)`
+  - `chi(A)` 的 area 轴、积分轴和外推参数都在 Cython 对象内部构建并复用
+- 文件：`river_for_net.py`
+  - `_char_potential_from_general_cache()` 在 Cython table 可用时，直接走 `tbl.get_general_chi_by_area(...)`
+  - `_stage_boundary_char_triplet()` 在 Cython table 可用时，直接走 `tbl.get_char_triplet_by_area(...)`
+  - 原有 Python `_char_potential_cache` 路径保留，作为无扩展时的完整回退
+
+### 修改原因
+
+优化 7 之后，串行 + Cython table 的 10 分钟 profile 仍显示 boundary-chi 链明显偏热：
+
+- `_resolve_stage_boundary_chi_bundle` `ct=1.979 s`
+- `_stage_boundary_char_triplet` `ct=1.121 s`
+- `_char_potential_from_general_cache` `ct=0.972 s`
+- `OutBound_Fix_level_V3` `ct=2.863 s`
+- `InBound_Fix_level_V3` `ct=1.490 s`
+
+说明断面表几何查表已经不是主问题，但：
+
+- `general chi` 仍在 Python 层重复做 cache 字典访问
+- 仍在 `np.interp` 上消耗时间
+- 仍在 `_stage_boundary_char_triplet()` 里反复调用多段小函数
+
+因此这一轮只做一件事：
+
+- 把 `chi(A)` 的 general-cache 构建和查询一起塞进现有 Cython table 对象
+- 让边界闭合的 triplet 查询尽量在编译态完成
+
+### 为什么不改变计算原理
+
+本改动没有改变：
+
+- 控制方程
+- 离散格式
+- CFL 序列
+- 边界条件数学公式
+- 结点耦合逻辑
+- 输出定义
+
+它只把已有的：
+
+- `chi(A)` cache 构建
+- `chi(A)` 插值 / 外推
+- width/general/depth_ref 三元 characteristic 查询
+
+从 Python/NumPy 小函数链，换成了等价的 Cython 实现。
+
+### 验证命令
+
+构建：
+
+```bash
+cd handoff_network_model_20260312
+conda run -n python311 python build_cython_cross_section.py build_ext --inplace
+```
+
+10 分钟 smoke：
+
+```bash
+/usr/bin/time -p -o result/tmp_chicache_cython_process_10m_time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_chicache_cython_process_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_parallel_process_cython_chi_py311_40h_time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_parallel_process_cython_chi_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+比较：
+
+```bash
+cd handoff_network_model_20260312
+MPLCONFIGDIR=/tmp/mplconfig conda run -n python311 python result/eval_river11_nse.py result/exp_parallel_process_cython_chi_py311_40h
+conda run -n python311 python tools/compare_results.py \
+  result/exp_parallel_process_cython_table_py311_40h \
+  result/exp_parallel_process_cython_chi_py311_40h \
+  --out result/exp_parallel_process_cython_chi_py311_40h/compare_to_prev_best.json
+```
+
+### 10 分钟 smoke 结果
+
+- 优化 7：`6.01 s`
+- 优化 8：`5.71 s`
+- 绝对减少：`0.30 s`
+- 相对减少：`4.99%`
+
+模型内部自报时间：
+
+- 优化 7：`2.23 s`
+- 优化 8：`1.95 s`
+
+### 10 分钟串行 profile 观察
+
+串行 + Cython table 对比优化前后：
+
+- `_char_potential_from_general_cache`：
+  - `ct=0.972 s -> 0.183 s`
+- `_stage_boundary_char_triplet`：
+  - `ct=1.121 s -> 0.194 s`
+- `_resolve_stage_boundary_chi_bundle`：
+  - `ct=1.979 s -> 1.042 s`
+- `OutBound_Fix_level_V3`：
+  - `ct=2.863 s -> 2.009 s`
+- `InBound_Fix_level_V3`：
+  - `ct=1.490 s -> 1.039 s`
+
+说明这一轮命中的就是预期热点，而不是偶然的 wall time 摇摆。
+
+### 实测收益
+
+40 小时 full-case：
+
+- 优化 7（进程，4 workers + Cython table）：`542.10 s`
+- 优化 8（进程，4 workers + Cython table + chi cache）：`521.17 s`
+- 相对优化 7：
+  - 绝对减少：`20.93 s`
+  - 相对减少：`3.86%`
+  - 提速倍数：`1.04x`
+- 相对当前最佳串行：
+  - 绝对减少：`168.69 s`
+  - 相对减少：`24.45%`
+  - 提速倍数：`1.32x`
+- 相对原始基线：
+  - 绝对减少：`369.20 s`
+  - 相对减少：`41.47%`
+  - 提速倍数：`1.71x`
+
+模型内部自报时间：
+
+- 优化 7：`499.99 s`
+- 优化 8：`478.50 s`
+- 相对优化 7 进一步减少：`21.49 s`
+
+### 结果校验结论
+
+- `result/eval_river11_nse.py`：
+  - `node11_level = 0.873332`
+  - `node11_Q = -0.089159`
+  - `node12_level = 0.911626`
+  - `node12_Q = -0.105344`
+  - `mean_nse = 0.3976138544055814`
+- `tools/compare_results.py` 返回 `allclose = true`
+- 关键文件：
+  - `cfl_history.csv`
+  - `internal_node_history.csv`
+  - `river11_raw_output.nc`
+  - `river11_interpolated_output.nc`
+  - `boundary_supercritical_counts.csv`
+  - 控制点时序
+  - 最终状态
+
+全部通过
+
+说明：
+- `internal_node_history.csv` 中少量 `face_Q` 差异仍在 `1e-13 ~ 1e-12` 以内
+- 在当前严格 compare 容差下，所有关键输出依然 `allclose = true`
+
+### 阶段结论
+
+优化 8 可以接受：
+
+- 它是沿着优化 7 之后留下的 boundary-chi 真热点继续往下压
+- 收益不如优化 7 那么大，但是真实且稳定
+- 当前最快严格校验通过的 CPU 方案更新为：
+  - `process backend`
+  - `4 workers`
+  - `ISLAM_USE_CYTHON_TABLE=1`
