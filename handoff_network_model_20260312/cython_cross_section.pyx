@@ -60,6 +60,53 @@ cdef inline double _roe_abs_with_fix_cython(double lam, double c, double roe_ent
     return 0.5 * (lam * lam / delta + delta)
 
 
+cdef inline double _guarded_clamp_general_chi_cython(double width_chi, double general_chi, double guard_abs_delta) noexcept:
+    cdef double delta = general_chi - width_chi
+    if fabs(delta) > guard_abs_delta:
+        if delta > 0.0:
+            return width_chi + guard_abs_delta
+        return width_chi - guard_abs_delta
+    return general_chi
+
+
+cdef inline double _stage_boundary_characteristic_velocity_fast_cython(
+    bint is_left,
+    double ui,
+    double chi1,
+    double dt_moc,
+    bint use_o2,
+    double u2,
+    double chi2,
+    double chi_b,
+    bint swap_moc_sign,
+) noexcept:
+    cdef double jm1 = ui - chi1
+    cdef double jp1 = ui + chi1
+    cdef double jm
+    cdef double jp
+    cdef double jm2
+    cdef double jp2
+
+    if dt_moc != 0.0:
+        jm1 = jm1 + 0.0 * dt_moc
+        jp1 = jp1 + 0.0 * dt_moc
+    if use_o2:
+        jm2 = u2 - chi2
+        jp2 = u2 + chi2
+        jm = 2.0 * jm1 - jm2
+        jp = 2.0 * jp1 - jp2
+    else:
+        jm = jm1
+        jp = jp1
+    if is_left:
+        if swap_moc_sign:
+            return jp - chi_b
+        return jm + chi_b
+    if swap_moc_sign:
+        return jm + chi_b
+    return jp - chi_b
+
+
 
 cdef class CrossSectionTableCython:
     cdef public object _depth_axis
@@ -580,3 +627,140 @@ cpdef tuple compute_general_hr_flux_interface(
         flux0 = (s_right * f_left0 - s_left * f_right0 + s_left * s_right * (a_right - a_left)) / (s_right - s_left)
         flux1 = (s_right * f_left1 - s_left * f_right1 + s_left * s_right * (q_right - q_left)) / (s_right - s_left)
     return (flux0, flux1, p_left_hr, p_right_hr)
+
+
+cpdef object compute_stage_boundary_mainline_fast(
+    CrossSectionTableCython inner_tbl,
+    CrossSectionTableCython target_tbl,
+    object second_tbl,
+    bint is_left,
+    double g,
+    double tinyA,
+    double tinyT,
+    double level,
+    double Ai,
+    double Qi,
+    double inner_depth,
+    double s_limit,
+    double water_depth_limit,
+    double dt_moc,
+    bint use_o2,
+    double A2,
+    double Q2,
+    double guard_q_delta,
+    double guard_abs_delta,
+    bint swap_moc_sign,
+):
+    cdef double Ti
+    cdef double ui
+    cdef double ci
+    cdef double dry_limit
+    cdef double near_dry_limit
+    cdef double Ab
+    cdef double Tb
+    cdef double u2
+    cdef double inner_width
+    cdef double inner_general
+    cdef double target_width
+    cdef double target_general
+    cdef double second_width = 0.0
+    cdef double second_general = 0.0
+    cdef double ub_width
+    cdef double ub_general
+    cdef double inner_selected
+    cdef double target_selected
+    cdef double second_selected = 0.0
+    cdef double ub
+    cdef double Qb
+    cdef tuple triplet
+
+    Ti = float(inner_tbl.get_width_by_area(Ai))
+    if Ti < tinyT:
+        Ti = tinyT
+    ui = Qi / (Ai if Ai > tinyA else tinyA)
+    ci = sqrt(g * Ai / Ti)
+    if fabs(ui) >= ci:
+        return None
+
+    Ab = float(target_tbl.get_area_by_level(level))
+    if Ab <= 0.0:
+        return None
+    Tb = float(target_tbl.get_width_by_area(Ab))
+    if Tb < tinyT:
+        Tb = tinyT
+
+    dry_limit = s_limit * 10.0
+    if tinyA * 10.0 > dry_limit:
+        dry_limit = tinyA * 10.0
+    near_dry_limit = s_limit * 40.0
+    if tinyA * 40.0 > near_dry_limit:
+        near_dry_limit = tinyA * 40.0
+    if Ai <= dry_limit or inner_depth <= (water_depth_limit * 5.0 if water_depth_limit * 5.0 > 1.0e-4 else 1.0e-4):
+        return None
+    if Ai <= near_dry_limit or inner_depth <= (water_depth_limit * 20.0 if water_depth_limit * 20.0 > 5.0e-4 else 5.0e-4):
+        return None
+
+    triplet = inner_tbl.get_char_triplet_by_area(Ai, g, tinyA=tinyA, tinyT=tinyT)
+    inner_width = float(triplet[0])
+    inner_general = float(triplet[1])
+    triplet = target_tbl.get_char_triplet_by_area(Ab, g, tinyA=tinyA, tinyT=tinyT)
+    target_width = float(triplet[0])
+    target_general = float(triplet[1])
+
+    if use_o2:
+        if second_tbl is None:
+            return None
+        u2 = Q2 / (A2 if A2 > tinyA else tinyA)
+        triplet = (<CrossSectionTableCython> second_tbl).get_char_triplet_by_area(A2, g, tinyA=tinyA, tinyT=tinyT)
+        second_width = float(triplet[0])
+        second_general = float(triplet[1])
+    else:
+        u2 = 0.0
+
+    ub_width = _stage_boundary_characteristic_velocity_fast_cython(
+        is_left,
+        ui,
+        inner_width,
+        dt_moc,
+        use_o2,
+        u2,
+        second_width,
+        target_width,
+        swap_moc_sign,
+    )
+    ub_general = _stage_boundary_characteristic_velocity_fast_cython(
+        is_left,
+        ui,
+        inner_general,
+        dt_moc,
+        use_o2,
+        u2,
+        second_general,
+        target_general,
+        swap_moc_sign,
+    )
+
+    if fabs((ub_general - ub_width) * Ab) > guard_q_delta:
+        inner_selected = _guarded_clamp_general_chi_cython(inner_width, inner_general, guard_abs_delta)
+        target_selected = _guarded_clamp_general_chi_cython(target_width, target_general, guard_abs_delta)
+        if use_o2:
+            second_selected = _guarded_clamp_general_chi_cython(second_width, second_general, guard_abs_delta)
+    else:
+        inner_selected = inner_general
+        target_selected = target_general
+        if use_o2:
+            second_selected = second_general
+
+    ub = _stage_boundary_characteristic_velocity_fast_cython(
+        is_left,
+        ui,
+        inner_selected,
+        dt_moc,
+        use_o2,
+        u2,
+        second_selected,
+        target_selected,
+        swap_moc_sign,
+    )
+    Qb = ub * Ab
+    return (Ab, Tb, Qb)

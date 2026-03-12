@@ -22,10 +22,15 @@ from pyproj import Transformer
 from multiprocessing import Process, Queue
 
 try:
-    from cython_cross_section import CrossSectionTableCython, compute_general_hr_flux_interface as cython_compute_general_hr_flux_interface
+    from cython_cross_section import (
+        CrossSectionTableCython,
+        compute_general_hr_flux_interface as cython_compute_general_hr_flux_interface,
+        compute_stage_boundary_mainline_fast as cython_compute_stage_boundary_mainline_fast,
+    )
 except Exception:
     CrossSectionTableCython = None
     cython_compute_general_hr_flux_interface = None
+    cython_compute_stage_boundary_mainline_fast = None
 
 class CrossSectionModel_V3:
 
@@ -3535,6 +3540,90 @@ class River(Process):
             )
         self._append_boundary_diagnostics(record)
 
+    def _stage_boundary_fix_level_cython_fast(self, side, level, use_stabilizers, respect_supercritical, stage_on_face, q_hint=None, q_hint_blend=0.0, q_hint_cap_factor=0.0):
+        if cython_compute_stage_boundary_mainline_fast is None or CrossSectionTableCython is None:
+            return False
+        if stage_on_face or use_stabilizers or (not respect_supercritical):
+            return False
+        if q_hint is not None or q_hint_blend != 0.0 or q_hint_cap_factor != 0.0:
+            return False
+        if self.enable_boundary_diagnostics:
+            return False
+        if not bool(getattr(self, 'bc_use_general_chi', False)):
+            return False
+        if str(getattr(self, 'bc_general_chi_candidate_mode', 'off')).lower() != 'guarded_clamp':
+            return False
+        if str(getattr(self, 'bc_general_chi_guard_selector', 'closure_q_delta')).lower() != 'closure_q_delta':
+            return False
+        if bool(getattr(self, 'bc_moc_with_source', False)) or bool(getattr(self, 'bc_moc_with_source_stage', False)):
+            return False
+
+        tinyA = 1.0e-12
+        tinyT = 1.0e-08
+        side_txt = str(side).lower()
+        if side_txt == 'left':
+            is_left = True
+            ghost_idx = 0
+            inner_idx = 1
+            second_idx = 2
+            dry_limit_idx = 1
+            swap_moc_sign = bool(getattr(self, 'swap_moc_sign_stage_in', getattr(self, 'swap_moc_sign_stage', getattr(self, 'swap_moc_sign', False))))
+        else:
+            is_left = False
+            ghost_idx = -1
+            inner_idx = -2
+            second_idx = -3
+            dry_limit_idx = self.cell_num
+            swap_moc_sign = bool(getattr(self, 'swap_moc_sign_stage_out', getattr(self, 'swap_moc_sign_stage', getattr(self, 'swap_moc_sign', False))))
+
+        sec_inner = self.cell_sections[inner_idx]
+        sec_target = self.cell_sections[ghost_idx]
+        tbl_inner = self.cross_section_table.tables.get(sec_inner)
+        tbl_target = self.cross_section_table.tables.get(sec_target)
+        if not isinstance(tbl_inner, CrossSectionTableCython) or not isinstance(tbl_target, CrossSectionTableCython):
+            return False
+
+        use_o2 = bool(getattr(self, 'bc_use_order2_extrap_stage', getattr(self, 'bc_use_order2_extrap', False))) and self.cell_num >= 3
+        tbl_second = None
+        A2 = 0.0
+        Q2 = 0.0
+        if use_o2:
+            tbl_second = self.cross_section_table.tables.get(self.cell_sections[second_idx])
+            if not isinstance(tbl_second, CrossSectionTableCython):
+                return False
+            A2 = float(max(self.S[second_idx], tinyA))
+            Q2 = float(self.Q[second_idx])
+
+        result = cython_compute_stage_boundary_mainline_fast(
+            tbl_inner,
+            tbl_target,
+            tbl_second,
+            bool(is_left),
+            float(self.g),
+            float(tinyA),
+            float(tinyT),
+            float(level),
+            float(self.S[inner_idx]),
+            float(self.Q[inner_idx]),
+            float(self.water_depth[inner_idx]),
+            float(self._get_cell_s_limit(dry_limit_idx)),
+            float(self.water_depth_limit),
+            float(getattr(self, 'DT', 0.0)),
+            bool(use_o2),
+            float(A2),
+            float(Q2),
+            float(max(getattr(self, 'bc_general_chi_guard_q_delta', 0.005), 0.0)),
+            float(max(getattr(self, 'bc_general_chi_guard_abs_delta', 0.15), 0.0)),
+            bool(swap_moc_sign),
+        )
+        if result is None:
+            return False
+        Ab, Tb, Qb = result
+        ctx = self._get_stage_boundary_layout(side_txt)
+        ctx['level'] = float(level)
+        self._commit_stage_boundary_state(ctx, float(Ab), float(Qb), Tb=float(Tb))
+        return True
+
     def InBound_In_Q2(self, Q_in):
         tinyA = 1e-12
         sec_in = self.cell_sections[1]
@@ -3798,6 +3887,17 @@ class River(Process):
         tinyA, tinyT, tinyC = (1e-12, 1e-08, 1e-08)
         if stage_on_face is None:
             stage_on_face = bool(getattr(self, 'bc_stage_on_face', False))
+        if self._stage_boundary_fix_level_cython_fast(
+            'left',
+            level,
+            use_stabilizers=use_stabilizers,
+            respect_supercritical=respect_supercritical,
+            stage_on_face=stage_on_face,
+            q_hint=q_hint,
+            q_hint_blend=q_hint_blend,
+            q_hint_cap_factor=q_hint_cap_factor,
+        ):
+            return
         ctx = self._prepare_stage_boundary_context('left', level, stage_on_face, tinyA, tinyT, g)
         if respect_supercritical and abs(ctx['ui']) >= ctx['ci']:
             self._apply_supercritical_stage_boundary_copy(ctx)
@@ -3839,6 +3939,14 @@ class River(Process):
         tinyA, tinyT, tinyC = (1e-12, 1e-08, 1e-08)
         if stage_on_face is None:
             stage_on_face = bool(getattr(self, 'bc_stage_on_face', False))
+        if self._stage_boundary_fix_level_cython_fast(
+            'right',
+            level,
+            use_stabilizers=use_stabilizers,
+            respect_supercritical=respect_supercritical,
+            stage_on_face=stage_on_face,
+        ):
+            return
         ctx = self._prepare_stage_boundary_context('right', level, stage_on_face, tinyA, tinyT, g)
         if respect_supercritical and abs(ctx['ui']) >= ctx['ci']:
             self._apply_supercritical_stage_boundary_copy(ctx)

@@ -1358,3 +1358,168 @@ conda run -n python311 python result/eval_river11_nse.py result/exp_parallel_pro
   - `process backend`
   - `4 workers`
   - `ISLAM_USE_CYTHON_TABLE=1`
+
+## 优化 10：把默认 stage-boundary 主线路径下沉到 Cython
+
+### 修改点
+
+- 文件：
+  - `cython_cross_section.pyx`
+  - `river_for_net.py`
+- 修改：
+  - 新增 `compute_stage_boundary_mainline_fast(...)`
+  - 为 `InBound_Fix_level_V3()` / `OutBound_Fix_level_V3()` 增加 Cython fast path
+  - 仅覆盖默认高频主线路径：
+    - `stage_on_face = False`
+    - `use_stabilizers = False`
+    - `q_hint = None`
+    - `q_hint_blend = 0`
+    - `q_hint_cap_factor = 0`
+    - `enable_boundary_diagnostics = False`
+    - `bc_use_general_chi = True`
+    - `candidate_mode = guarded_clamp`
+    - `guard_selector = closure_q_delta`
+    - `bc_moc_with_source_stage = False`
+  - 其他情况全部回退原 Python 路径
+
+### 修改原因
+
+优化 9 之后，演进阶段新的主热点已经更集中到 stage-boundary 闭合链：
+
+- `OutBound_Fix_level_V3`
+- `InBound_Fix_level_V3`
+- `_resolve_stage_boundary_chi_bundle`
+- `_prepare_stage_boundary_context`
+
+默认 Islam workflow 里，这条链大多数时间都在走同一个“无诊断、无 stabilizer、无 q_hint、wet/subcritical”主路径，非常适合做成编译态标量闭合。
+
+### 为什么不改变计算原理
+
+本改动没有改变：
+
+- 边界条件数学意义
+- characteristic 闭合公式
+- general-chi 选择规则
+- guard 规则
+- CFL
+- 结点耦合
+- 输出定义
+
+它只是把默认主路径下的同一套公式换成了 Cython 标量实现。所有非主路径情况仍然沿用原逻辑。
+
+### 验证命令
+
+构建：
+
+```bash
+cd handoff_network_model_20260312
+conda run -n python311 python build_cython_cross_section.py build_ext --inplace
+```
+
+10 分钟 smoke：
+
+```bash
+/usr/bin/time -p -o result/tmp_boundarycython_process_10m/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_boundarycython_process_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_parallel_process_cython_boundary_py311_40h/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_parallel_process_cython_boundary_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+比较：
+
+```bash
+cd handoff_network_model_20260312
+conda run -n python311 python tools/compare_results.py \
+  result/exp_parallel_process_cython_flux_py311_40h \
+  result/exp_parallel_process_cython_boundary_py311_40h \
+  --out result/exp_parallel_process_cython_boundary_py311_40h/compare_to_prev_best.json
+conda run -n python311 python result/eval_river11_nse.py result/exp_parallel_process_cython_boundary_py311_40h
+```
+
+### 10 分钟 smoke 结果
+
+- 优化 9：`1.94 s`
+- 优化 10：`1.57 s`
+- 绝对减少：`0.37 s`
+- 相对减少：`19.07%`
+
+### 实测收益
+
+40 小时 full-case：
+
+- 优化 9：wall `507.12 s`，模型内部 `463.76 s`
+- 优化 10：wall `484.08 s`，模型内部 `441.06 s`
+
+相对优化 9：
+
+- wall：
+  - 绝对减少：`23.04 s`
+  - 相对减少：`4.54%`
+- 模型内部演进时间：
+  - 绝对减少：`22.70 s`
+  - 相对减少：`4.89%`
+
+相对原始基线：
+
+- wall：
+  - `890.37 s -> 484.08 s`
+  - 总降幅：`45.63%`
+- 模型内部演进时间：
+  - `832.98 s -> 441.06 s`
+  - 总降幅：`47.05%`
+
+### 结果校验结论
+
+- `result/eval_river11_nse.py`：
+  - `node11_level = 0.873332`
+  - `node11_Q = -0.089159`
+  - `node12_level = 0.911626`
+  - `node12_Q = -0.105344`
+  - `mean_nse = 0.3976138544055814`
+- `tools/compare_results.py` 返回 `allclose = true`
+- 关键文件：
+  - `cfl_history.csv`
+  - `internal_node_history.csv`
+  - `river11_raw_output.nc`
+  - `river11_interpolated_output.nc`
+  - `boundary_supercritical_counts.csv`
+  - 控制点时序
+  - 最终状态
+
+全部 `max_abs = 0.0`
+
+### 阶段结论
+
+优化 10 可以接受：
+
+- 这是当前为止收益最大的单项 Cython 热点优化
+- 它主要压缩的是每步高频的 stage-boundary 闭合，不涉及初始化
+- 当前最快严格校验通过的 CPU 方案更新为：
+  - `process backend`
+  - `4 workers`
+  - `ISLAM_USE_CYTHON_TABLE=1`
