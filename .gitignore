@@ -3,6 +3,7 @@
 __pycache__/
 __MACOSX/
 result/
+*.nc
 *.pyc
 *.pyo
 *.pyd
