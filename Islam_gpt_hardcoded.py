@@ -9,7 +9,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 os.environ.setdefault("KMP_WARNINGS", "0")
 
 # from Rivernet import Rivernet
-from river_net_parallel_gpt_modified import Rivernet
+from river_net_handoff import Rivernet
 import numpy as np, math
 import pandas as pd
 import os
@@ -17,7 +17,7 @@ import time
 import argparse
 from math import gamma
 from persistent_interpolator import PersistentLinearInterpolator
-from tool_fun.section_偏移 import adjust_sections_by_river_bed_average
+from tool_fun.section_offset import adjust_sections_by_river_bed_average
 
 output_path = 'result/Islam_base'
 
