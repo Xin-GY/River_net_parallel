@@ -10,6 +10,7 @@ from pprint import pprint
 import pandas as pd
 import datetime
 import numpy as np
+from parallel_river_pool import PersistentRiverProcessPool, PersistentRiverThreadPool
 
 class Rivernet():
     def __init__(self, Topology, model_data, verbos=True):
@@ -101,6 +102,14 @@ class Rivernet():
         self.output_river_names = None
         # 分支更新格式：False=显式组装（默认），True=隐式传输系数组装
         self.use_implicit_branch_update = False
+        # 可选：河道级持久化并行执行。默认关闭，保持历史串行行为。
+        self.use_parallel_workers = False
+        self.parallel_backend = 'threads'
+        self.parallel_n_workers = max((os.cpu_count() or 1), 1)
+        self.parallel_start_method = 'spawn'
+        self.parallel_sync_main_state_on_yield = True
+        self.save_cfl_history = False
+        self.cfl_history = []
 
     def _refresh_river_cache(self):
         # Topology is fixed after construction in the current workflow. Cache
@@ -118,6 +127,28 @@ class Rivernet():
             for n in self.G.nodes()
         }
         self._river_method_cache = {}
+
+    def _all_river_names(self):
+        return [data.get('name') for _, _, data in self._river_edges]
+
+    def _river_map(self):
+        return {data.get('name'): data['river'] for _, _, data in self._river_edges}
+
+    def _sync_parallel_rivers_to_main(self, pool, names=None):
+        main_map = self._river_map()
+        worker_map = pool.get_rivers(names=names)
+        for name, worker_river in worker_map.items():
+            main_river = main_map[name]
+            main_river.__dict__.clear()
+            main_river.__dict__.update(worker_river.__dict__)
+
+    def _parallel_supported(self):
+        return not (
+            self.internal_use_coupled_newton
+            or self.internal_use_numeric_jacobian
+            or self.internal_sync_branch_end_Q
+            or self.internal_node_use_face_flux_residual
+        )
 
     # 创建河网
     def Create_Rivernet(self):
@@ -461,6 +492,26 @@ class Rivernet():
         if self.verbos:
             print(f'[OK] 内部节点时序已保存 -> {out_path}')
 
+    def _record_cfl_history(self, dt_items):
+        if not self.save_cfl_history:
+            return
+        rec = {'time': float(self.current_sim_time)}
+        dt_min = np.inf
+        for name, value in dt_items:
+            dt_val = float(value)
+            rec[str(name)] = dt_val
+            dt_min = min(dt_min, dt_val)
+        rec['global_dt'] = float(dt_min)
+        self.cfl_history.append(rec)
+
+    def Save_cfl_history(self):
+        if not (self.save_cfl_history and self.cfl_history):
+            return
+        out_path = os.path.join(self.model_data['output_path'], 'cfl_history.csv')
+        pd.DataFrame(self.cfl_history).to_csv(out_path, index=False)
+        if self.verbos:
+            print(f'[OK] CFL 时序已保存 -> {out_path}')
+
     # 更新网格参数
     def Update_cell_property_net(self):
         self.call_river_function_by_name('Update_cell_proprity2')
@@ -468,13 +519,16 @@ class Rivernet():
     # 计算全局CFL时间步长
     def Caculate_global_CFL(self):
         dt_list = []
+        dt_items = []
 
         # 计算每条河道的CFL时间步长
         for _, _, data in self._river_edges:
             dti = data['river'].Caculate_CFL_time_for_river_net()
             dt_list.append(dti)
+            dt_items.append((data.get('name'), dti))
 
         self.cfl_allowed_dt = min(dt_list) # 计算全局最小时间步长
+        self._record_cfl_history(dt_items)
 
         if self.verbos:
             print(f'全局最小CFL时间步长: {self.cfl_allowed_dt:.4f} 秒')
@@ -1142,6 +1196,278 @@ class Rivernet():
             return float(self.Get_node_clear_flow_at_boundary_face_net(node))
         return float(self.Get_node_clear_flow_at_ghost_cell_net(node))
 
+    def _parallel_node_average_level_at_real_cell(self, node, snapshots):
+        level_list = []
+        for _, name in self._in_branches_by_node[node]:
+            level_list.append(float(snapshots[name]['right']['cell_level']))
+        for _, name in self._out_branches_by_node[node]:
+            level_list.append(float(snapshots[name]['left']['cell_level']))
+        if level_list:
+            return float(np.average(level_list))
+        return np.nan
+
+    def _parallel_node_average_level_at_ghost_cell(self, node, snapshots):
+        level_list = []
+        for _, name in self._in_branches_by_node[node]:
+            level_list.append(float(snapshots[name]['right']['ghost_level']))
+        for _, name in self._out_branches_by_node[node]:
+            level_list.append(float(snapshots[name]['left']['ghost_level']))
+        if level_list:
+            return float(np.average(level_list))
+        return np.nan
+
+    def _parallel_node_mass_residual(self, node, snapshots):
+        pure_q = 0.0
+        for _, name in self._in_branches_by_node[node]:
+            end = snapshots[name]['right']
+            face_q = float(end['boundary_face_discharge'])
+            if self.internal_node_prefer_boundary_face_discharge and np.isfinite(face_q):
+                q_in = face_q
+            elif self.internal_node_use_face_discharge:
+                q_in = 0.5 * (float(end['ghost_Q']) + float(end['cell_Q']))
+            else:
+                q_in = float(end['ghost_Q'])
+            pure_q += q_in
+
+        for _, name in self._out_branches_by_node[node]:
+            end = snapshots[name]['left']
+            face_q = float(end['boundary_face_discharge'])
+            if self.internal_node_prefer_boundary_face_discharge and np.isfinite(face_q):
+                q_out = face_q
+            elif self.internal_node_use_face_discharge:
+                q_out = 0.5 * (float(end['ghost_Q']) + float(end['cell_Q']))
+            else:
+                q_out = float(end['ghost_Q'])
+            pure_q -= q_out
+        return float(pure_q)
+
+    def _parallel_node_ac(self, node, snapshots):
+        eps_a = 1e-12
+        ac = 0.0
+        if self.internal_use_paper_ac:
+            for _, name in self._in_branches_by_node[node]:
+                end = snapshots[name]['right']
+                use_face = self.internal_node_use_boundary_face_ac and np.isfinite(end['boundary_face_area']) and np.isfinite(end['boundary_face_width']) and np.isfinite(end['boundary_face_discharge'])
+                if use_face:
+                    area = float(max(end['boundary_face_area'], eps_a))
+                    width = float(max(end['boundary_face_width'], eps_a))
+                    discharge = float(end['boundary_face_discharge'])
+                else:
+                    area = float(max(end['ghost_S'], eps_a))
+                    width = float(max(end['ghost_width'], eps_a))
+                    discharge = float(end['ghost_Q'])
+                ac += np.sqrt(self.g * area * width) - discharge * width / area
+
+            for _, name in self._out_branches_by_node[node]:
+                end = snapshots[name]['left']
+                use_face = self.internal_node_use_boundary_face_ac and np.isfinite(end['boundary_face_area']) and np.isfinite(end['boundary_face_width']) and np.isfinite(end['boundary_face_discharge'])
+                if use_face:
+                    area = float(max(end['boundary_face_area'], eps_a))
+                    width = float(max(end['boundary_face_width'], eps_a))
+                    discharge = float(end['boundary_face_discharge'])
+                else:
+                    area = float(max(end['ghost_S'], eps_a))
+                    width = float(max(end['ghost_width'], eps_a))
+                    discharge = float(end['ghost_Q'])
+                ac += np.sqrt(self.g * area * width) + discharge * width / area
+            return float(self.alpha * ac)
+
+        if self.internal_use_ac_v2:
+            for _, name in self._in_branches_by_node[node]:
+                end = snapshots[name]['right']
+                area = float(max(end['cell_S'], eps_a))
+                width = float(max(end['cell_width'], eps_a))
+                discharge = float(end['cell_Q'])
+                regime, u_loc, c_loc, _ = self._branch_regime(area, width, discharge, flow_dir_sign=+1)
+                if regime != 'super_in':
+                    ac += width * (c_loc - u_loc)
+
+            for _, name in self._out_branches_by_node[node]:
+                end = snapshots[name]['left']
+                area = float(max(end['cell_S'], eps_a))
+                width = float(max(end['cell_width'], eps_a))
+                discharge = float(end['cell_Q'])
+                regime, u_loc, c_loc, _ = self._branch_regime(area, width, discharge, flow_dir_sign=-1)
+                if regime != 'super_in':
+                    ac += width * (c_loc + u_loc)
+            return float(self.alpha * ac)
+
+        for _, name in self._in_branches_by_node[node]:
+            end = snapshots[name]['right']
+            area = float(max(end['ghost_S'], eps_a))
+            width = float(max(end['ghost_width'], eps_a))
+            discharge = float(end['ghost_Q'])
+            ac += np.sqrt(self.g * area * width) - discharge * width / area
+
+        for _, name in self._out_branches_by_node[node]:
+            end = snapshots[name]['left']
+            area = float(max(end['ghost_S'], eps_a))
+            width = float(max(end['ghost_width'], eps_a))
+            discharge = float(end['ghost_Q'])
+            ac += np.sqrt(self.g * area * width) + discharge * width / area
+
+        return float(self.alpha * ac)
+
+    def _build_parallel_external_boundary_ops(self):
+        ops = []
+        for n in self.external_in_nodes:
+            btype, value = self.get_boundary_value(n, self.current_sim_time)
+            for river_obj, name in self._out_branches_by_node[n]:
+                if btype == 'flow':
+                    method = 'InBound_In_Q2' if self.external_flow_bc_use_characteristic and hasattr(river_obj, 'InBound_In_Q2') else 'InBound_In_Q'
+                    ops.append({'river': name, 'method': method, 'args': (value,), 'kwargs': {}})
+                elif btype == 'fix_level':
+                    if self.use_fix_level_bc_v2:
+                        ops.append({'river': name, 'method': 'InBound_Fix_level_V2', 'args': (), 'kwargs': {'level': value}})
+                    else:
+                        ops.append({
+                            'river': name,
+                            'method': 'InBound_Fix_level_V3',
+                            'args': (value,),
+                            'kwargs': {
+                                'Fr_max': 0.85,
+                                'head_gain_factor': 0.65,
+                                'relax_Q': 0.4,
+                                'cap_du_factor': 0.8,
+                                'cap_dQ_factor': 0.7,
+                                'use_stabilizers': self.external_bc_use_stabilizers,
+                                'respect_supercritical': self.external_bc_respect_supercritical,
+                                'stage_on_face': self.external_bc_stage_on_face,
+                            },
+                        })
+
+        for n in self.external_out_nodes:
+            btype, value = self.get_boundary_value(n, self.current_sim_time)
+            for _, name in self._in_branches_by_node[n]:
+                if btype == 'free':
+                    ops.append({'river': name, 'method': 'OutBound_Free_Outfall', 'args': (), 'kwargs': {}})
+                elif btype == 'fix_level':
+                    if self.use_fix_level_bc_v2:
+                        ops.append({'river': name, 'method': 'OutBound_Fix_level_V2', 'args': (), 'kwargs': {'level': value}})
+                    else:
+                        ops.append({
+                            'river': name,
+                            'method': 'OutBound_Fix_level_V3',
+                            'args': (value,),
+                            'kwargs': {
+                                'Fr_max': 0.85,
+                                'head_gain_factor': 0.65,
+                                'relax_Q': 0.4,
+                                'cap_du_factor': 0.8,
+                                'cap_dQ_factor': 0.7,
+                                'use_stabilizers': self.external_bc_use_stabilizers,
+                                'respect_supercritical': self.external_bc_respect_supercritical,
+                                'stage_on_face': self.external_bc_stage_on_face,
+                            },
+                        })
+        return ops
+
+    def _build_parallel_internal_level_ops(self, node_levels, snapshots):
+        ops = []
+        g = self.g
+        eps_a = 1.0e-12
+        for node_name in self.internal_nodes:
+            level = float(node_levels[node_name])
+            for _, name in self._in_branches_by_node[node_name]:
+                end = snapshots[name]['right']
+                area = float(max(end['cell_S'], eps_a))
+                discharge = float(end['cell_Q'])
+                velocity = abs(discharge) / max(area, eps_a)
+                level_eff = level + 0.0 * (velocity * velocity) / (2.0 * g)
+                if self.use_fix_level_bc_v2:
+                    ops.append({'river': name, 'method': 'OutBound_Fix_level_V2', 'args': (level_eff,), 'kwargs': {}})
+                else:
+                    ops.append({
+                        'river': name,
+                        'method': 'OutBound_Fix_level_V3',
+                        'args': (level_eff,),
+                        'kwargs': {
+                            'use_stabilizers': self.internal_bc_use_stabilizers,
+                            'respect_supercritical': self.internal_bc_respect_supercritical,
+                            'stage_on_face': self.internal_bc_stage_on_face,
+                        },
+                    })
+            for _, name in self._out_branches_by_node[node_name]:
+                end = snapshots[name]['left']
+                area = float(max(end['cell_S'], eps_a))
+                discharge = float(end['cell_Q'])
+                velocity = abs(discharge) / max(area, eps_a)
+                level_eff = level + 0.0 * (velocity * velocity) / (2.0 * g)
+                if self.use_fix_level_bc_v2:
+                    ops.append({'river': name, 'method': 'InBound_Fix_level_V2', 'args': (level_eff,), 'kwargs': {}})
+                else:
+                    ops.append({
+                        'river': name,
+                        'method': 'InBound_Fix_level_V3',
+                        'args': (level_eff,),
+                        'kwargs': {
+                            'use_stabilizers': self.internal_bc_use_stabilizers,
+                            'respect_supercritical': self.internal_bc_respect_supercritical,
+                            'stage_on_face': self.internal_bc_stage_on_face,
+                        },
+                    })
+        return ops
+
+    def _update_boundary_conditions_parallel(self, pool):
+        external_ops = self._build_parallel_external_boundary_ops()
+        if external_ops:
+            pool.call_batch(external_ops, collect=False)
+
+        snapshots = pool.get_interface_snapshots()
+        if not self.internal_nodes:
+            return snapshots
+
+        node_levels = {}
+        for n in self.internal_nodes:
+            if self.internal_level_predict_from_last and n in self._internal_node_level_cache:
+                z0 = float(self._internal_node_level_cache[n])
+            else:
+                z0 = float(self._parallel_node_average_level_at_real_cell(n, snapshots))
+                if np.isnan(z0):
+                    z0 = float(self._parallel_node_average_level_at_ghost_cell(n, snapshots))
+                if np.isnan(z0):
+                    z0 = 0.0
+            node_levels[n] = max(0.0, z0)
+
+        converged = False
+        max_abs_q = np.inf
+        for _ in range(1, self.max_iteration + 1):
+            pool.call_batch(self._build_parallel_internal_level_ops(node_levels, snapshots), collect=False)
+            snapshots = pool.get_interface_snapshots()
+
+            node_residual = {}
+            max_abs_q = 0.0
+            for n in self.internal_nodes:
+                pure_q = self._parallel_node_mass_residual(n, snapshots)
+                node_residual[n] = pure_q
+                max_abs_q = max(max_abs_q, abs(pure_q))
+
+            new_levels = dict(node_levels)
+            max_abs_dz = 0.0
+            for n in self.internal_nodes:
+                pure_q = node_residual[n]
+                dR_dZ = -float(self._parallel_node_ac(n, snapshots))
+                if abs(dR_dZ) < 1e-10:
+                    dz = 0.0
+                else:
+                    dz = -pure_q / dR_dZ
+                if not self.internal_use_paper_ac:
+                    dz = float(np.clip(dz, -0.5, 0.5))
+                dz = self.relax * dz
+                new_levels[n] = max(0.0, node_levels[n] + dz)
+                max_abs_dz = max(max_abs_dz, abs(dz))
+            node_levels = new_levels
+            if max_abs_dz < 1e-4 and max_abs_q < self.JPWSPC_Q_limit:
+                converged = True
+                break
+
+        pool.call_batch(self._build_parallel_internal_level_ops(node_levels, snapshots), collect=False)
+        snapshots = pool.get_interface_snapshots()
+        self._internal_node_level_cache.update(node_levels)
+        if self.verbos and not converged:
+            print(f'内部边界迭代达到上限 {self.max_iteration} 次，max|Qnet|={max_abs_q:.4e}')
+        return snapshots
+
     # 重采样并保存结果
     def Resample_and_Save_result_net(self):
         selected = self.output_river_names
@@ -1159,6 +1485,194 @@ class Rivernet():
         minutes, seconds = divmod(rem, 60)  # 再拆分钟
         total_time_use = time.time() - self.caculation_start_time  # 总耗时
         print(f'当前模拟时间:{days}天{hours}小时{minutes}分钟{seconds}秒，模拟子步数量:{self.sub_step_count}，当前步计算耗时:{self.sub_step_caculation_time_using:.2f}秒，时间步长范围:[{self.sub_step_min_dt:.2f} - {self.sub_step_max_dt:.2f}]秒，总耗时:{total_time_use:.2f}秒')
+
+    def _selected_output_names(self):
+        if self.output_river_names is None:
+            return self._all_river_names()
+        return list(self.output_river_names)
+
+    def _record_internal_node_history_from_snapshots(self, snapshots):
+        if not (self.save_outputs and self.internal_nodes):
+            return
+        rec = {'time': float(self.current_sim_time)}
+        for n in self.internal_nodes:
+            rec[f'{n}_level'] = float(self._internal_node_level_cache.get(n, np.nan))
+            rec[f'{n}_Qnet'] = float(self._parallel_node_mass_residual(n, snapshots))
+            for _, name in self._in_branches_by_node[n]:
+                end = snapshots[name]['right']
+                rec[f'{n}_{name}_face_level'] = float(end['boundary_face_level'])
+                rec[f'{n}_{name}_face_Q'] = float(end['boundary_face_discharge'])
+                rec[f'{n}_{name}_cell_level'] = float(end['cell_level'])
+                rec[f'{n}_{name}_cell_Q'] = float(end['cell_Q'])
+            for _, name in self._out_branches_by_node[n]:
+                end = snapshots[name]['left']
+                rec[f'{n}_{name}_face_level'] = float(end['boundary_face_level'])
+                rec[f'{n}_{name}_face_Q'] = float(end['boundary_face_discharge'])
+                rec[f'{n}_{name}_cell_level'] = float(end['cell_level'])
+                rec[f'{n}_{name}_cell_Q'] = float(end['cell_Q'])
+        self.internal_node_history.append(rec)
+
+    def _evolve_base_parallel_threads(self, yield_step, pool):
+        yield_flag = False
+        finish_flag = False
+        selected_names = self._selected_output_names()
+        self.sub_step_start_time = time.time()
+        self.caculation_start_time = time.time()
+
+        while self.current_sim_time < self.total_sim_time:
+            self.Set_global_time_step(self.DT)
+
+            self.current_sim_time += self.DT
+            self.step_count += 1
+            self.sub_step_time += self.DT
+            self.sub_step_count += 1
+            self.sub_step_max_dt = max(self.sub_step_max_dt, self.DT)
+            self.sub_step_min_dt = min(self.sub_step_min_dt, self.DT)
+
+            # Keep boundary coupling on the original serial path so the
+            # junction iteration and all current boundary options stay
+            # bitwise-aligned with the accepted serial workflow.
+            self.Update_boundary_conditions()
+
+            if self.save_outputs and self.internal_nodes:
+                rec = {'time': float(self.current_sim_time)}
+                for n in self.internal_nodes:
+                    rec[f'{n}_level'] = float(self._internal_node_level_cache.get(n, np.nan))
+                    rec[f'{n}_Qnet'] = float(self._get_node_mass_residual_current_state(n))
+                    for r, name in self._in_branches_by_node[n]:
+                        rec[f'{n}_{name}_face_level'] = float(
+                            getattr(r, 'boundary_face_level_right', np.nan)
+                        )
+                        rec[f'{n}_{name}_face_Q'] = float(
+                            getattr(r, 'boundary_face_discharge_right', np.nan)
+                        )
+                        rec[f'{n}_{name}_cell_level'] = float(r.water_level[-2])
+                        rec[f'{n}_{name}_cell_Q'] = float(r.Q[-2])
+                    for r, name in self._out_branches_by_node[n]:
+                        rec[f'{n}_{name}_face_level'] = float(
+                            getattr(r, 'boundary_face_level_left', np.nan)
+                        )
+                        rec[f'{n}_{name}_face_Q'] = float(
+                            getattr(r, 'boundary_face_discharge_left', np.nan)
+                        )
+                        rec[f'{n}_{name}_cell_level'] = float(r.water_level[1])
+                        rec[f'{n}_{name}_cell_Q'] = float(r.Q[1])
+                self.internal_node_history.append(rec)
+
+            pool.call_all('Caculate_face_U_C')
+            pool.call_all('Caculate_Roe_matrix')
+            pool.call_all('Caculate_source_term_2')
+            pool.call_all('Caculate_Roe_Flux_2')
+            if self.use_implicit_branch_update:
+                pool.call_all('Caculate_impli_trans_coefficient')
+                pool.call_all('Assemble_Flux_impli_trans')
+            else:
+                pool.call_all('Assemble_Flux_2')
+            pool.call_all('Update_cell_proprity2')
+
+            if self.save_outputs:
+                pool.call_all('Save_result_per_time_step', names=selected_names)
+
+            if yield_flag:
+                self.sub_step_caculation_time_using = time.time() - self.sub_step_start_time
+                yield self.current_sim_time
+                yield_flag = False
+                self.sub_step_start_time = time.time()
+                self.sub_step_time = 0.0
+                self.sub_step_count = 0
+                self.sub_step_max_dt = 0.0
+                self.sub_step_min_dt = 999999
+
+            if finish_flag:
+                break
+
+            dt_map = pool.call_all('Caculate_CFL_time_for_river_net', collect=True)
+            self._record_cfl_history(list(dt_map.items()))
+            self.cfl_allowed_dt = min(dt_map.values())
+
+            if self.current_sim_time + self.cfl_allowed_dt > self.total_sim_time + 1e-5:
+                self.DT = self.total_sim_time - self.current_sim_time
+            elif self.sub_step_time + self.cfl_allowed_dt > yield_step + 1e-5:
+                self.DT = yield_step - self.sub_step_time
+                yield_flag = True
+            else:
+                self.DT = self.cfl_allowed_dt
+
+        self.caculation_time = time.time() - self.caculation_start_time
+        print(f'计算结束，保存结果...\n共计算 {self.step_count} 步，总耗时: {self.caculation_time:.2f} 秒')
+        if self.save_outputs:
+            self.Resample_and_Save_result_net()
+            self.Save_internal_node_history()
+            self.Save_cfl_history()
+
+    def _evolve_base_parallel_process(self, yield_step, pool):
+        yield_flag = False
+        finish_flag = False
+        selected_names = self._selected_output_names()
+        self.sub_step_start_time = time.time()
+        self.caculation_start_time = time.time()
+
+        while self.current_sim_time < self.total_sim_time:
+            pool.call_all('set_next_dt', args=(self.DT,))
+
+            self.current_sim_time += self.DT
+            self.step_count += 1
+            self.sub_step_time += self.DT
+            self.sub_step_count += 1
+            self.sub_step_max_dt = max(self.sub_step_max_dt, self.DT)
+            self.sub_step_min_dt = min(self.sub_step_min_dt, self.DT)
+
+            snapshots = self._update_boundary_conditions_parallel(pool)
+            self._record_internal_node_history_from_snapshots(snapshots)
+
+            pool.call_all('Caculate_face_U_C')
+            pool.call_all('Caculate_Roe_matrix')
+            pool.call_all('Caculate_source_term_2')
+            pool.call_all('Caculate_Roe_Flux_2')
+            if self.use_implicit_branch_update:
+                pool.call_all('Caculate_impli_trans_coefficient')
+                pool.call_all('Assemble_Flux_impli_trans')
+            else:
+                pool.call_all('Assemble_Flux_2')
+            pool.call_all('Update_cell_proprity2')
+
+            if self.save_outputs:
+                pool.call_all('Save_result_per_time_step', names=selected_names)
+
+            if yield_flag:
+                if self.parallel_sync_main_state_on_yield:
+                    self._sync_parallel_rivers_to_main(pool)
+                self.sub_step_caculation_time_using = time.time() - self.sub_step_start_time
+                yield self.current_sim_time
+                yield_flag = False
+                self.sub_step_start_time = time.time()
+                self.sub_step_time = 0.0
+                self.sub_step_count = 0
+                self.sub_step_max_dt = 0.0
+                self.sub_step_min_dt = 999999
+
+            if finish_flag:
+                break
+
+            dt_map = pool.call_all('Caculate_CFL_time_for_river_net', collect=True)
+            self._record_cfl_history(list(dt_map.items()))
+            self.cfl_allowed_dt = min(dt_map.values())
+
+            if self.current_sim_time + self.cfl_allowed_dt > self.total_sim_time + 1e-5:
+                self.DT = self.total_sim_time - self.current_sim_time
+            elif self.sub_step_time + self.cfl_allowed_dt > yield_step + 1e-5:
+                self.DT = yield_step - self.sub_step_time
+                yield_flag = True
+            else:
+                self.DT = self.cfl_allowed_dt
+
+        self.caculation_time = time.time() - self.caculation_start_time
+        print(f'计算结束，保存结果...\n共计算 {self.step_count} 步，总耗时: {self.caculation_time:.2f} 秒')
+        if self.save_outputs:
+            pool.call_all('Check_Resample_and_Save_Output_result', names=selected_names)
+            self.Save_internal_node_history()
+            self.Save_cfl_history()
+        self._sync_parallel_rivers_to_main(pool)
 
     # 演进子步
     def _evolve_base(self, yield_step):
@@ -1274,6 +1788,7 @@ class Rivernet():
         if self.save_outputs:
             self.Resample_and_Save_result_net()
             self.Save_internal_node_history()
+            self.Save_cfl_history()
 
     # 演进过程
     def Evolve(self, yield_step=None):
@@ -1302,9 +1817,43 @@ class Rivernet():
         self.Caculate_global_CFL()
         self.DT = self.cfl_allowed_dt  # 初始时间步长为全局最小CFL时间步长
 
-        # 调用evolve_base, 统计子步演进数量、DT范围
-        for t in self._evolve_base(yield_step):
-            yield t
+        use_parallel = bool(self.use_parallel_workers and self.parallel_n_workers > 1 and len(self._river_edges) > 1)
+
+        if use_parallel:
+            river_items = [(data.get('name'), data['river']) for _, _, data in self._river_edges]
+            backend = str(getattr(self, 'parallel_backend', 'threads')).strip().lower()
+            if backend == 'process':
+                if not self._parallel_supported():
+                    if self.verbos:
+                        print('当前节点配置包含进程并行路径未覆盖的选项，回退到串行 Evolve')
+                    for t in self._evolve_base(yield_step):
+                        yield t
+                    return
+                start_method = self.parallel_start_method
+                if start_method == 'spawn' and os.name == 'posix':
+                    start_method = 'fork'
+                pool = PersistentRiverProcessPool(
+                    river_items=river_items,
+                    n_workers=self.parallel_n_workers,
+                    start_method=start_method,
+                )
+                evolve_fn = self._evolve_base_parallel_process
+            else:
+                pool = PersistentRiverThreadPool(
+                    river_items=river_items,
+                    n_workers=self.parallel_n_workers,
+                    start_method=self.parallel_start_method,
+                )
+                evolve_fn = self._evolve_base_parallel_threads
+            try:
+                for t in evolve_fn(yield_step, pool):
+                    yield t
+            finally:
+                pool.shutdown()
+        else:
+            # 调用evolve_base, 统计子步演进数量、DT范围
+            for t in self._evolve_base(yield_step):
+                yield t
 
 
     # 导出为 PNG 图片

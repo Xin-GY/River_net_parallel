@@ -465,3 +465,166 @@ conda run -n python311 python tools/compare_results.py \
   - wall time `709.54 s`
   - 仍存在 `internal_node_history.csv` 微小差异，且速度更差
   - 已回退
+- 持久化线程池（河道局部阶段并行）：
+  - 初版 wall time `20.43 s / 10min`
+  - 原因：GIL 与线程调度开销明显高于收益
+  - 修正 `dt` 精度链后可做到结果逐点一致，但仍显著慢于串行 `8.94 s / 10min`
+  - 不作为最终方案
+
+## 优化 5：持久化进程池并修正并行分支的 dt 精度链
+
+### 修改点
+
+- 文件：`parallel_river_pool.py`
+- 新增：
+  - `PersistentRiverThreadPool`
+  - `PersistentRiverProcessPool`
+  - 基于 `Pipe` 的常驻 worker 机制
+  - worker 侧河道状态驻留
+  - `interface_snapshots / get_rivers / call_batch` 三类命令
+- 文件：`Rivernet.py`
+  - 新增 `parallel_backend`
+  - 线程后端保留作 exact 对照
+  - 进程后端复用现有 junction snapshot 两阶段链路
+  - Linux 下进程后端默认将 `spawn` 回退为 `fork`
+  - 新增可选 `cfl_history.csv` 诊断输出
+- 文件：`Islam.py`
+  - 新增环境变量：
+    - `ISLAM_PARALLEL_BACKEND`
+    - `ISLAM_SAVE_CFL_HISTORY`
+
+### 修改原因
+
+在尝试多线程/多进程后，发现并行版与串行版最早的分叉出现在 `dt` 序列：
+
+- `internal_node_history.csv` 的 `time` 从第 3 步开始出现 `1e-8 s` 量级差异
+- `cfl_history.csv` 诊断显示：并不是某条河道先偏，而是同一步所有河道的 CFL 候选 `dt` 一起偏
+
+根因是并行分支中：
+
+- `self.cfl_allowed_dt = min(float(v) for v in dt_map.values())`
+
+把串行路径里的 `np.float32` 风格 `DT` 链强制提升成了 Python `float64`。在当前求解器中，前期时间步主要受：
+
+- `DT_old * DT_increase_factor`
+
+约束，因此这处精度提升会让整个全局 `dt` 序列从第 3 步开始统一走向另一条浮点链，最终累积出可见状态差异。
+
+修正方式是：
+
+- 并行分支不再 `float()` 化每条河道返回的 `dt`
+- 保持与串行路径一致的标量精度链
+
+修正后：
+
+- 线程版与串行版重新达到逐点一致
+- 进程版也达到逐点一致，并在 40h 全案例上取得真实正收益
+
+### 为什么不改变计算原理
+
+本改动没有改变：
+
+- 控制方程
+- 离散格式
+- 边界条件公式
+- 结点耦合数学含义
+- 输出定义
+
+进程版只是把“河道局部阶段”放入常驻 worker 执行，河网连接点仍按既有两阶段逻辑交换必要接口量；而 `dt` 修正仅仅是让并行分支回到与串行完全一致的数值精度链。
+
+### 验证命令
+
+10 分钟 exact smoke：
+
+```bash
+/usr/bin/time -p -o result/exp_parallel_process_fixdt_py311_10m/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_parallel_process_fixdt_py311_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_parallel_process_fixdt_py311_40h_time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_parallel_process_fixdt_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  conda run -n python311 python Islam.py
+```
+
+对比：
+
+```bash
+cd handoff_network_model_20260312
+MPLCONFIGDIR=/tmp/mplconfig conda run -n python311 python result/eval_river11_nse.py result/exp_parallel_process_fixdt_py311_40h
+conda run -n python311 python tools/compare_results.py \
+  result/exp_opt6_branchcache_py311_40h \
+  result/exp_parallel_process_fixdt_py311_40h \
+  --out result/exp_parallel_process_fixdt_py311_40h/compare_to_opt6.json
+```
+
+### worker 数量摸底
+
+10 分钟 smoke：
+
+- 串行：`8.94 s`
+- 进程 `2 workers`：`7.96 s`
+- 进程 `4 workers`：`6.89 s`
+- 进程 `8 workers`：`7.21 s`
+
+因此当前机器上先采用 `4 workers`。
+
+### 实测收益
+
+40 小时 full-case：
+
+- 当前最佳串行：`689.86 s`
+- 优化 5（进程，4 workers）：`659.30 s`
+- 相对优化 4：
+  - 绝对减少：`30.56 s`
+  - 相对减少：`4.43%`
+  - 提速倍数：`1.05x`
+- 相对原始基线：
+  - 绝对减少：`231.07 s`
+  - 相对减少：`25.95%`
+  - 提速倍数：`1.35x`
+
+模型内部自报时间：
+
+- 当前最佳串行：`653.71 s`
+- 优化 5：`616.51 s`
+- 相对优化 4 进一步减少：`37.20 s`
+
+### 结果校验结论
+
+- `result/eval_river11_nse.py` 四个 NSE 与串行完全一致
+- `tools/compare_results.py` 返回 `allclose = true`
+- `internal_node_history.csv`
+- `river11_raw_output.nc`
+- `river11_interpolated_output.nc`
+- `boundary_supercritical_counts.csv`
+- 控制点时序
+- 最终状态
+
+全部 `max_abs = 0.0`
+
+### 阶段结论
+
+优化 5 可以接受：
+
+- 是当前第一条“多进程且完全一致”的路径
+- 收益虽然离 1 分钟目标仍很远，但是真正超过了当前最佳串行
+- 进程后端值得保留为后续继续提速的基础设施
