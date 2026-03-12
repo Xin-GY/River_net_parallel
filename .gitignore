@@ -1,0 +1,14 @@
+.venv/
+.vscode/
+__pycache__/
+__MACOSX/
+result/
+*.pyc
+*.pyo
+*.pyd
+*.nbi
+*.nbc
+*.interp_cache.npz
+*.interp_cache.meta.json
+*.Zone.Identifier
+*.Zone.Identifier:Zone.Identifier

@@ -1,0 +1,12 @@
+path,category,purpose
+README.md,doc,交接包总说明
+FILE_MAP.csv,doc,交接包文件索引
+code/current/single_river_clean.py,code,当前单河段求解器核心代码
+code/current/config.py,code,当前求解器全局配置
+code/original_reference/single_riever_base.py,code,最初版本参考代码
+examples/minimal_single_reach_call.py,example,最小矩形单河段调用示例
+examples/minimal_irregular_dynamic_call.py,example,最小不规则断面动态调用示例
+docs/CALLING_PATTERNS.md,doc,调用参数和使用方式说明
+docs/COMPUTATION_FLOW.md,doc,计算链和关键函数说明
+docs/INTEGRATION_NOTES_FOR_NETWORK_ASSEMBLY.md,doc,给河网组装层的集成说明
+docs/CHANGES_FROM_INITIAL_VERSION.md,doc,相对最初版本的修改说明
