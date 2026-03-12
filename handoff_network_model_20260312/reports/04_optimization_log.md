@@ -1196,3 +1196,165 @@ conda run -n python311 python tools/compare_results.py \
   - `process backend`
   - `4 workers`
   - `ISLAM_USE_CYTHON_TABLE=1`
+
+## 优化 9：把 general-HR 默认界面通量路径下沉到 Cython
+
+### 修改点
+
+- 文件：
+  - `cython_cross_section.pyx`
+  - `river_for_net.py`
+- 修改：
+  - 新增 `compute_general_hr_flux_interface(...)`
+  - 在 `_compute_general_hr_interface_flux()` 里，为默认 `return_details=False` 的 general-HR 路径增加 Cython fast path
+  - 保留原有 Python `state dict + details` 路径，只有诊断/明细请求时才回退
+
+### 修改原因
+
+优化 8 之后，演进阶段剩余的硬热点已经转到 general-HR 通量链：
+
+- `_compute_general_hr_interface_flux`
+- `_solve_general_hr_roe_flux`
+- `_project_general_hr_face_state`
+
+这条链每步、每界面都会走，但默认运行并不需要 `details`，因此 Python 侧反复构造：
+
+- `state` 字典
+- 多个临时 `np.array`
+- 多次小函数分拆调用
+
+属于可下沉的纯标量开销。
+
+### 为什么不改变计算原理
+
+本改动没有改变：
+
+- 控制方程
+- HR/Roe 通量公式
+- entropy fix
+- positivity flux control
+- 结点耦合
+- CFL
+- 输出定义
+
+只是把默认无诊断路径上的同一套标量公式改成 Cython 实现；当需要 `details` 时，仍走原 Python 逻辑。
+
+### 验证命令
+
+构建：
+
+```bash
+cd handoff_network_model_20260312
+conda run -n python311 python build_cython_cross_section.py build_ext --inplace
+```
+
+10 分钟 smoke：
+
+```bash
+/usr/bin/time -p -o result/tmp_fluxcython_process_10m/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_fluxcython_process_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_parallel_process_cython_flux_py311_40h/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_parallel_process_cython_flux_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+比较：
+
+```bash
+cd handoff_network_model_20260312
+conda run -n python311 python tools/compare_results.py \
+  result/exp_parallel_process_cython_chi_py311_40h \
+  result/exp_parallel_process_cython_flux_py311_40h \
+  --out result/exp_parallel_process_cython_flux_py311_40h/compare_to_prev_best.json
+conda run -n python311 python result/eval_river11_nse.py result/exp_parallel_process_cython_flux_py311_40h
+```
+
+### 10 分钟 smoke 结果
+
+- 优化 8：`1.95 s`
+- 优化 9：`1.94 s`
+- 绝对减少：`0.01 s`
+- 相对减少：`0.51%`
+
+说明：
+- 这里按当前验收口径，只看模型内部自报演进时间，不把初始化计入优化收益。
+
+### 实测收益
+
+40 小时 full-case：
+
+- 优化 8：wall `521.17 s`，模型内部 `478.50 s`
+- 优化 9：wall `507.12 s`，模型内部 `463.76 s`
+
+相对优化 8：
+
+- wall：
+  - 绝对减少：`14.05 s`
+  - 相对减少：`2.70%`
+- 模型内部演进时间：
+  - 绝对减少：`14.74 s`
+  - 相对减少：`3.08%`
+
+相对原始基线：
+
+- wall：
+  - `890.37 s -> 507.12 s`
+  - 总降幅：`43.04%`
+- 模型内部演进时间：
+  - `832.98 s -> 463.76 s`
+  - 总降幅：`44.33%`
+
+### 结果校验结论
+
+- `result/eval_river11_nse.py`：
+  - `node11_level = 0.873332`
+  - `node11_Q = -0.089159`
+  - `node12_level = 0.911626`
+  - `node12_Q = -0.105344`
+  - `mean_nse = 0.3976138544055814`
+- `tools/compare_results.py` 返回 `allclose = true`
+- 关键文件：
+  - `cfl_history.csv`
+  - `internal_node_history.csv`
+  - `river11_raw_output.nc`
+  - `river11_interpolated_output.nc`
+  - `boundary_supercritical_counts.csv`
+  - 控制点时序
+  - 最终状态
+
+全部 `max_abs = 0.0`
+
+### 阶段结论
+
+优化 9 可以接受：
+
+- 收益不大，但是真实、稳定、可复现
+- 它打到的是每步每界面的硬热点，而不是初始化或 I/O
+- 当前最快严格校验通过的 CPU 方案仍然是：
+  - `process backend`
+  - `4 workers`
+  - `ISLAM_USE_CYTHON_TABLE=1`

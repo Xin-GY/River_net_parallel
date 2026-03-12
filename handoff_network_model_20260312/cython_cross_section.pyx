@@ -7,7 +7,7 @@
 import numpy as np
 cimport cython
 cimport numpy as cnp
-from libc.math cimport sqrt, isnan
+from libc.math cimport sqrt, isnan, fabs
 
 
 cdef inline Py_ssize_t _find_exact(double x, double[:] axis) noexcept:
@@ -46,6 +46,19 @@ cdef inline double _interp_sorted(double x, double[:] xp, double[:] fp) noexcept
     if x1 == x0:
         return y1
     return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
+
+
+cdef inline double _roe_abs_with_fix_cython(double lam, double c, double roe_entropy_fix, double roe_entropy_fix_factor) noexcept:
+    cdef double delta = roe_entropy_fix
+    cdef double aval = fabs(lam)
+    cdef double cabs = c if c >= 0.0 else -c
+    cdef double scaled = roe_entropy_fix_factor * cabs
+    if scaled > delta:
+        delta = scaled
+    if delta <= 0.0 or aval >= delta:
+        return aval
+    return 0.5 * (lam * lam / delta + delta)
+
 
 
 cdef class CrossSectionTableCython:
@@ -418,3 +431,152 @@ cdef class CrossSectionTableCython:
                 return None
             return float(values[idx])
         return float(_interp_sorted(area, axis, values))
+
+
+cpdef tuple compute_general_hr_flux_interface(
+    CrossSectionTableCython left_tbl,
+    CrossSectionTableCython right_tbl,
+    double g,
+    double tiny,
+    double roe_entropy_fix,
+    double roe_entropy_fix_factor,
+    double z_left,
+    double z_right,
+    double h_left,
+    double h_right,
+    double area_left_center,
+    double area_right_center,
+    double q_left_center,
+    double q_right_center,
+):
+    cdef double eta_left
+    cdef double eta_right
+    cdef double u_left
+    cdef double u_right
+    cdef double z_face
+    cdef double h_left_hr
+    cdef double h_right_hr
+    cdef double a_left
+    cdef double a_right
+    cdef double p_left_hr
+    cdef double p_right_hr
+    cdef double q_left
+    cdef double q_right
+    cdef double f_left0
+    cdef double f_left1
+    cdef double f_right0
+    cdef double f_right1
+    cdef double t_left
+    cdef double t_right
+    cdef double c_left
+    cdef double c_right
+    cdef double s_left
+    cdef double s_right
+    cdef double sqrt_al
+    cdef double sqrt_ar
+    cdef double denom
+    cdef double u_roe
+    cdef double c_roe
+    cdef double da
+    cdef double dq
+    cdef double alpha1
+    cdef double alpha2
+    cdef double lam1
+    cdef double lam2
+    cdef double abs1
+    cdef double abs2
+    cdef double flux0
+    cdef double flux1
+
+    if h_left < 0.0:
+        h_left = 0.0
+    if h_right < 0.0:
+        h_right = 0.0
+
+    eta_left = z_left + h_left
+    eta_right = z_right + h_right
+    if area_left_center > tiny and h_left > tiny:
+        u_left = q_left_center / area_left_center
+    else:
+        u_left = 0.0
+    if area_right_center > tiny and h_right > tiny:
+        u_right = q_right_center / area_right_center
+    else:
+        u_right = 0.0
+
+    z_face = z_left if z_left >= z_right else z_right
+    h_left_hr = eta_left - z_face
+    h_right_hr = eta_right - z_face
+    if h_left_hr < 0.0:
+        h_left_hr = 0.0
+    if h_right_hr < 0.0:
+        h_right_hr = 0.0
+
+    a_left = float(left_tbl.get_area_by_depth(h_left_hr))
+    a_right = float(right_tbl.get_area_by_depth(h_right_hr))
+    p_left_hr = float(left_tbl.get_press_by_area(a_left))
+    p_right_hr = float(right_tbl.get_press_by_area(a_right))
+    q_left = a_left * u_left
+    q_right = a_right * u_right
+    f_left0 = q_left
+    f_left1 = q_left * u_left + p_left_hr
+    f_right0 = q_right
+    f_right1 = q_right * u_right + p_right_hr
+
+    if a_left <= tiny and a_right <= tiny:
+        return (0.0, 0.0, p_left_hr, p_right_hr)
+
+    t_left = float(left_tbl.get_width_by_area(a_left if a_left > tiny else tiny))
+    t_right = float(right_tbl.get_width_by_area(a_right if a_right > tiny else tiny))
+    if t_left < tiny:
+        t_left = tiny
+    if t_right < tiny:
+        t_right = tiny
+    c_left = sqrt(g * a_left / t_left) if a_left > tiny else 0.0
+    c_right = sqrt(g * a_right / t_right) if a_right > tiny else 0.0
+    s_left = u_left - c_left
+    if u_right - c_right < s_left:
+        s_left = u_right - c_right
+    s_right = u_left + c_left
+    if u_right + c_right > s_right:
+        s_right = u_right + c_right
+
+    if a_left > tiny and a_right > tiny:
+        sqrt_al = sqrt(a_left if a_left > 0.0 else 0.0)
+        sqrt_ar = sqrt(a_right if a_right > 0.0 else 0.0)
+        denom = sqrt_al + sqrt_ar
+        if denom <= tiny:
+            u_roe = 0.0
+        else:
+            u_roe = (u_left * sqrt_al + u_right * sqrt_ar) / denom
+        if fabs(a_right - a_left) > tiny:
+            c_roe = sqrt((p_right_hr - p_left_hr) / (a_right - a_left)) if (p_right_hr - p_left_hr) / (a_right - a_left) > 0.0 else 0.0
+        else:
+            c_roe = 0.5 * (c_left + c_right)
+        if c_roe <= tiny:
+            flux0 = 0.5 * (f_left0 + f_right0)
+            flux1 = 0.5 * (f_left1 + f_right1)
+        else:
+            da = a_right - a_left
+            dq = q_right - q_left
+            alpha1 = ((u_roe + c_roe) * da - dq) / (2.0 * c_roe)
+            alpha2 = (dq - (u_roe - c_roe) * da) / (2.0 * c_roe)
+            lam1 = u_roe - c_roe
+            lam2 = u_roe + c_roe
+            abs1 = _roe_abs_with_fix_cython(lam1, c_roe, roe_entropy_fix, roe_entropy_fix_factor)
+            abs2 = _roe_abs_with_fix_cython(lam2, c_roe, roe_entropy_fix, roe_entropy_fix_factor)
+            flux0 = 0.5 * (f_left0 + f_right0) - 0.5 * (abs1 * alpha1 + abs2 * alpha2)
+            flux1 = 0.5 * (f_left1 + f_right1) - 0.5 * (abs1 * alpha1 * (u_roe - c_roe) + abs2 * alpha2 * (u_roe + c_roe))
+    elif s_left >= 0.0:
+        flux0 = f_left0
+        flux1 = f_left1
+    elif s_right <= 0.0:
+        flux0 = f_right0
+        flux1 = f_right1
+    elif s_right - s_left <= tiny:
+        flux0 = 0.0
+        flux1 = 0.0
+    else:
+        flux0 = (s_right * f_left0 - s_left * f_right0 + s_left * s_right * (a_right - a_left)) / (s_right - s_left)
+        flux1 = (s_right * f_left1 - s_left * f_right1 + s_left * s_right * (q_right - q_left)) / (s_right - s_left)
+    return (flux0, flux1, p_left_hr, p_right_hr)

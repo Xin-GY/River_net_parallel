@@ -22,9 +22,10 @@ from pyproj import Transformer
 from multiprocessing import Process, Queue
 
 try:
-    from cython_cross_section import CrossSectionTableCython
+    from cython_cross_section import CrossSectionTableCython, compute_general_hr_flux_interface as cython_compute_general_hr_flux_interface
 except Exception:
     CrossSectionTableCython = None
+    cython_compute_general_hr_flux_interface = None
 
 class CrossSectionModel_V3:
 
@@ -2271,6 +2272,45 @@ class River(Process):
 
     def _compute_general_hr_interface_flux(self, i, return_details=False):
         tiny = max(self.S_limit, self.EPSILON)
+        if (not return_details) and cython_compute_general_hr_flux_interface is not None and CrossSectionTableCython is not None:
+            sec_left = self.cell_sections[i]
+            sec_right = self.cell_sections[i + 1]
+            tbl_left = self.cross_section_table.tables.get(sec_left)
+            tbl_right = self.cross_section_table.tables.get(sec_right)
+            if isinstance(tbl_left, CrossSectionTableCython) and isinstance(tbl_right, CrossSectionTableCython):
+                flux0, flux1, p_left_hr, p_right_hr = cython_compute_general_hr_flux_interface(
+                    tbl_left,
+                    tbl_right,
+                    float(self.g),
+                    float(tiny),
+                    float(self.roe_entropy_fix),
+                    float(self.roe_entropy_fix_factor),
+                    float(self.river_bed_height[i]),
+                    float(self.river_bed_height[i + 1]),
+                    max(float(self.water_depth[i]), 0.0),
+                    max(float(self.water_depth[i + 1]), 0.0),
+                    float(self.S[i]),
+                    float(self.S[i + 1]),
+                    float(self.Q[i]),
+                    float(self.Q[i + 1]),
+                )
+                if self.positivity_flux_control and abs(flux0) > tiny and self.DT > 0.0:
+                    donor = None
+                    if flux0 > 0.0 and 1 <= i <= self.cell_num:
+                        donor = i
+                    elif flux0 < 0.0 and 1 <= i + 1 <= self.cell_num:
+                        donor = i + 1
+                    if donor is not None:
+                        available = max(float(self.S[donor]), 0.0) * max(float(self.cell_lengths[donor]), tiny)
+                        max_flux = available / max(float(self.DT), tiny)
+                        if max_flux < abs(flux0):
+                            scale = max_flux / max(abs(flux0), tiny)
+                            flux0 *= scale
+                            flux1 *= scale
+                flux = np.array([flux0, flux1], dtype=float)
+                corr_left = float(self.PRESS[i]) - float(p_left_hr)
+                corr_right = float(self.PRESS[i + 1]) - float(p_right_hr)
+                return flux, corr_left, corr_right
         state = self._load_general_interface_center_state(i, tiny)
         state = self._project_general_hr_face_state(state)
         state = self._solve_general_hr_roe_flux(state, tiny)
