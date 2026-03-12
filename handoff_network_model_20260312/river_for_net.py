@@ -3409,6 +3409,11 @@ class River(Process):
         vector[1] = self.Q[ghost_idx] - self.Q_old[ghost_idx]
 
     def _append_stage_boundary_record(self, ctx, target, stabilizer_state):
+        # Default runs keep boundary diagnostics disabled. Short-circuit here so
+        # the solver does not rebuild diagnostic fluxes and large record dicts
+        # that would be dropped immediately by `_append_boundary_diagnostics`.
+        if not self.enable_boundary_diagnostics:
+            return
         face_flux = self._peek_interface_flux_for_diagnostics(ctx['face_idx'])
         ghost_idx = ctx['ghost_idx']
         inner_idx = ctx['inner_idx']
