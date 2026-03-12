@@ -1585,19 +1585,12 @@ class Rivernet():
                         rec[f'{n}_{name}_cell_Q'] = float(r.Q[1])
                 self.internal_node_history.append(rec)
 
-            pool.call_all('Caculate_face_U_C')
-            pool.call_all('Caculate_Roe_matrix')
-            pool.call_all('Caculate_source_term_2')
-            pool.call_all('Caculate_Roe_Flux_2')
-            if self.use_implicit_branch_update:
-                pool.call_all('Caculate_impli_trans_coefficient')
-                pool.call_all('Assemble_Flux_impli_trans')
-            else:
-                pool.call_all('Assemble_Flux_2')
-            pool.call_all('Update_cell_proprity2')
-
-            if self.save_outputs:
-                pool.call_all('Save_result_per_time_step', names=selected_names)
+            dt_map = pool.advance_local_step(
+                use_implicit_branch_update=self.use_implicit_branch_update,
+                save_names=selected_names if self.save_outputs else None,
+            )
+            self._record_cfl_history(list(dt_map.items()))
+            self.cfl_allowed_dt = min(dt_map.values())
 
             if yield_flag:
                 self.sub_step_caculation_time_using = time.time() - self.sub_step_start_time
@@ -1611,10 +1604,6 @@ class Rivernet():
 
             if finish_flag:
                 break
-
-            dt_map = pool.call_all('Caculate_CFL_time_for_river_net', collect=True)
-            self._record_cfl_history(list(dt_map.items()))
-            self.cfl_allowed_dt = min(dt_map.values())
 
             if self.current_sim_time + self.cfl_allowed_dt > self.total_sim_time + 1e-5:
                 self.DT = self.total_sim_time - self.current_sim_time
@@ -1651,19 +1640,12 @@ class Rivernet():
             snapshots = self._update_boundary_conditions_parallel(pool)
             self._record_internal_node_history_from_snapshots(snapshots)
 
-            pool.call_all('Caculate_face_U_C')
-            pool.call_all('Caculate_Roe_matrix')
-            pool.call_all('Caculate_source_term_2')
-            pool.call_all('Caculate_Roe_Flux_2')
-            if self.use_implicit_branch_update:
-                pool.call_all('Caculate_impli_trans_coefficient')
-                pool.call_all('Assemble_Flux_impli_trans')
-            else:
-                pool.call_all('Assemble_Flux_2')
-            pool.call_all('Update_cell_proprity2')
-
-            if self.save_outputs:
-                pool.call_all('Save_result_per_time_step', names=selected_names)
+            dt_map = pool.advance_local_step(
+                use_implicit_branch_update=self.use_implicit_branch_update,
+                save_names=selected_names if self.save_outputs else None,
+            )
+            self._record_cfl_history(list(dt_map.items()))
+            self.cfl_allowed_dt = min(dt_map.values())
 
             if yield_flag:
                 if self.parallel_sync_main_state_on_yield:
@@ -1679,10 +1661,6 @@ class Rivernet():
 
             if finish_flag:
                 break
-
-            dt_map = pool.call_all('Caculate_CFL_time_for_river_net', collect=True)
-            self._record_cfl_history(list(dt_map.items()))
-            self.cfl_allowed_dt = min(dt_map.values())
 
             if self.current_sim_time + self.cfl_allowed_dt > self.total_sim_time + 1e-5:
                 self.DT = self.total_sim_time - self.current_sim_time

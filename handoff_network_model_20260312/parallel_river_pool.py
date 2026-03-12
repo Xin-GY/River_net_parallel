@@ -21,6 +21,22 @@ SNAP_BOUNDARY_FACE_AREA = 10
 SNAP_BOUNDARY_FACE_WIDTH = 11
 
 
+def _advance_local_river_step(river, use_implicit_branch_update=False, save_output=False):
+    river.Caculate_face_U_C()
+    river.Caculate_Roe_matrix()
+    river.Caculate_source_term_2()
+    river.Caculate_Roe_Flux_2()
+    if use_implicit_branch_update:
+        river.Caculate_impli_trans_coefficient()
+        river.Assemble_Flux_impli_trans()
+    else:
+        river.Assemble_Flux_2()
+    river.Update_cell_proprity2()
+    if save_output:
+        river.Save_result_per_time_step()
+    return river.Caculate_CFL_time_for_river_net()
+
+
 def _safe_float(value):
     if value is None:
         return math.nan
@@ -117,6 +133,19 @@ def _worker_main(connection, rivers):
                 )
                 continue
 
+            if command == 'advance_local_step':
+                results = {}
+                save_names = set(payload.get('save_names', ()))
+                use_implicit_branch_update = bool(payload.get('use_implicit_branch_update', False))
+                for name in payload['names']:
+                    results[name] = _advance_local_river_step(
+                        river_map[name],
+                        use_implicit_branch_update=use_implicit_branch_update,
+                        save_output=name in save_names,
+                    )
+                connection.send((task_id, 'ok', results))
+                continue
+
             if command == 'get_rivers':
                 names = payload['names']
                 connection.send(
@@ -204,6 +233,24 @@ class PersistentRiverThreadPool:
         selected = names if names is not None else [name for name, _ in self.river_items]
         self.call_batch(calls, collect=False)
         return {name: _river_interface_snapshot(self._river_map[name]) for name in selected}
+
+    def advance_local_step(self, names=None, use_implicit_branch_update=False, save_names=None):
+        selected = names if names is not None else [name for name, _ in self.river_items]
+        save_set = set(save_names or ())
+        futures = []
+        for name in selected:
+            future = self._executor.submit(
+                _advance_local_river_step,
+                self._river_map[name],
+                use_implicit_branch_update=bool(use_implicit_branch_update),
+                save_output=name in save_set,
+            )
+            futures.append((name, future))
+
+        results = {}
+        for name, future in futures:
+            results[name] = future.result()
+        return results
 
     def shutdown(self):
         self._executor.shutdown(wait=True, cancel_futures=False)
@@ -343,6 +390,31 @@ class PersistentRiverProcessPool:
                 {
                     'calls': worker_calls,
                     'names': worker_names or [],
+                },
+            )
+            pending.append((worker, task_id))
+
+        results = {}
+        for worker, task_id in pending:
+            results.update(self._collect(worker, task_id))
+        return results
+
+    def advance_local_step(self, names=None, use_implicit_branch_update=False, save_names=None):
+        grouped_names = self._group_names(names)
+        save_set = set(save_names or ())
+        pending = []
+        for worker in self._workers:
+            worker_names = grouped_names.get(worker['id'])
+            if not worker_names:
+                continue
+            worker_save_names = [name for name in worker_names if name in save_set]
+            task_id = self._submit(
+                worker,
+                'advance_local_step',
+                {
+                    'names': worker_names,
+                    'save_names': worker_save_names,
+                    'use_implicit_branch_update': bool(use_implicit_branch_update),
                 },
             )
             pending.append((worker, task_id))

@@ -1523,3 +1523,215 @@ conda run -n python311 python result/eval_river11_nse.py result/exp_parallel_pro
   - `process backend`
   - `4 workers`
   - `ISLAM_USE_CYTHON_TABLE=1`
+
+## 优化 11：把每步河道内部 phase barrier 合并为单次持久 worker 命令
+
+### 修改点
+
+- 文件：`parallel_river_pool.py`
+- 新增：
+  - `_advance_local_river_step()`
+  - `PersistentRiverThreadPool.advance_local_step()`
+  - `PersistentRiverProcessPool.advance_local_step()`
+  - worker 命令 `advance_local_step`
+- 文件：`Rivernet.py`
+- 修改：
+  - `_evolve_base_parallel_threads()`
+  - `_evolve_base_parallel_process()`
+- 变更内容：
+  - 将每步河道内部这条固定顺序：
+    - `Caculate_face_U_C`
+    - `Caculate_Roe_matrix`
+    - `Caculate_source_term_2`
+    - `Caculate_Roe_Flux_2`
+    - `Assemble_Flux_2` / `Assemble_Flux_impli_trans`
+    - `Update_cell_proprity2`
+    - `Save_result_per_time_step`
+    - `Caculate_CFL_time_for_river_net`
+  - 从多次 `pool.call_all(...)` 合并为一次 `pool.advance_local_step(...)`
+
+### 修改原因
+
+优化 10 之后，10 分钟并行主进程 `cProfile` 已经明确显示剩余主瓶颈不在求解公式，而在进程池 phase barrier：
+
+- `parallel_river_pool._collect`：`2.707 s`
+- `multiprocessing.connection.recv`：`2.690 s`
+- `posix.read`：`2.441 s`
+
+这些成本主要来自“每个时间步把同一条河道的本地推进拆成多次 worker 往返”。而在边界和结点同步完成之后，河道内部推进到 CFL 计算这一段是完全局部的：
+
+- 不依赖其他河道状态
+- 不依赖新的结点交换
+- 只要求保持单河道内部调用顺序不变
+
+因此可以把这段顺序计算压缩成一次持久 worker 命令，减少 IPC 次数，而不改变单河道的计算逻辑。
+
+### 为什么不改变计算原理
+
+本改动没有改变：
+
+- 控制方程
+- Roe 通量
+- 源项与摩阻更新
+- 边界条件数学公式
+- 结点耦合方式
+- CFL 选取口径
+- 输出定义
+
+它只把“原本分散的、同一河道内固定顺序调用”打包到了 worker 内顺序执行。
+
+每条河道内部仍然严格按原顺序执行：
+
+1. `Caculate_face_U_C`
+2. `Caculate_Roe_matrix`
+3. `Caculate_source_term_2`
+4. `Caculate_Roe_Flux_2`
+5. `Assemble_Flux_2` / `Assemble_Flux_impli_trans`
+6. `Update_cell_proprity2`
+7. `Save_result_per_time_step`
+8. `Caculate_CFL_time_for_river_net`
+
+河网层仍然保持：
+
+- 先统一做边界/结点耦合
+- 再让各河道独立推进
+- 每步结束后再统一取 CFL
+
+所以数学含义与串行/旧并行路径一致。
+
+### 验证命令
+
+10 分钟 smoke：
+
+```bash
+/usr/bin/time -p -o result/tmp_fusedstep_process_10m/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_fusedstep_process_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+10 分钟主进程 profile：
+
+```bash
+env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_profile_fused_process_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  /usr/bin/time -p conda run -n python311 python -m cProfile \
+  -o result/tmp_profile_fused_process_10m.prof Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_parallel_process_fusedstep_py311_40h/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_parallel_process_fusedstep_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+比较：
+
+```bash
+conda run -n python311 python tools/compare_results.py \
+  result/exp_parallel_process_cython_boundary_py311_40h \
+  result/exp_parallel_process_fusedstep_py311_40h \
+  --out result/exp_parallel_process_fusedstep_py311_40h/compare_to_prev_best.json
+
+conda run -n python311 python result/eval_river11_nse.py \
+  result/exp_parallel_process_fusedstep_py311_40h
+```
+
+### 10 分钟 smoke 结果
+
+- 优化 10：`1.57 s`
+- 优化 11：`1.45 s`
+- 绝对减少：`0.12 s`
+- 相对减少：`7.64%`
+
+wall time：
+
+- 优化 10：`6.09 s`
+- 优化 11：`5.40 s`
+- 绝对减少：`0.69 s`
+- 相对减少：`11.33%`
+
+10 分钟主进程 profile 变化：
+
+- `recv` 调用次数：`15886 -> 11361`
+- `posix.read`：`2.441 s -> 2.140 s`
+- `_collect`：`2.707 s -> 2.346 s`
+
+### 实测收益
+
+40 小时 full-case：
+
+- 优化 10：wall `484.08 s`，模型内部 `441.06 s`
+- 优化 11：wall `446.50 s`，模型内部 `404.22 s`
+
+相对优化 10：
+
+- wall：
+  - 绝对减少：`37.58 s`
+  - 相对减少：`7.76%`
+- 模型内部演进时间：
+  - 绝对减少：`36.84 s`
+  - 相对减少：`8.35%`
+
+相对原始基线：
+
+- wall：
+  - `890.37 s -> 446.50 s`
+  - 总降幅：`49.85%`
+- 模型内部演进时间：
+  - `832.98 s -> 404.22 s`
+  - 总降幅：`51.47%`
+
+### 结果校验结论
+
+- `result/eval_river11_nse.py`：
+  - `node11_level = 0.873332`
+  - `node11_Q = -0.089159`
+  - `node12_level = 0.911626`
+  - `node12_Q = -0.105344`
+  - `mean_nse = 0.3976138544055814`
+- `tools/compare_results.py` 返回 `allclose = true`
+- 关键文件：
+  - `internal_node_history.csv`
+  - `river11_raw_output.nc`
+  - `river11_interpolated_output.nc`
+  - `boundary_supercritical_counts.csv`
+  - 控制点时序
+  - 最终状态
+
+全部 `max_abs = 0.0`
+
+### 阶段结论
+
+优化 11 可以接受：
+
+- 它不碰单河道数值公式，收益主要来自减少 phase barrier 与 worker 往返
+- 这是当前为止收益最大的“纯并行调度层”优化
+- 当前最快严格校验通过的 CPU 方案更新为：
+  - `process backend`
+  - `4 workers`
+  - `ISLAM_USE_CYTHON_TABLE=1`
