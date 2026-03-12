@@ -1,5 +1,5 @@
 # from Rivernet import Rivernet
-from river_net_handoff import Rivernet
+from river_net_olduse_serial import Rivernet
 import numpy as np, math
 import pandas as pd
 import os
@@ -9,7 +9,7 @@ from math import gamma
 from persistent_interpolator import PersistentLinearInterpolator
 from tool_fun.section_offset import adjust_sections_by_river_bed_average
 
-output_path = 'result/Islam_base'
+output_path = 'result/Islam_olduse_serial'
 
 os.makedirs(output_path, exist_ok=True)
 
@@ -383,10 +383,8 @@ level = PersistentLinearInterpolator('bound/Islam_level_out.csv', allow_extrapol
 Q = PersistentLinearInterpolator('bound/Islam_Q_In.csv', allow_extrapolation=True)
 
 
-def build_net(parallel_workers=0, export_graph=False):
+def build_net(export_graph=False):
     run_model_data = dict(model_data)
-    run_model_data['parallel_workers'] = int(parallel_workers)
-
     run_top = {}
     for edge, info in top.items():
         copied = dict(info)
@@ -416,8 +414,8 @@ def build_net(parallel_workers=0, export_graph=False):
     return net
 
 
-def run_once(parallel_workers=0, yield_step=1800, export_graph=False, print_progress=False):
-    net = build_net(parallel_workers=parallel_workers, export_graph=export_graph)
+def run_once(yield_step=1800, export_graph=False, print_progress=False):
+    net = build_net(export_graph=export_graph)
     t0 = time.perf_counter()
     for _ in net.Evolve(yield_step):
         if print_progress:
@@ -426,49 +424,20 @@ def run_once(parallel_workers=0, yield_step=1800, export_graph=False, print_prog
     return elapsed, net.caculation_time
 
 
-def benchmark_0_to_4(yield_step=1800):
-    rows = []
-    for workers in range(0, 5):
-        print(f"\n[Benchmark] parallel_workers={workers} 开始")
-        wall_elapsed, evolve_elapsed = run_once(
-            parallel_workers=workers,
-            yield_step=yield_step,
-            export_graph=False,
-            print_progress=False
-        )
-        rows.append((workers, wall_elapsed, evolve_elapsed))
-        print(
-            f"[Benchmark] parallel_workers={workers} 完成: "
-            f"wall={wall_elapsed:.3f}s, evolve={evolve_elapsed:.3f}s"
-        )
-
-    print("\n=== Islam 并行核心基准 (0-4) ===")
-    print("workers\twall_seconds\tevolve_seconds")
-    for workers, wall_elapsed, evolve_elapsed in rows:
-        print(f"{workers}\t{wall_elapsed:.3f}\t{evolve_elapsed:.3f}")
-
-
 def main():
-    parser = argparse.ArgumentParser(description='Islam 河网模型运行/并行基准')
-    parser.add_argument('--workers', type=int, default=0, help='并行核心数，0/1=串行，>=2=并行')
+    parser = argparse.ArgumentParser(description='Islam 河网模型运行（old_use 串行调度逻辑，最新版 River 内核）')
     parser.add_argument('--yield-step', type=float, default=1800.0, help='Evolve 回报间隔(秒)')
-    parser.add_argument('--benchmark', action='store_true', help='运行 0-4 核心基准测试')
     parser.add_argument('--export-graph', action='store_true', help='导出河网拓扑图')
     parser.add_argument('--print-progress', action='store_true', help='打印演进信息')
     args = parser.parse_args()
 
-    if args.benchmark:
-        benchmark_0_to_4(yield_step=args.yield_step)
-        return
-
     wall_elapsed, evolve_elapsed = run_once(
-        parallel_workers=args.workers,
         yield_step=args.yield_step,
         export_graph=args.export_graph,
         print_progress=args.print_progress
     )
     print(
-        f"运行完成: workers={args.workers}, "
+        f"运行完成: output={output_path}, "
         f"wall={wall_elapsed:.3f}s, evolve={evolve_elapsed:.3f}s"
     )
 
