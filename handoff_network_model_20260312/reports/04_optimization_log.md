@@ -137,3 +137,109 @@ mean_nse     =  0.3976138544055814
 - `allclose`
 
 后续每一轮优化都复用这一个脚本做结果一致性检查。
+
+## 优化 2：缓存固定拓扑下的河道 edge 列表与 bound method
+
+### 修改点
+
+- 文件：`Rivernet.py`
+- 新增：
+  - `_refresh_river_cache()`
+  - `self._river_edges`
+  - `self._river_method_cache`
+- 修改：
+  - `call_river_function_by_name()` 改为按函数名缓存已绑定 method
+  - 多个高频 wrapper 改为遍历 `self._river_edges`，不再每次重新走 `self.G.edges(data=True)`
+
+### 修改原因
+
+full-case `cProfile` 表明：
+
+- `call_river_function_by_name` 被调用 `179815` 次
+- `networkx/classes/reportviews.py` 聚合纯耗时约 `42.312 s`
+
+河网拓扑在当前 workflow 中是固定的，因此：
+
+- 重复生成 edge view
+- 重复做 `hasattr/getattr/callable`
+
+都属于可压缩的纯 Python 调度成本。
+
+### 为什么不改变计算原理
+
+本改动不改变：
+
+- 河道求解器
+- 内部节点耦合公式
+- 外边界条件
+- 输出逻辑
+
+它只把“固定拓扑下的对象分派方式”从反复动态查找，改成初始化后缓存。
+
+### 验证命令
+
+运行：
+
+```bash
+/usr/bin/time -p -o result/exp_opt2_rivercache_py311_40h/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_opt2_rivercache_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  conda run -n python311 python Islam.py \
+  > result/exp_opt2_rivercache_py311_40h/run.log 2>&1
+```
+
+比较：
+
+```bash
+MPLCONFIGDIR=/tmp/mplconfig conda run -n python311 python result/eval_river11_nse.py result/exp_opt2_rivercache_py311_40h
+conda run -n python311 python tools/compare_results.py \
+  result/exp_baseline_py311_40h \
+  result/exp_opt2_rivercache_py311_40h \
+  --out result/exp_opt2_rivercache_py311_40h/compare_to_baseline.json
+conda run -n python311 python tools/compare_results.py \
+  result/exp_opt1_diagshort_py311_40h \
+  result/exp_opt2_rivercache_py311_40h \
+  --out result/exp_opt2_rivercache_py311_40h/compare_to_opt1.json
+```
+
+### 实测收益
+
+- 优化 1：`736.00 s`
+- 优化 2：`731.92 s`
+- 相对优化 1：
+  - 绝对减少：`4.08 s`
+  - 相对减少：`0.55%`
+  - 提速倍数：`1.01x`
+- 相对原始基线：
+  - 绝对减少：`158.45 s`
+  - 相对减少：`17.80%`
+  - 提速倍数：`1.22x`
+
+模型内部自报时间：
+
+- 优化 1：`699.63 s`
+- 优化 2：`695.04 s`
+- 相对优化 1 进一步减少：`4.59 s`
+
+### 结果校验结论
+
+- 四个 NSE 与基线完全一致
+- `tools/compare_results.py` 对：
+  - `exp_baseline_py311_40h` vs `exp_opt2_rivercache_py311_40h`
+  - `exp_opt1_diagshort_py311_40h` vs `exp_opt2_rivercache_py311_40h`
+  均返回 `allclose = true`
+
+### 阶段结论
+
+优化 2 可以保留，但它属于“小收益、低风险”类型：
+
+- 正确性完全通过
+- 有正向收益
+- 但收益幅度很小
+
+后续更值得投入的是：
+
+- 内部节点高频函数里的 `in_edges/out_edges` 邻接缓存

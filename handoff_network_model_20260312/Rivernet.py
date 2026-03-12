@@ -24,6 +24,7 @@ class Rivernet():
         self.topology = Topology # 存储河网拓扑信息
         self.G = nx.DiGraph() # 创建有向图
         self.Create_Rivernet() # 创建河网
+        self._refresh_river_cache()
 
         # 边界条件组织
         # { node_name: {"type": btype, "call": f(t), "_val":[v](仅常数有)} }
@@ -100,6 +101,13 @@ class Rivernet():
         self.output_river_names = None
         # 分支更新格式：False=显式组装（默认），True=隐式传输系数组装
         self.use_implicit_branch_update = False
+
+    def _refresh_river_cache(self):
+        # Topology is fixed after construction in the current workflow. Cache
+        # edge payloads and bound methods to reduce repeated networkx view
+        # traversal and hasattr/getattr dispatch in the tight time loop.
+        self._river_edges = list(self.G.edges(data=True))
+        self._river_method_cache = {}
 
     # 创建河网
     def Create_Rivernet(self):
@@ -248,27 +256,34 @@ class Rivernet():
 
     # 调用每条河道函数
     def call_river_function(self):
-        for u, v, data in self.G.edges(data=True):
+        for u, v, data in self._river_edges:
             river = data['river']
             river.Call_fun_test()  # 假设每条河道都有 Call_fun_test 函数
 
     # 调用河道指定函数
     def call_river_function_by_name(self, function_name):
-        for u, v, data in self.G.edges(data=True):
-            river = data['river']
-            if river is None:
-                print(f'河道 {data["name"]} 没有定义河流对象，无法调用')
-                continue
-            if hasattr(river, function_name):
+        cached = self._river_method_cache.get(function_name)
+        if cached is None:
+            cached = []
+            for _, _, data in self._river_edges:
+                river = data['river']
+                if river is None:
+                    print(f'河道 {data["name"]} 没有定义河流对象，无法调用')
+                    continue
+                if not hasattr(river, function_name):
+                    print(f'河道 {data["name"]} 没有名为 {function_name} 的函数')
+                    continue
                 func = getattr(river, function_name)
-                if callable(func):
-                    func()
-                    if self.verbos:
-                        print(f'河道 {data["name"]} 的 {function_name} 函数调用成功')
-                else:
+                if not callable(func):
                     print(f'河道 {data["name"]} 的 {function_name} 不是一个可调用的函数')
-            else:
-                print(f'河道 {data["name"]} 没有名为 {function_name} 的函数')
+                    continue
+                cached.append((data['name'], func))
+            self._river_method_cache[function_name] = cached
+
+        for river_name, func in cached:
+            func()
+            if self.verbos:
+                print(f'河道 {river_name} 的 {function_name} 函数调用成功')
 
     # 设置边界条件
     def set_boundary(self, node: str, btype: str, data=None):
@@ -369,11 +384,11 @@ class Rivernet():
     # 初始化网格参数
     def Init_cell_property_net(self):
         if self.Fine_flag:
-            for u, v, data in self.G.edges(data=True):
+            for _, _, data in self._river_edges:
                 river = data['river']
                 river.Init_cell_proprity(True) # 如果网格已重新插值，则不根据断面高度修改河底高程
         else:
-            for u, v, data in self.G.edges(data=True):
+            for _, _, data in self._river_edges:
                 river = data['river']
                 river.Init_cell_proprity(False) # 如果网格未重新插值，则根据断面高度修改河底高程
 
@@ -384,7 +399,7 @@ class Rivernet():
             selected = set(selected)
             self.output_river_names = selected
 
-        for _, _, data in self.G.edges(data=True):
+        for _, _, data in self._river_edges:
             name = data.get('name')
             if selected is not None and name not in selected:
                 continue
@@ -421,7 +436,7 @@ class Rivernet():
     # 保存单步模拟结果
     def Save_step_result_net(self):
         selected = self.output_river_names
-        for _, _, data in self.G.edges(data=True):
+        for _, _, data in self._river_edges:
             name = data.get('name')
             if selected is not None and name not in selected:
                 continue
@@ -444,7 +459,7 @@ class Rivernet():
         dt_list = []
 
         # 计算每条河道的CFL时间步长
-        for u, v, data in self.G.edges(data=True):
+        for _, _, data in self._river_edges:
             dti = data['river'].Caculate_CFL_time_for_river_net()
             dt_list.append(dti)
 
@@ -455,7 +470,7 @@ class Rivernet():
 
     def Set_global_time_step(self, dt):
         # 更新每条河道的时间步长
-        for u, v, data in self.G.edges(data=True):
+        for _, _, data in self._river_edges:
             data['river'].set_next_dt(dt)
 
     # 更新边界条件
@@ -1141,7 +1156,7 @@ class Rivernet():
     # 重采样并保存结果
     def Resample_and_Save_result_net(self):
         selected = self.output_river_names
-        for _, _, data in self.G.edges(data=True):
+        for _, _, data in self._river_edges:
             name = data.get('name')
             if selected is not None and name not in selected:
                 continue
@@ -1289,7 +1304,7 @@ class Rivernet():
         self.Init_water_surface_net()
 
         # 同步各分支的隐式边界标志
-        for _, _, data in self.G.edges(data=True):
+        for _, _, data in self._river_edges:
             data['river'].Implic_flag = bool(self.use_implicit_branch_update)
 
         # 初始化其余参数
