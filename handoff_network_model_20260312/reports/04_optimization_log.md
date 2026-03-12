@@ -1735,3 +1735,172 @@ wall time：
   - `process backend`
   - `4 workers`
   - `ISLAM_USE_CYTHON_TABLE=1`
+
+## 优化 12：压缩内部结点迭代阶段的并行 snapshot 负载
+
+### 修改点
+
+- 文件：`parallel_river_pool.py`
+- 修改：
+  - `_river_interface_snapshot()` 新增 `mode='compact'`
+  - `call_batch_and_interface_snapshots()` 支持 `snapshot_mode`
+  - process/thread backend 都支持 compact snapshot
+- 文件：`Rivernet.py`
+- 新增：
+  - `_parallel_can_use_compact_snapshots()`
+- 修改：
+  - `_update_boundary_conditions_parallel()` 在满足当前默认内部结点配置时：
+    - 外边界与内部结点迭代阶段使用 compact snapshot
+    - 最终记录 `internal_node_history.csv` 前仍强制取 full snapshot
+  - `_parallel_node_average_level_at_real_cell()`
+  - `_parallel_node_average_level_at_ghost_cell()`
+  - `_parallel_node_mass_residual()`
+  - `_parallel_node_ac()`
+  - `_build_parallel_internal_level_ops()` 去掉了 `0.0 * velocity^2 / (2g)` 的死计算
+
+### 修改原因
+
+优化 11 之后，主进程剩余大头已经集中到 `_update_boundary_conditions_parallel()`。
+
+在当前 Islam 默认 process 配置下，内部结点迭代真正需要的字段非常少：
+
+- 初值预测：`ghost_level / cell_level`
+- 残差：`ghost_Q`
+- `paper Ac`：`ghost_S / ghost_width / ghost_Q`
+
+但旧实现每次迭代都要把每条河道两端的 12 字段 full snapshot 全部回传，包括：
+
+- `cell_Q`
+- `boundary_face_level`
+- `boundary_face_discharge`
+- `boundary_face_area`
+- `boundary_face_width`
+
+这些字段对当前内部结点迭代并不参与计算，只在最终 history 写出时才需要。因此可以把“迭代阶段的中间快照”瘦身成最小字段集，减少 IPC 体积。
+
+### 为什么不改变计算原理
+
+本改动没有改变：
+
+- 结点残差公式
+- `paper Ac` 公式
+- 固定水位边界闭合
+- 河道推进顺序
+- CFL
+- 输出定义
+
+它只改变“结点迭代阶段 worker 回传的数据载荷”，不改变回传数据的数学含义。
+
+并且：
+
+- 只有在当前默认内部结点配置下才启用 compact snapshot
+- 其他配置继续走 full snapshot 旧路径
+- 最终 history 记录前仍然强制取 full snapshot，所以输出文件完全不变
+
+### 验证命令
+
+10 分钟 smoke：
+
+```bash
+/usr/bin/time -p -o result/tmp_compactsnap_process_10m/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_compactsnap_process_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_parallel_process_compactsnap_py311_40h/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_parallel_process_compactsnap_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+比较：
+
+```bash
+conda run -n python311 python tools/compare_results.py \
+  result/exp_parallel_process_fusedstep_py311_40h \
+  result/exp_parallel_process_compactsnap_py311_40h \
+  --out result/exp_parallel_process_compactsnap_py311_40h/compare_to_prev_best.json
+
+conda run -n python311 python result/eval_river11_nse.py \
+  result/exp_parallel_process_compactsnap_py311_40h
+```
+
+### 10 分钟 smoke 结果
+
+- 优化 11：`1.45 s`
+- 优化 12：`1.38 s`
+- 绝对减少：`0.07 s`
+- 相对减少：`4.83%`
+
+### 实测收益
+
+40 小时 full-case：
+
+- 优化 11：wall `446.50 s`，模型内部 `404.22 s`
+- 优化 12：wall `442.12 s`，模型内部 `399.33 s`
+
+相对优化 11：
+
+- wall：
+  - 绝对减少：`4.38 s`
+  - 相对减少：`0.98%`
+- 模型内部演进时间：
+  - 绝对减少：`4.89 s`
+  - 相对减少：`1.21%`
+
+相对原始基线：
+
+- wall：
+  - `890.37 s -> 442.12 s`
+  - 总降幅：`50.34%`
+- 模型内部演进时间：
+  - `832.98 s -> 399.33 s`
+  - 总降幅：`52.06%`
+
+### 结果校验结论
+
+- `result/eval_river11_nse.py`：
+  - `node11_level = 0.873332`
+  - `node11_Q = -0.089159`
+  - `node12_level = 0.911626`
+  - `node12_Q = -0.105344`
+  - `mean_nse = 0.3976138544055814`
+- `tools/compare_results.py` 返回 `allclose = true`
+- 关键文件：
+  - `internal_node_history.csv`
+  - `river11_raw_output.nc`
+  - `river11_interpolated_output.nc`
+  - `boundary_supercritical_counts.csv`
+  - 控制点时序
+  - 最终状态
+
+全部 `max_abs = 0.0`
+
+### 阶段结论
+
+优化 12 可以接受：
+
+- 它是沿着优化 11 剩下的 IPC 热点继续压 payload
+- 收益不大，但仍然稳定、严格一致
+- 当前最快严格校验通过的 CPU 方案更新为：
+  - `process backend`
+  - `4 workers`
+  - `ISLAM_USE_CYTHON_TABLE=1`

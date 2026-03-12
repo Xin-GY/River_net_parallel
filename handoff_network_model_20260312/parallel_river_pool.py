@@ -20,6 +20,12 @@ SNAP_BOUNDARY_FACE_DISCHARGE = 9
 SNAP_BOUNDARY_FACE_AREA = 10
 SNAP_BOUNDARY_FACE_WIDTH = 11
 
+SNAP_COMPACT_GHOST_LEVEL = 0
+SNAP_COMPACT_CELL_LEVEL = 1
+SNAP_COMPACT_GHOST_Q = 2
+SNAP_COMPACT_GHOST_S = 3
+SNAP_COMPACT_GHOST_WIDTH = 4
+
 
 def _advance_local_river_step(river, use_implicit_branch_update=False, save_output=False):
     river.Caculate_face_U_C()
@@ -43,14 +49,12 @@ def _safe_float(value):
     return float(value)
 
 
-def _river_interface_snapshot(river):
+def _river_interface_snapshot(river, mode='full'):
     tiny = 1.0e-12
 
     def pack_end(ghost_idx, cell_idx, face_suffix):
         ghost_area = float(max(river.S[ghost_idx], 0.0))
-        cell_area = float(max(river.S[cell_idx], 0.0))
         ghost_width = 0.0
-        cell_width = 0.0
         if ghost_area > 0.0:
             ghost_width = float(
                 river.cross_section_table.get_width_by_area(
@@ -58,6 +62,16 @@ def _river_interface_snapshot(river):
                     max(ghost_area, tiny),
                 )
             )
+        if mode == 'compact':
+            return (
+                float(river.water_level[ghost_idx]),
+                float(river.water_level[cell_idx]),
+                float(river.Q[ghost_idx]),
+                ghost_area,
+                ghost_width,
+            )
+        cell_area = float(max(river.S[cell_idx], 0.0))
+        cell_width = 0.0
         if cell_area > 0.0:
             cell_width = float(
                 river.cross_section_table.get_width_by_area(
@@ -109,11 +123,12 @@ def _worker_main(connection, rivers):
 
             if command == 'interface_snapshots':
                 names = payload['names']
+                mode = payload.get('snapshot_mode', 'full')
                 connection.send(
                     (
                         task_id,
                         'ok',
-                        {name: _river_interface_snapshot(river_map[name]) for name in names},
+                        {name: _river_interface_snapshot(river_map[name], mode=mode) for name in names},
                     )
                 )
                 continue
@@ -124,11 +139,12 @@ def _worker_main(connection, rivers):
                     method = getattr(river, call['method'])
                     method(*call.get('args', ()), **call.get('kwargs', {}))
                 names = payload['names']
+                mode = payload.get('snapshot_mode', 'full')
                 connection.send(
                     (
                         task_id,
                         'ok',
-                        {name: _river_interface_snapshot(river_map[name]) for name in names},
+                        {name: _river_interface_snapshot(river_map[name], mode=mode) for name in names},
                     )
                 )
                 continue
@@ -229,10 +245,10 @@ class PersistentRiverThreadPool:
         selected = names if names is not None else [name for name, _ in self.river_items]
         return {name: self._river_map[name] for name in selected}
 
-    def call_batch_and_interface_snapshots(self, calls, names=None):
+    def call_batch_and_interface_snapshots(self, calls, names=None, snapshot_mode='full'):
         selected = names if names is not None else [name for name, _ in self.river_items]
         self.call_batch(calls, collect=False)
-        return {name: _river_interface_snapshot(self._river_map[name]) for name in selected}
+        return {name: _river_interface_snapshot(self._river_map[name], mode=snapshot_mode) for name in selected}
 
     def advance_local_step(self, names=None, use_implicit_branch_update=False, save_names=None):
         selected = names if names is not None else [name for name, _ in self.river_items]
@@ -357,14 +373,18 @@ class PersistentRiverProcessPool:
         ]
         return self.call_batch(calls, collect=collect)
 
-    def get_interface_snapshots(self, names=None):
+    def get_interface_snapshots(self, names=None, snapshot_mode='full'):
         grouped = self._group_names(names)
         pending = []
         for worker in self._workers:
             worker_names = grouped.get(worker['id'])
             if not worker_names:
                 continue
-            task_id = self._submit(worker, 'interface_snapshots', {'names': worker_names})
+            task_id = self._submit(
+                worker,
+                'interface_snapshots',
+                {'names': worker_names, 'snapshot_mode': snapshot_mode},
+            )
             pending.append((worker, task_id))
 
         results = {}
@@ -372,7 +392,7 @@ class PersistentRiverProcessPool:
             results.update(self._collect(worker, task_id))
         return results
 
-    def call_batch_and_interface_snapshots(self, calls, names=None):
+    def call_batch_and_interface_snapshots(self, calls, names=None, snapshot_mode='full'):
         grouped_calls = {worker['id']: [] for worker in self._workers}
         for call in calls:
             grouped_calls[self._river_to_worker[call['river']]].append(call)
@@ -390,6 +410,7 @@ class PersistentRiverProcessPool:
                 {
                     'calls': worker_calls,
                     'names': worker_names or [],
+                    'snapshot_mode': snapshot_mode,
                 },
             )
             pending.append((worker, task_id))

@@ -25,6 +25,11 @@ from parallel_river_pool import (
     SNAP_GHOST_Q,
     SNAP_GHOST_S,
     SNAP_GHOST_WIDTH,
+    SNAP_COMPACT_CELL_LEVEL,
+    SNAP_COMPACT_GHOST_LEVEL,
+    SNAP_COMPACT_GHOST_Q,
+    SNAP_COMPACT_GHOST_S,
+    SNAP_COMPACT_GHOST_WIDTH,
     SNAP_LEFT,
     SNAP_RIGHT,
 )
@@ -1216,9 +1221,17 @@ class Rivernet():
     def _parallel_node_average_level_at_real_cell(self, node, snapshots):
         level_list = []
         for _, name in self._in_branches_by_node[node]:
-            level_list.append(float(snapshots[name][SNAP_RIGHT][SNAP_CELL_LEVEL]))
+            end = snapshots[name][SNAP_RIGHT]
+            if len(end) == SNAP_COMPACT_GHOST_WIDTH + 1:
+                level_list.append(float(end[SNAP_COMPACT_CELL_LEVEL]))
+            else:
+                level_list.append(float(end[SNAP_CELL_LEVEL]))
         for _, name in self._out_branches_by_node[node]:
-            level_list.append(float(snapshots[name][SNAP_LEFT][SNAP_CELL_LEVEL]))
+            end = snapshots[name][SNAP_LEFT]
+            if len(end) == SNAP_COMPACT_GHOST_WIDTH + 1:
+                level_list.append(float(end[SNAP_COMPACT_CELL_LEVEL]))
+            else:
+                level_list.append(float(end[SNAP_CELL_LEVEL]))
         if level_list:
             return float(np.average(level_list))
         return np.nan
@@ -1226,9 +1239,17 @@ class Rivernet():
     def _parallel_node_average_level_at_ghost_cell(self, node, snapshots):
         level_list = []
         for _, name in self._in_branches_by_node[node]:
-            level_list.append(float(snapshots[name][SNAP_RIGHT][SNAP_GHOST_LEVEL]))
+            end = snapshots[name][SNAP_RIGHT]
+            if len(end) == SNAP_COMPACT_GHOST_WIDTH + 1:
+                level_list.append(float(end[SNAP_COMPACT_GHOST_LEVEL]))
+            else:
+                level_list.append(float(end[SNAP_GHOST_LEVEL]))
         for _, name in self._out_branches_by_node[node]:
-            level_list.append(float(snapshots[name][SNAP_LEFT][SNAP_GHOST_LEVEL]))
+            end = snapshots[name][SNAP_LEFT]
+            if len(end) == SNAP_COMPACT_GHOST_WIDTH + 1:
+                level_list.append(float(end[SNAP_COMPACT_GHOST_LEVEL]))
+            else:
+                level_list.append(float(end[SNAP_GHOST_LEVEL]))
         if level_list:
             return float(np.average(level_list))
         return np.nan
@@ -1237,6 +1258,9 @@ class Rivernet():
         pure_q = 0.0
         for _, name in self._in_branches_by_node[node]:
             end = snapshots[name][SNAP_RIGHT]
+            if len(end) == SNAP_COMPACT_GHOST_WIDTH + 1:
+                pure_q += float(end[SNAP_COMPACT_GHOST_Q])
+                continue
             face_q = float(end[SNAP_BOUNDARY_FACE_DISCHARGE])
             if self.internal_node_prefer_boundary_face_discharge and np.isfinite(face_q):
                 q_in = face_q
@@ -1248,6 +1272,9 @@ class Rivernet():
 
         for _, name in self._out_branches_by_node[node]:
             end = snapshots[name][SNAP_LEFT]
+            if len(end) == SNAP_COMPACT_GHOST_WIDTH + 1:
+                pure_q -= float(end[SNAP_COMPACT_GHOST_Q])
+                continue
             face_q = float(end[SNAP_BOUNDARY_FACE_DISCHARGE])
             if self.internal_node_prefer_boundary_face_discharge and np.isfinite(face_q):
                 q_out = face_q
@@ -1261,6 +1288,23 @@ class Rivernet():
     def _parallel_node_ac(self, node, snapshots):
         eps_a = 1e-12
         ac = 0.0
+        compact_mode = bool(snapshots) and len(next(iter(snapshots.values()))[SNAP_LEFT]) == SNAP_COMPACT_GHOST_WIDTH + 1
+        if compact_mode:
+            for _, name in self._in_branches_by_node[node]:
+                end = snapshots[name][SNAP_RIGHT]
+                area = float(max(end[SNAP_COMPACT_GHOST_S], eps_a))
+                width = float(max(end[SNAP_COMPACT_GHOST_WIDTH], eps_a))
+                discharge = float(end[SNAP_COMPACT_GHOST_Q])
+                ac += np.sqrt(self.g * area * width) - discharge * width / area
+
+            for _, name in self._out_branches_by_node[node]:
+                end = snapshots[name][SNAP_LEFT]
+                area = float(max(end[SNAP_COMPACT_GHOST_S], eps_a))
+                width = float(max(end[SNAP_COMPACT_GHOST_WIDTH], eps_a))
+                discharge = float(end[SNAP_COMPACT_GHOST_Q])
+                ac += np.sqrt(self.g * area * width) + discharge * width / area
+            return float(self.alpha * ac)
+
         if self.internal_use_paper_ac:
             for _, name in self._in_branches_by_node[node]:
                 end = snapshots[name][SNAP_RIGHT]
@@ -1396,11 +1440,7 @@ class Rivernet():
         for node_name in self.internal_nodes:
             level = float(node_levels[node_name])
             for _, name in self._in_branches_by_node[node_name]:
-                end = snapshots[name][SNAP_RIGHT]
-                area = float(max(end[SNAP_CELL_S], eps_a))
-                discharge = float(end[SNAP_CELL_Q])
-                velocity = abs(discharge) / max(area, eps_a)
-                level_eff = level + 0.0 * (velocity * velocity) / (2.0 * g)
+                level_eff = level
                 if self.use_fix_level_bc_v2:
                     ops.append({'river': name, 'method': 'OutBound_Fix_level_V2', 'args': (level_eff,), 'kwargs': {}})
                 else:
@@ -1415,11 +1455,7 @@ class Rivernet():
                         },
                     })
             for _, name in self._out_branches_by_node[node_name]:
-                end = snapshots[name][SNAP_LEFT]
-                area = float(max(end[SNAP_CELL_S], eps_a))
-                discharge = float(end[SNAP_CELL_Q])
-                velocity = abs(discharge) / max(area, eps_a)
-                level_eff = level + 0.0 * (velocity * velocity) / (2.0 * g)
+                level_eff = level
                 if self.use_fix_level_bc_v2:
                     ops.append({'river': name, 'method': 'InBound_Fix_level_V2', 'args': (level_eff,), 'kwargs': {}})
                 else:
@@ -1435,9 +1471,19 @@ class Rivernet():
                     })
         return ops
 
+    def _parallel_can_use_compact_snapshots(self):
+        return (
+            bool(self.internal_use_paper_ac)
+            and (not self.internal_node_use_face_discharge)
+            and (not self.internal_node_prefer_boundary_face_discharge)
+            and (not self.internal_node_use_boundary_face_ac)
+        )
+
     def _update_boundary_conditions_parallel(self, pool):
         external_ops = self._build_parallel_external_boundary_ops()
-        snapshots = pool.call_batch_and_interface_snapshots(external_ops)
+        compact_snapshots = self._parallel_can_use_compact_snapshots()
+        snapshot_mode = 'compact' if compact_snapshots else 'full'
+        snapshots = pool.call_batch_and_interface_snapshots(external_ops, snapshot_mode=snapshot_mode)
         if not self.internal_nodes:
             return snapshots
 
@@ -1457,7 +1503,8 @@ class Rivernet():
         max_abs_q = np.inf
         for _ in range(1, self.max_iteration + 1):
             snapshots = pool.call_batch_and_interface_snapshots(
-                self._build_parallel_internal_level_ops(node_levels, snapshots)
+                self._build_parallel_internal_level_ops(node_levels, snapshots),
+                snapshot_mode=snapshot_mode,
             )
 
             node_residual = {}
@@ -1487,7 +1534,8 @@ class Rivernet():
                 break
 
         snapshots = pool.call_batch_and_interface_snapshots(
-            self._build_parallel_internal_level_ops(node_levels, snapshots)
+            self._build_parallel_internal_level_ops(node_levels, snapshots),
+            snapshot_mode='full',
         )
         self._internal_node_level_cache.update(node_levels)
         if self.verbos and not converged:
