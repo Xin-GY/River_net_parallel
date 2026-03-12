@@ -243,3 +243,108 @@ conda run -n python311 python tools/compare_results.py \
 后续更值得投入的是：
 
 - 内部节点高频函数里的 `in_edges/out_edges` 邻接缓存
+
+## 优化 3：缓存节点入边/出边邻接，压缩内部节点耦合调度开销
+
+### 修改点
+
+- 文件：`Rivernet.py`
+- 在 `_refresh_river_cache()` 中新增：
+  - `self._in_edges_by_node`
+  - `self._out_edges_by_node`
+- 修改：
+  - `classfy_nodes()` 基于缓存邻接判定 `internal / external_in / external_out`
+  - 内部节点相关高频函数改为直接读取缓存邻接，不再重复调用 `self.G.in_edges()` / `self.G.out_edges()`
+  - 包括节点水位平均、特征量 `Ac` 计算、结点目标水位施加、净流量统计、内部节点历史写出等路径
+
+### 修改原因
+
+full-case `cProfile` 已经表明内部节点更新链是主热点：
+
+- `Update_internal_boundary_conditions` `ct=904.543 s`
+- `_apply_internal_node_levels` `ct=848.134 s`
+- `Apply_node_target_level_V4` `ct=847.054 s`
+
+这些函数内部大量重复访问：
+
+- `self.G.in_edges(node, data=True)`
+- `self.G.out_edges(node, data=True)`
+
+当前案例拓扑在模拟开始后保持不变，因此每步、每节点重新构造 networkx 邻接 view 属于纯 Python 调度开销。
+
+### 为什么不改变计算原理
+
+本改动没有改变：
+
+- 河道内部推进
+- 结点耦合公式
+- 边界条件定义
+- 输出字段与输出频率
+
+它只把“固定拓扑下的节点邻接访问方式”从重复查询 networkx view，改为初始化后缓存的同一组边对象。
+
+### 验证命令
+
+运行：
+
+```bash
+/usr/bin/time -p -o result/exp_opt3_nodecache_py311_40h/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_opt3_nodecache_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  conda run -n python311 python Islam.py \
+  > result/exp_opt3_nodecache_py311_40h/run.log 2>&1
+```
+
+评估：
+
+```bash
+cd handoff_network_model_20260312
+MPLCONFIGDIR=/tmp/mplconfig conda run -n python311 python result/eval_river11_nse.py result/exp_opt3_nodecache_py311_40h
+conda run -n python311 python tools/compare_results.py \
+  result/exp_baseline_py311_40h \
+  result/exp_opt3_nodecache_py311_40h \
+  --out result/exp_opt3_nodecache_py311_40h/compare_to_baseline.json
+conda run -n python311 python tools/compare_results.py \
+  result/exp_opt2_rivercache_py311_40h \
+  result/exp_opt3_nodecache_py311_40h \
+  --out result/exp_opt3_nodecache_py311_40h/compare_to_opt2.json
+```
+
+### 实测收益
+
+- 优化 2：`731.92 s`
+- 优化 3：`698.01 s`
+- 相对优化 2：
+  - 绝对减少：`33.91 s`
+  - 相对减少：`4.63%`
+  - 提速倍数：`1.05x`
+- 相对原始基线：
+  - 绝对减少：`192.36 s`
+  - 相对减少：`21.60%`
+  - 提速倍数：`1.28x`
+
+模型内部自报时间：
+
+- 优化 2：`695.04 s`
+- 优化 3：`660.93 s`
+- 相对优化 2 进一步减少：`34.11 s`
+
+### 结果校验结论
+
+- 四个 NSE 与基线完全一致
+- `tools/compare_results.py` 对：
+  - `exp_baseline_py311_40h` vs `exp_opt3_nodecache_py311_40h`
+  - `exp_opt2_rivercache_py311_40h` vs `exp_opt3_nodecache_py311_40h`
+  均返回 `allclose = true`
+- 关键时序、内部节点历史、`river11_raw_output.nc`、`river11_interpolated_output.nc` 全部逐点一致
+
+### 阶段结论
+
+优化 3 可以接受：
+
+- 收益明显大于优化 2
+- 不改变现有功能和输入输出
+- 结果与基线逐点一致
