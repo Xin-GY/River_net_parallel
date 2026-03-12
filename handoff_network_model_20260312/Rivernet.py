@@ -109,6 +109,14 @@ class Rivernet():
         self._river_edges = list(self.G.edges(data=True))
         self._in_edges_by_node = {n: list(self.G.in_edges(n, data=True)) for n in self.G.nodes()}
         self._out_edges_by_node = {n: list(self.G.out_edges(n, data=True)) for n in self.G.nodes()}
+        self._in_branches_by_node = {
+            n: [(data['river'], data.get('name', 'river')) for _, _, data in self._in_edges_by_node[n]]
+            for n in self.G.nodes()
+        }
+        self._out_branches_by_node = {
+            n: [(data['river'], data.get('name', 'river')) for _, _, data in self._out_edges_by_node[n]]
+            for n in self.G.nodes()
+        }
         self._river_method_cache = {}
 
     # 创建河网
@@ -516,8 +524,7 @@ class Rivernet():
         if self.verbos: print('更新外部入流边界')
         for n in self.external_in_nodes:
             btype, value = self.get_boundary_value(n, self.current_sim_time)
-            for u, v, data in self._out_edges_by_node[n]:
-                r = data['river']
+            for r, _ in self._out_branches_by_node[n]:
                 if btype == 'flow':
                     if self.external_flow_bc_use_characteristic and hasattr(r, 'InBound_In_Q2'):
                         r.InBound_In_Q2(value)
@@ -540,8 +547,7 @@ class Rivernet():
         if self.verbos: print('更新外部出流边界')
         for n in self.external_out_nodes:
             btype, value = self.get_boundary_value(n, self.current_sim_time)
-            for u, v, data in self._in_edges_by_node[n]:
-                r = data['river']
+            for r, _ in self._in_branches_by_node[n]:
                 if btype == 'free':
                     r.OutBound_Free_Outfall()
                 elif btype == 'fix_level':
@@ -822,16 +828,14 @@ class Rivernet():
         river_name = []
 
         # 流入节点边
-        for u, v, data in self._in_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, name in self._in_branches_by_node[node]:
             level_list.append(river_temp.water_level[-2])
-            river_name.append(data['name'])
+            river_name.append(name)
 
         # 流出节点边
-        for u, v, data in self._out_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, name in self._out_branches_by_node[node]:
             level_list.append(river_temp.water_level[1])
-            river_name.append(data['name'])
+            river_name.append(name)
 
         if level_list:
             result = np.average(level_list)
@@ -848,8 +852,7 @@ class Rivernet():
         ac = 0
 
         # 流入节点边
-        for u, v, data in self._in_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, _ in self._in_branches_by_node[node]:
 
             level_temp = river_temp.water_level[-1]  # 获取流入节点的水位
             section_name_temp = river_temp.cell_sections[-1]  # 虚拟网格对应断面名称
@@ -861,8 +864,7 @@ class Rivernet():
             ac += (np.sqrt(self.g * A * B) - Q * B / A)
 
         # 流出节点边
-        for u, v, data in self._out_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, _ in self._out_branches_by_node[node]:
             level_temp = river_temp.water_level[0]
             section_name_temp = river_temp.cell_sections[0]  # 虚拟网格对应断面名称
             A = river_temp.S[0]  # 对应位置的水面面积
@@ -880,8 +882,7 @@ class Rivernet():
         epsA = 1e-12
 
         # 入支（node 为下游端）
-        for u_node, v_node, data in self._in_edges_by_node[node]:
-            r = data['river']
+        for r, _ in self._in_branches_by_node[node]:
             A2 = float(r.S[-2]); T2 = float(r.cross_section_table.get_width_by_area(r.cell_sections[-2], max(A2, epsA)))
             Q2 = float(r.Q[-2])
             regime, u_loc, c_loc, Fr_loc = self._branch_regime(A2, T2, Q2, flow_dir_sign=+1)
@@ -889,8 +890,7 @@ class Rivernet():
                 ac += T2 * (c_loc - u_loc)
 
         # 出支（node 为上游端）
-        for u_node, v_node, data in self._out_edges_by_node[node]:
-            r = data['river']
+        for r, _ in self._out_branches_by_node[node]:
             A1 = float(r.S[1]); T1 = float(r.cross_section_table.get_width_by_area(r.cell_sections[1], max(A1, epsA)))
             Q1 = float(r.Q[1])
             regime, u_loc, c_loc, Fr_loc = self._branch_regime(A1, T1, Q1, flow_dir_sign=-1)
@@ -908,8 +908,7 @@ class Rivernet():
         ac = 0.0
         epsA = 1e-12
 
-        for _, _, data in self._in_edges_by_node[node]:
-            r = data['river']
+        for r, _ in self._in_branches_by_node[node]:
             A_face = getattr(r, 'boundary_face_area_right', None)
             B_face = getattr(r, 'boundary_face_width_right', None)
             Q_face = getattr(r, 'boundary_face_discharge_right', None)
@@ -923,8 +922,7 @@ class Rivernet():
                 Q = float(r.Q[-1])
             ac += (np.sqrt(self.g * A * B) - Q * B / A)
 
-        for _, _, data in self._out_edges_by_node[node]:
-            r = data['river']
+        for r, _ in self._out_branches_by_node[node]:
             A_face = getattr(r, 'boundary_face_area_left', None)
             B_face = getattr(r, 'boundary_face_width_left', None)
             Q_face = getattr(r, 'boundary_face_discharge_left', None)
@@ -948,16 +946,14 @@ class Rivernet():
         river_name = []
 
         # 流入节点边
-        for u, v, data in self._in_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, name in self._in_branches_by_node[node]:
             level_list.append(river_temp.water_level[-1])
-            river_name.append(data['name'])
+            river_name.append(name)
 
         # 流出节点边
-        for u, v, data in self._out_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, name in self._out_branches_by_node[node]:
             level_list.append(river_temp.water_level[0])
-            river_name.append(data['name'])
+            river_name.append(name)
 
         if level_list:
             result = np.average(level_list)
@@ -971,19 +967,16 @@ class Rivernet():
     # 将计算出的汊点水位应用
     def Apply_node_target_level(self, node, level):
         # 流入节点的边
-        for u, v, data in self._in_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, _ in self._in_branches_by_node[node]:
             river_temp.OutBound_Fix_level_V2(level)
 
         # 流出节点的边
-        for u, v, data in self._out_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, _ in self._out_branches_by_node[node]:
             river_temp.InBound_Fix_level_V2(level)
 
     def Apply_node_target_level_V2(self, node, level):
         # —— 流入结点的边（结点在下游端），检查相邻实单元 -2 的流态与流向
-        for u, v, data in self._in_edges_by_node[node]:
-            r = data['river']
+        for r, _ in self._in_branches_by_node[node]:
             U = r.U[-2]; C = r.C[-2]
             # 若超临界且速度指向离开结点（即从结点往上游方向），结点水位对该支路不起作用 -> 外推
             if abs(U) >= 0.95 * C and r.Q[-2] < 0:
@@ -993,8 +986,7 @@ class Rivernet():
                 r.OutBound_Fix_level_V2(level)   # 仍按水位边界
 
         # —— 流出结点的边（结点在上游端），检查相邻实单元 +1
-        for u, v, data in self._out_edges_by_node[node]:
-            r = data['river']
+        for r, _ in self._out_branches_by_node[node]:
             U = r.U[1]; C = r.C[1]
             # 若超临界且速度离开结点（从结点下泄进入该支路），结点水位不起作用 -> 外推
             if abs(U) >= 0.95 * C and r.Q[1] > 0:
@@ -1038,8 +1030,7 @@ class Rivernet():
         # 1) 处理“入支”（node 为下游端，边方向 u -> node）
         #    下游鬼格索引为 -1（相邻实格为 -2）
         # -----------------------------
-        for u, v, data in self._in_edges_by_node[node_name]:
-            r = data["river"]  # River 实例
+        for r, _ in self._in_branches_by_node[node_name]:
             # 相邻实格（倒数第二个单元）面积与流量
             A2 = float(r.S[-2])
             Q2 = float(r.Q[-2])
@@ -1074,8 +1065,7 @@ class Rivernet():
         # 2) 处理“出支”（node 为上游端，边方向 node -> v）
         #    上游鬼格索引为 0（相邻实格为 1）
         # -----------------------------
-        for u, v, data in self._out_edges_by_node[node_name]:
-            r = data["river"]  # River 实例
+        for r, _ in self._out_branches_by_node[node_name]:
             # 相邻实格（第一个单元）面积与流量
             A1 = float(r.S[1])
             Q1 = float(r.Q[1])
@@ -1111,8 +1101,7 @@ class Rivernet():
         pure_Q = 0 # 净流量
 
         # 流入节点的边
-        for u, v, data in self._in_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, _ in self._in_branches_by_node[node]:
             face_q = getattr(river_temp, 'boundary_face_discharge_right', None)
             if self.internal_node_prefer_boundary_face_discharge and face_q is not None:
                 q_in = float(face_q)
@@ -1123,8 +1112,7 @@ class Rivernet():
             pure_Q += q_in  # 获取流入节点的水流量
 
         # 流出节点的边
-        for u, v, data in self._out_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, _ in self._out_branches_by_node[node]:
             face_q = getattr(river_temp, 'boundary_face_discharge_left', None)
             if self.internal_node_prefer_boundary_face_discharge and face_q is not None:
                 q_out = float(face_q)
@@ -1140,13 +1128,11 @@ class Rivernet():
         pure_Q = 0.0
 
         # 流入节点的边：节点位于支路下游端，取右边界界面通量
-        for _, _, data in self._in_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, _ in self._in_branches_by_node[node]:
             pure_Q += float(river_temp.Flux_LOC[river_temp.cell_num, 0])
 
         # 流出节点的边：节点位于支路上游端，取左边界界面通量
-        for _, _, data in self._out_edges_by_node[node]:
-            river_temp = data['river']
+        for river_temp, _ in self._out_branches_by_node[node]:
             pure_Q -= float(river_temp.Flux_LOC[0, 0])
 
         return pure_Q
@@ -1204,9 +1190,7 @@ class Rivernet():
                 for n in self.internal_nodes:
                     rec[f'{n}_level'] = float(self._internal_node_level_cache.get(n, np.nan))
                     rec[f'{n}_Qnet'] = float(self._get_node_mass_residual_current_state(n))
-                    for _, _, data in self._in_edges_by_node[n]:
-                        r = data['river']
-                        name = data.get('name', 'river')
+                    for r, name in self._in_branches_by_node[n]:
                         rec[f'{n}_{name}_face_level'] = float(
                             getattr(r, 'boundary_face_level_right', np.nan)
                         )
@@ -1215,9 +1199,7 @@ class Rivernet():
                         )
                         rec[f'{n}_{name}_cell_level'] = float(r.water_level[-2])
                         rec[f'{n}_{name}_cell_Q'] = float(r.Q[-2])
-                    for _, _, data in self._out_edges_by_node[n]:
-                        r = data['river']
-                        name = data.get('name', 'river')
+                    for r, name in self._out_branches_by_node[n]:
                         rec[f'{n}_{name}_face_level'] = float(
                             getattr(r, 'boundary_face_level_left', np.nan)
                         )

@@ -348,3 +348,120 @@ conda run -n python311 python tools/compare_results.py \
 - 收益明显大于优化 2
 - 不改变现有功能和输入输出
 - 结果与基线逐点一致
+
+## 优化 4：缓存内部节点分支 `(river, name)` 对，压缩热点循环中的 payload 解包
+
+### 修改点
+
+- 文件：`Rivernet.py`
+- 在 `_refresh_river_cache()` 中新增：
+  - `self._in_branches_by_node`
+  - `self._out_branches_by_node`
+- 修改：
+  - 内部节点与外部边界的高频循环不再反复解包 `(_, _, data)` 再做 `data['river'] / data['name']`
+  - 改为直接遍历预缓存的 `(river, name)` 二元组
+  - 涉及：
+    - `Update_external_boundary_conditions_V2`
+    - `Caculate_node_average_level_at_real_cell`
+    - `Caculate_node_Ac_at_ghost_cell*`
+    - `Caculate_node_average_level_at_ghost_cell`
+    - `Apply_node_target_level*`
+    - `Get_node_clear_flow_*`
+    - `internal_node_history` 写出路径
+
+### 修改原因
+
+优化 3 之后，内部节点链路仍然是当前最重的纯 Python 调度热点。虽然邻接 view 已经缓存，但热点循环里仍然存在大量：
+
+- tuple 解包
+- `data['river']`
+- `data.get('name', 'river')`
+
+这些访问不改变数学逻辑，但在 `Apply_node_target_level_V4`、`Get_node_clear_flow_*`、内部节点历史写出等高频路径中会持续累积。
+
+### 为什么不改变计算原理
+
+本改动没有改变：
+
+- 任意一条河道的求解过程
+- 任意内部节点的耦合方程
+- 边界条件数值公式
+- 输出字段、输出频率、输出内容定义
+
+它只是把固定拓扑下的 branch payload 访问，从“每次循环查 `data` 字典”改成“初始化后直接取缓存好的 `(river, name)` 元组”。
+
+### 验证命令
+
+运行：
+
+```bash
+/usr/bin/time -p -o result/exp_opt6_branchcache_py311_40h/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_opt6_branchcache_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  conda run -n python311 python Islam.py \
+  > result/exp_opt6_branchcache_py311_40h/run.log 2>&1
+```
+
+评估：
+
+```bash
+cd handoff_network_model_20260312
+MPLCONFIGDIR=/tmp/mplconfig conda run -n python311 python result/eval_river11_nse.py result/exp_opt6_branchcache_py311_40h
+conda run -n python311 python tools/compare_results.py \
+  result/exp_baseline_py311_40h \
+  result/exp_opt6_branchcache_py311_40h \
+  --out result/exp_opt6_branchcache_py311_40h/compare_to_baseline.json
+```
+
+### 实测收益
+
+- 优化 3：`698.01 s`
+- 优化 4：`689.86 s`
+- 相对优化 3：
+  - 绝对减少：`8.15 s`
+  - 相对减少：`1.17%`
+  - 提速倍数：`1.01x`
+- 相对原始基线：
+  - 绝对减少：`200.51 s`
+  - 相对减少：`22.52%`
+  - 提速倍数：`1.29x`
+
+模型内部自报时间：
+
+- 优化 3：`660.93 s`
+- 优化 4：`653.71 s`
+- 相对优化 3 进一步减少：`7.22 s`
+
+### 结果校验结论
+
+- 四个 NSE 与基线完全一致
+- `tools/compare_results.py` 返回 `allclose = true`
+- `internal_node_history.csv`、`river11_raw_output.nc`、`river11_interpolated_output.nc`、控制点时序、最终状态全部 `max_abs = 0.0`
+
+### 阶段结论
+
+优化 4 可以接受：
+
+- 收益不算大，但是真正是“净收益”
+- 不引入任何浮点差异
+- 继续把内部节点链路的纯 Python 调度成本向下压缩
+
+## 未合入试验
+
+以下试验已完整跑通并校验，但未满足“当前最优且结果完全一致”的要求，因此不合入：
+
+- `river_for_net.py` 断面表对象缓存：
+  - 结果逐点一致
+  - wall time `703.80 s`
+  - 比优化 3 更慢，已回退
+- `river_for_net.py` numba 标量插值：
+  - wall time `681.66 s`
+  - 主输出与最终状态一致，但 `internal_node_history.csv` 中若干 `face_Q` 列出现 `1e-13` 量级差异
+  - 不满足“所有现有输出逐点一致”，已回退
+- `river_for_net.py` numba 标量插值（保留 `width` 走原始 `np.interp`）：
+  - wall time `709.54 s`
+  - 仍存在 `internal_node_history.csv` 微小差异，且速度更差
+  - 已回退
