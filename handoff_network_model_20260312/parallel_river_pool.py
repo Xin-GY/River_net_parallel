@@ -4,6 +4,22 @@ import multiprocessing as mp
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
+SNAP_LEFT = 0
+SNAP_RIGHT = 1
+
+SNAP_GHOST_LEVEL = 0
+SNAP_CELL_LEVEL = 1
+SNAP_GHOST_Q = 2
+SNAP_CELL_Q = 3
+SNAP_GHOST_S = 4
+SNAP_CELL_S = 5
+SNAP_GHOST_WIDTH = 6
+SNAP_CELL_WIDTH = 7
+SNAP_BOUNDARY_FACE_LEVEL = 8
+SNAP_BOUNDARY_FACE_DISCHARGE = 9
+SNAP_BOUNDARY_FACE_AREA = 10
+SNAP_BOUNDARY_FACE_WIDTH = 11
+
 
 def _safe_float(value):
     if value is None:
@@ -14,7 +30,7 @@ def _safe_float(value):
 def _river_interface_snapshot(river):
     tiny = 1.0e-12
 
-    def pack_end(ghost_idx, cell_idx, iface_idx, face_suffix):
+    def pack_end(ghost_idx, cell_idx, face_suffix):
         ghost_area = float(max(river.S[ghost_idx], 0.0))
         cell_area = float(max(river.S[cell_idx], 0.0))
         ghost_width = 0.0
@@ -33,33 +49,25 @@ def _river_interface_snapshot(river):
                     max(cell_area, tiny),
                 )
             )
-        return {
-            'ghost_level': float(river.water_level[ghost_idx]),
-            'cell_level': float(river.water_level[cell_idx]),
-            'ghost_Q': float(river.Q[ghost_idx]),
-            'cell_Q': float(river.Q[cell_idx]),
-            'ghost_S': ghost_area,
-            'cell_S': cell_area,
-            'ghost_U': float(river.U[ghost_idx]),
-            'cell_U': float(river.U[cell_idx]),
-            'ghost_C': float(river.C[ghost_idx]),
-            'cell_C': float(river.C[cell_idx]),
-            'ghost_width': ghost_width,
-            'cell_width': cell_width,
-            'boundary_face_level': _safe_float(getattr(river, f'boundary_face_level_{face_suffix}', None)),
-            'boundary_face_discharge': _safe_float(getattr(river, f'boundary_face_discharge_{face_suffix}', None)),
-            'boundary_face_area': _safe_float(getattr(river, f'boundary_face_area_{face_suffix}', None)),
-            'boundary_face_width': _safe_float(getattr(river, f'boundary_face_width_{face_suffix}', None)),
-            'flux_mass': float(river.Flux_LOC[iface_idx, 0]),
-        }
+        return (
+            float(river.water_level[ghost_idx]),
+            float(river.water_level[cell_idx]),
+            float(river.Q[ghost_idx]),
+            float(river.Q[cell_idx]),
+            ghost_area,
+            cell_area,
+            ghost_width,
+            cell_width,
+            _safe_float(getattr(river, f'boundary_face_level_{face_suffix}', None)),
+            _safe_float(getattr(river, f'boundary_face_discharge_{face_suffix}', None)),
+            _safe_float(getattr(river, f'boundary_face_area_{face_suffix}', None)),
+            _safe_float(getattr(river, f'boundary_face_width_{face_suffix}', None)),
+        )
 
-    return {
-        'cell_num': int(river.cell_num),
-        'left': pack_end(0, 1, 0, 'left'),
-        'right': pack_end(-1, -2, river.cell_num, 'right'),
-        'debug_supercritical_in_count': int(getattr(river, 'debug_supercritical_in_count', 0)),
-        'debug_supercritical_out_count': int(getattr(river, 'debug_supercritical_out_count', 0)),
-    }
+    return (
+        pack_end(0, 1, 'left'),
+        pack_end(-1, -2, 'right'),
+    )
 
 
 def _worker_main(connection, rivers):
@@ -84,6 +92,21 @@ def _worker_main(connection, rivers):
                 continue
 
             if command == 'interface_snapshots':
+                names = payload['names']
+                connection.send(
+                    (
+                        task_id,
+                        'ok',
+                        {name: _river_interface_snapshot(river_map[name]) for name in names},
+                    )
+                )
+                continue
+
+            if command == 'call_batch_and_interface_snapshots':
+                for call in payload['calls']:
+                    river = river_map[call['river']]
+                    method = getattr(river, call['method'])
+                    method(*call.get('args', ()), **call.get('kwargs', {}))
                 names = payload['names']
                 connection.send(
                     (
@@ -176,6 +199,11 @@ class PersistentRiverThreadPool:
     def get_rivers(self, names=None):
         selected = names if names is not None else [name for name, _ in self.river_items]
         return {name: self._river_map[name] for name in selected}
+
+    def call_batch_and_interface_snapshots(self, calls, names=None):
+        selected = names if names is not None else [name for name, _ in self.river_items]
+        self.call_batch(calls, collect=False)
+        return {name: _river_interface_snapshot(self._river_map[name]) for name in selected}
 
     def shutdown(self):
         self._executor.shutdown(wait=True, cancel_futures=False)
@@ -290,6 +318,33 @@ class PersistentRiverProcessPool:
             if not worker_names:
                 continue
             task_id = self._submit(worker, 'interface_snapshots', {'names': worker_names})
+            pending.append((worker, task_id))
+
+        results = {}
+        for worker, task_id in pending:
+            results.update(self._collect(worker, task_id))
+        return results
+
+    def call_batch_and_interface_snapshots(self, calls, names=None):
+        grouped_calls = {worker['id']: [] for worker in self._workers}
+        for call in calls:
+            grouped_calls[self._river_to_worker[call['river']]].append(call)
+
+        grouped_names = self._group_names(names)
+        pending = []
+        for worker in self._workers:
+            worker_calls = grouped_calls[worker['id']]
+            worker_names = grouped_names.get(worker['id'])
+            if not worker_calls and not worker_names:
+                continue
+            task_id = self._submit(
+                worker,
+                'call_batch_and_interface_snapshots',
+                {
+                    'calls': worker_calls,
+                    'names': worker_names or [],
+                },
+            )
             pending.append((worker, task_id))
 
         results = {}

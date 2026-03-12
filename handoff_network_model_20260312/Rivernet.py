@@ -10,7 +10,24 @@ from pprint import pprint
 import pandas as pd
 import datetime
 import numpy as np
-from parallel_river_pool import PersistentRiverProcessPool, PersistentRiverThreadPool
+from parallel_river_pool import (
+    PersistentRiverProcessPool,
+    PersistentRiverThreadPool,
+    SNAP_BOUNDARY_FACE_AREA,
+    SNAP_BOUNDARY_FACE_DISCHARGE,
+    SNAP_BOUNDARY_FACE_LEVEL,
+    SNAP_BOUNDARY_FACE_WIDTH,
+    SNAP_CELL_LEVEL,
+    SNAP_CELL_Q,
+    SNAP_CELL_S,
+    SNAP_CELL_WIDTH,
+    SNAP_GHOST_LEVEL,
+    SNAP_GHOST_Q,
+    SNAP_GHOST_S,
+    SNAP_GHOST_WIDTH,
+    SNAP_LEFT,
+    SNAP_RIGHT,
+)
 
 class Rivernet():
     def __init__(self, Topology, model_data, verbos=True):
@@ -1199,9 +1216,9 @@ class Rivernet():
     def _parallel_node_average_level_at_real_cell(self, node, snapshots):
         level_list = []
         for _, name in self._in_branches_by_node[node]:
-            level_list.append(float(snapshots[name]['right']['cell_level']))
+            level_list.append(float(snapshots[name][SNAP_RIGHT][SNAP_CELL_LEVEL]))
         for _, name in self._out_branches_by_node[node]:
-            level_list.append(float(snapshots[name]['left']['cell_level']))
+            level_list.append(float(snapshots[name][SNAP_LEFT][SNAP_CELL_LEVEL]))
         if level_list:
             return float(np.average(level_list))
         return np.nan
@@ -1209,9 +1226,9 @@ class Rivernet():
     def _parallel_node_average_level_at_ghost_cell(self, node, snapshots):
         level_list = []
         for _, name in self._in_branches_by_node[node]:
-            level_list.append(float(snapshots[name]['right']['ghost_level']))
+            level_list.append(float(snapshots[name][SNAP_RIGHT][SNAP_GHOST_LEVEL]))
         for _, name in self._out_branches_by_node[node]:
-            level_list.append(float(snapshots[name]['left']['ghost_level']))
+            level_list.append(float(snapshots[name][SNAP_LEFT][SNAP_GHOST_LEVEL]))
         if level_list:
             return float(np.average(level_list))
         return np.nan
@@ -1219,25 +1236,25 @@ class Rivernet():
     def _parallel_node_mass_residual(self, node, snapshots):
         pure_q = 0.0
         for _, name in self._in_branches_by_node[node]:
-            end = snapshots[name]['right']
-            face_q = float(end['boundary_face_discharge'])
+            end = snapshots[name][SNAP_RIGHT]
+            face_q = float(end[SNAP_BOUNDARY_FACE_DISCHARGE])
             if self.internal_node_prefer_boundary_face_discharge and np.isfinite(face_q):
                 q_in = face_q
             elif self.internal_node_use_face_discharge:
-                q_in = 0.5 * (float(end['ghost_Q']) + float(end['cell_Q']))
+                q_in = 0.5 * (float(end[SNAP_GHOST_Q]) + float(end[SNAP_CELL_Q]))
             else:
-                q_in = float(end['ghost_Q'])
+                q_in = float(end[SNAP_GHOST_Q])
             pure_q += q_in
 
         for _, name in self._out_branches_by_node[node]:
-            end = snapshots[name]['left']
-            face_q = float(end['boundary_face_discharge'])
+            end = snapshots[name][SNAP_LEFT]
+            face_q = float(end[SNAP_BOUNDARY_FACE_DISCHARGE])
             if self.internal_node_prefer_boundary_face_discharge and np.isfinite(face_q):
                 q_out = face_q
             elif self.internal_node_use_face_discharge:
-                q_out = 0.5 * (float(end['ghost_Q']) + float(end['cell_Q']))
+                q_out = 0.5 * (float(end[SNAP_GHOST_Q]) + float(end[SNAP_CELL_Q]))
             else:
-                q_out = float(end['ghost_Q'])
+                q_out = float(end[SNAP_GHOST_Q])
             pure_q -= q_out
         return float(pure_q)
 
@@ -1246,64 +1263,74 @@ class Rivernet():
         ac = 0.0
         if self.internal_use_paper_ac:
             for _, name in self._in_branches_by_node[node]:
-                end = snapshots[name]['right']
-                use_face = self.internal_node_use_boundary_face_ac and np.isfinite(end['boundary_face_area']) and np.isfinite(end['boundary_face_width']) and np.isfinite(end['boundary_face_discharge'])
+                end = snapshots[name][SNAP_RIGHT]
+                use_face = (
+                    self.internal_node_use_boundary_face_ac
+                    and np.isfinite(end[SNAP_BOUNDARY_FACE_AREA])
+                    and np.isfinite(end[SNAP_BOUNDARY_FACE_WIDTH])
+                    and np.isfinite(end[SNAP_BOUNDARY_FACE_DISCHARGE])
+                )
                 if use_face:
-                    area = float(max(end['boundary_face_area'], eps_a))
-                    width = float(max(end['boundary_face_width'], eps_a))
-                    discharge = float(end['boundary_face_discharge'])
+                    area = float(max(end[SNAP_BOUNDARY_FACE_AREA], eps_a))
+                    width = float(max(end[SNAP_BOUNDARY_FACE_WIDTH], eps_a))
+                    discharge = float(end[SNAP_BOUNDARY_FACE_DISCHARGE])
                 else:
-                    area = float(max(end['ghost_S'], eps_a))
-                    width = float(max(end['ghost_width'], eps_a))
-                    discharge = float(end['ghost_Q'])
+                    area = float(max(end[SNAP_GHOST_S], eps_a))
+                    width = float(max(end[SNAP_GHOST_WIDTH], eps_a))
+                    discharge = float(end[SNAP_GHOST_Q])
                 ac += np.sqrt(self.g * area * width) - discharge * width / area
 
             for _, name in self._out_branches_by_node[node]:
-                end = snapshots[name]['left']
-                use_face = self.internal_node_use_boundary_face_ac and np.isfinite(end['boundary_face_area']) and np.isfinite(end['boundary_face_width']) and np.isfinite(end['boundary_face_discharge'])
+                end = snapshots[name][SNAP_LEFT]
+                use_face = (
+                    self.internal_node_use_boundary_face_ac
+                    and np.isfinite(end[SNAP_BOUNDARY_FACE_AREA])
+                    and np.isfinite(end[SNAP_BOUNDARY_FACE_WIDTH])
+                    and np.isfinite(end[SNAP_BOUNDARY_FACE_DISCHARGE])
+                )
                 if use_face:
-                    area = float(max(end['boundary_face_area'], eps_a))
-                    width = float(max(end['boundary_face_width'], eps_a))
-                    discharge = float(end['boundary_face_discharge'])
+                    area = float(max(end[SNAP_BOUNDARY_FACE_AREA], eps_a))
+                    width = float(max(end[SNAP_BOUNDARY_FACE_WIDTH], eps_a))
+                    discharge = float(end[SNAP_BOUNDARY_FACE_DISCHARGE])
                 else:
-                    area = float(max(end['ghost_S'], eps_a))
-                    width = float(max(end['ghost_width'], eps_a))
-                    discharge = float(end['ghost_Q'])
+                    area = float(max(end[SNAP_GHOST_S], eps_a))
+                    width = float(max(end[SNAP_GHOST_WIDTH], eps_a))
+                    discharge = float(end[SNAP_GHOST_Q])
                 ac += np.sqrt(self.g * area * width) + discharge * width / area
             return float(self.alpha * ac)
 
         if self.internal_use_ac_v2:
             for _, name in self._in_branches_by_node[node]:
-                end = snapshots[name]['right']
-                area = float(max(end['cell_S'], eps_a))
-                width = float(max(end['cell_width'], eps_a))
-                discharge = float(end['cell_Q'])
+                end = snapshots[name][SNAP_RIGHT]
+                area = float(max(end[SNAP_CELL_S], eps_a))
+                width = float(max(end[SNAP_CELL_WIDTH], eps_a))
+                discharge = float(end[SNAP_CELL_Q])
                 regime, u_loc, c_loc, _ = self._branch_regime(area, width, discharge, flow_dir_sign=+1)
                 if regime != 'super_in':
                     ac += width * (c_loc - u_loc)
 
             for _, name in self._out_branches_by_node[node]:
-                end = snapshots[name]['left']
-                area = float(max(end['cell_S'], eps_a))
-                width = float(max(end['cell_width'], eps_a))
-                discharge = float(end['cell_Q'])
+                end = snapshots[name][SNAP_LEFT]
+                area = float(max(end[SNAP_CELL_S], eps_a))
+                width = float(max(end[SNAP_CELL_WIDTH], eps_a))
+                discharge = float(end[SNAP_CELL_Q])
                 regime, u_loc, c_loc, _ = self._branch_regime(area, width, discharge, flow_dir_sign=-1)
                 if regime != 'super_in':
                     ac += width * (c_loc + u_loc)
             return float(self.alpha * ac)
 
         for _, name in self._in_branches_by_node[node]:
-            end = snapshots[name]['right']
-            area = float(max(end['ghost_S'], eps_a))
-            width = float(max(end['ghost_width'], eps_a))
-            discharge = float(end['ghost_Q'])
+            end = snapshots[name][SNAP_RIGHT]
+            area = float(max(end[SNAP_GHOST_S], eps_a))
+            width = float(max(end[SNAP_GHOST_WIDTH], eps_a))
+            discharge = float(end[SNAP_GHOST_Q])
             ac += np.sqrt(self.g * area * width) - discharge * width / area
 
         for _, name in self._out_branches_by_node[node]:
-            end = snapshots[name]['left']
-            area = float(max(end['ghost_S'], eps_a))
-            width = float(max(end['ghost_width'], eps_a))
-            discharge = float(end['ghost_Q'])
+            end = snapshots[name][SNAP_LEFT]
+            area = float(max(end[SNAP_GHOST_S], eps_a))
+            width = float(max(end[SNAP_GHOST_WIDTH], eps_a))
+            discharge = float(end[SNAP_GHOST_Q])
             ac += np.sqrt(self.g * area * width) + discharge * width / area
 
         return float(self.alpha * ac)
@@ -1369,9 +1396,9 @@ class Rivernet():
         for node_name in self.internal_nodes:
             level = float(node_levels[node_name])
             for _, name in self._in_branches_by_node[node_name]:
-                end = snapshots[name]['right']
-                area = float(max(end['cell_S'], eps_a))
-                discharge = float(end['cell_Q'])
+                end = snapshots[name][SNAP_RIGHT]
+                area = float(max(end[SNAP_CELL_S], eps_a))
+                discharge = float(end[SNAP_CELL_Q])
                 velocity = abs(discharge) / max(area, eps_a)
                 level_eff = level + 0.0 * (velocity * velocity) / (2.0 * g)
                 if self.use_fix_level_bc_v2:
@@ -1388,9 +1415,9 @@ class Rivernet():
                         },
                     })
             for _, name in self._out_branches_by_node[node_name]:
-                end = snapshots[name]['left']
-                area = float(max(end['cell_S'], eps_a))
-                discharge = float(end['cell_Q'])
+                end = snapshots[name][SNAP_LEFT]
+                area = float(max(end[SNAP_CELL_S], eps_a))
+                discharge = float(end[SNAP_CELL_Q])
                 velocity = abs(discharge) / max(area, eps_a)
                 level_eff = level + 0.0 * (velocity * velocity) / (2.0 * g)
                 if self.use_fix_level_bc_v2:
@@ -1410,10 +1437,7 @@ class Rivernet():
 
     def _update_boundary_conditions_parallel(self, pool):
         external_ops = self._build_parallel_external_boundary_ops()
-        if external_ops:
-            pool.call_batch(external_ops, collect=False)
-
-        snapshots = pool.get_interface_snapshots()
+        snapshots = pool.call_batch_and_interface_snapshots(external_ops)
         if not self.internal_nodes:
             return snapshots
 
@@ -1432,8 +1456,9 @@ class Rivernet():
         converged = False
         max_abs_q = np.inf
         for _ in range(1, self.max_iteration + 1):
-            pool.call_batch(self._build_parallel_internal_level_ops(node_levels, snapshots), collect=False)
-            snapshots = pool.get_interface_snapshots()
+            snapshots = pool.call_batch_and_interface_snapshots(
+                self._build_parallel_internal_level_ops(node_levels, snapshots)
+            )
 
             node_residual = {}
             max_abs_q = 0.0
@@ -1461,8 +1486,9 @@ class Rivernet():
                 converged = True
                 break
 
-        pool.call_batch(self._build_parallel_internal_level_ops(node_levels, snapshots), collect=False)
-        snapshots = pool.get_interface_snapshots()
+        snapshots = pool.call_batch_and_interface_snapshots(
+            self._build_parallel_internal_level_ops(node_levels, snapshots)
+        )
         self._internal_node_level_cache.update(node_levels)
         if self.verbos and not converged:
             print(f'内部边界迭代达到上限 {self.max_iteration} 次，max|Qnet|={max_abs_q:.4e}')
@@ -1499,17 +1525,17 @@ class Rivernet():
             rec[f'{n}_level'] = float(self._internal_node_level_cache.get(n, np.nan))
             rec[f'{n}_Qnet'] = float(self._parallel_node_mass_residual(n, snapshots))
             for _, name in self._in_branches_by_node[n]:
-                end = snapshots[name]['right']
-                rec[f'{n}_{name}_face_level'] = float(end['boundary_face_level'])
-                rec[f'{n}_{name}_face_Q'] = float(end['boundary_face_discharge'])
-                rec[f'{n}_{name}_cell_level'] = float(end['cell_level'])
-                rec[f'{n}_{name}_cell_Q'] = float(end['cell_Q'])
+                end = snapshots[name][SNAP_RIGHT]
+                rec[f'{n}_{name}_face_level'] = float(end[SNAP_BOUNDARY_FACE_LEVEL])
+                rec[f'{n}_{name}_face_Q'] = float(end[SNAP_BOUNDARY_FACE_DISCHARGE])
+                rec[f'{n}_{name}_cell_level'] = float(end[SNAP_CELL_LEVEL])
+                rec[f'{n}_{name}_cell_Q'] = float(end[SNAP_CELL_Q])
             for _, name in self._out_branches_by_node[n]:
-                end = snapshots[name]['left']
-                rec[f'{n}_{name}_face_level'] = float(end['boundary_face_level'])
-                rec[f'{n}_{name}_face_Q'] = float(end['boundary_face_discharge'])
-                rec[f'{n}_{name}_cell_level'] = float(end['cell_level'])
-                rec[f'{n}_{name}_cell_Q'] = float(end['cell_Q'])
+                end = snapshots[name][SNAP_LEFT]
+                rec[f'{n}_{name}_face_level'] = float(end[SNAP_BOUNDARY_FACE_LEVEL])
+                rec[f'{n}_{name}_face_Q'] = float(end[SNAP_BOUNDARY_FACE_DISCHARGE])
+                rec[f'{n}_{name}_cell_level'] = float(end[SNAP_CELL_LEVEL])
+                rec[f'{n}_{name}_cell_Q'] = float(end[SNAP_CELL_Q])
         self.internal_node_history.append(rec)
 
     def _evolve_base_parallel_threads(self, yield_step, pool):

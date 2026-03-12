@@ -628,3 +628,181 @@ conda run -n python311 python tools/compare_results.py \
 - 是当前第一条“多进程且完全一致”的路径
 - 收益虽然离 1 分钟目标仍很远，但是真正超过了当前最佳串行
 - 进程后端值得保留为后续继续提速的基础设施
+
+## 优化 6：合并进程边界往返并压缩接口 snapshot 结构
+
+### 修改点
+
+- 文件：`parallel_river_pool.py`
+  - 新增 `call_batch_and_interface_snapshots`
+  - worker 新增同名命令：在一次往返内先执行本批边界操作，再直接回传该 worker 的接口 snapshot
+  - 接口 snapshot 由多层字典改为定长紧凑元组
+  - 删除并行路径中未被消费的冗余 snapshot 字段
+- 文件：`Rivernet.py`
+  - `_update_boundary_conditions_parallel()` 改为统一使用 `call_batch_and_interface_snapshots`
+  - 并行结点残差、Ac、历史写出改为读取紧凑 snapshot
+
+### 修改原因
+
+优化 5 的 10 分钟 process `cProfile` 显示：
+
+- `_collect` 调用 `25790` 次
+- `multiprocessing.connection.recv` 累计 `5.475 s`
+- `_update_boundary_conditions_parallel` 累计 `3.842 s`
+
+这说明进程版当前最大的可压缩开销不是河道核本身，而是：
+
+- 每次内部结点迭代都要经历
+  - 一次 `call_batch`
+  - 一次 `get_interface_snapshots`
+- 并且 snapshot 使用了层级较深、对象数量较多的字典结构
+
+因此这一轮只做两件事：
+
+- 把“apply 内部/外部边界 + 取 snapshot”合并成一次 worker 往返
+- 在不改变字段数值的前提下，把 snapshot 结构压成紧凑定长结构，减少 pickle / 解包开销
+
+### 为什么不改变计算原理
+
+本改动没有改变：
+
+- 单河道求解器
+- 边界条件公式
+- 结点牛顿/JPWSPC 迭代公式
+- CFL 控制
+- 输出定义
+
+它只改变了进程后端中：
+
+- worker 和主进程之间的握手协议
+- snapshot 的内部表示形式
+
+也就是说，仍然是原来的边界操作、原来的迭代顺序、原来的结果写出，只是减少了 IPC 次数和对象构造数量。
+
+### 验证命令
+
+10 分钟 smoke：
+
+```bash
+/usr/bin/time -p -o result/tmp_proc_batchsnap_tuple_10m_time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_proc_batchsnap_tuple_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_parallel_process_tuple_py311_40h_time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_parallel_process_tuple_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_SAVE_CFL_HISTORY=1 \
+  conda run -n python311 python Islam.py
+```
+
+结果对比：
+
+```bash
+cd handoff_network_model_20260312
+MPLCONFIGDIR=/tmp/mplconfig conda run -n python311 python result/eval_river11_nse.py result/exp_parallel_process_tuple_py311_40h
+conda run -n python311 python tools/compare_results.py \
+  result/exp_opt6_branchcache_py311_40h \
+  result/exp_parallel_process_tuple_py311_40h \
+  --out result/exp_parallel_process_tuple_py311_40h/compare_to_best_serial.json
+conda run -n python311 python tools/compare_results.py \
+  result/exp_parallel_process_fixdt_py311_40h \
+  result/exp_parallel_process_tuple_py311_40h \
+  --out result/exp_parallel_process_tuple_py311_40h/compare_to_prev_process.json
+```
+
+### 过程观察
+
+10 分钟 process `cProfile` 在“融合往返”后显示：
+
+- `_collect`：`25790 -> 15886`
+- `recv`：`25790 -> 15886`
+- `_update_boundary_conditions_parallel`：`3.842 s -> 3.457 s`
+
+说明主方向判断是对的：结点耦合阶段确实因为往返次数下降而变轻。
+
+紧凑 tuple snapshot 在 `cProfile` 下并没有稳定给出更好数字，但真实 wall time 持续下降，因此最终是否接受仍以：
+
+- 无 profile 的真实 wall time
+- 全量结果一致性
+
+为准。
+
+### 实测收益
+
+10 分钟 smoke：
+
+- 优化 5：`6.89 s`
+- 优化 6：`6.53 s`
+- 绝对减少：`0.36 s`
+- 相对减少：`5.22%`
+
+40 小时 full-case：
+
+- 优化 5（进程，4 workers）：`659.30 s`
+- 优化 6（进程，4 workers）：`612.93 s`
+- 相对优化 5：
+  - 绝对减少：`46.37 s`
+  - 相对减少：`7.03%`
+  - 提速倍数：`1.08x`
+- 相对当前最佳串行：
+  - 绝对减少：`76.93 s`
+  - 相对减少：`11.15%`
+  - 提速倍数：`1.13x`
+- 相对原始基线：
+  - 绝对减少：`277.44 s`
+  - 相对减少：`31.16%`
+  - 提速倍数：`1.45x`
+
+模型内部自报时间：
+
+- 优化 5：`616.51 s`
+- 优化 6：`569.99 s`
+- 相对优化 5 进一步减少：`46.52 s`
+
+### 结果校验结论
+
+- `result/eval_river11_nse.py`：
+  - `node11_level = 0.873332`
+  - `node11_Q = -0.089159`
+  - `node12_level = 0.911626`
+  - `node12_Q = -0.105344`
+  - `mean_nse = 0.3976138544055814`
+- `tools/compare_results.py` 对：
+  - `exp_opt6_branchcache_py311_40h`
+  - `exp_parallel_process_fixdt_py311_40h`
+  与新结果目录比较，均返回 `allclose = true`
+- 关键文件：
+  - `internal_node_history.csv`
+  - `river11_raw_output.nc`
+  - `river11_interpolated_output.nc`
+  - `boundary_supercritical_counts.csv`
+  - 控制点时序
+  - 最终状态
+
+全部 `max_abs = 0.0`
+
+### 阶段结论
+
+优化 6 可以接受：
+
+- 这是当前最快且逐点一致的 CPU 方案
+- 仍然远未达到 1 分钟目标，但已经把进程后端从“略快于串行”推进到“明显快于当前最佳串行”
+- 后续若继续加速，更值得继续沿着“进程通信与结点耦合开销”这条线深入，而不是回到线程方案
