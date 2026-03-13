@@ -46,7 +46,7 @@ def _advance_local_river_step(river, use_implicit_branch_update=False, save_outp
         river.Assemble_Flux_2()
     river.Update_cell_proprity2()
     if save_output:
-        river.Save_result_per_time_step()
+        river.maybe_save_result_per_time_step()
     return river.Caculate_CFL_time_for_river_net()
 
 

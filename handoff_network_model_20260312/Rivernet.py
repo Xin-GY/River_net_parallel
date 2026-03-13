@@ -138,6 +138,7 @@ class Rivernet():
         self.parallel_sync_main_state_on_yield = True
         self.save_cfl_history = False
         self.cfl_history = []
+        self.output_save_interval = None
 
     def _refresh_river_cache(self):
         # Topology is fixed after construction in the current workflow. Cache
@@ -511,7 +512,20 @@ class Rivernet():
             name = data.get('name')
             if selected is not None and name not in selected:
                 continue
-            data['river'].Save_result_per_time_step()
+            data['river'].maybe_save_result_per_time_step()
+
+    def _configure_output_save_schedule(self, yield_step):
+        if not self.save_outputs:
+            return
+        default_interval = self.output_save_interval
+        if default_interval is None:
+            default_interval = float(yield_step)
+        selected = self.output_river_names
+        for _, _, data in self._river_edges:
+            name = data.get('name')
+            if selected is not None and name not in selected:
+                continue
+            data['river'].configure_save_scheduler(default_interval=default_interval, save_initial=True)
 
     def Save_internal_node_history(self):
         if not self.internal_node_history:
@@ -1942,6 +1956,7 @@ class Rivernet():
 
         # 保存初始结果
         self.Save_basic_data_net()
+        self._configure_output_save_schedule(yield_step)
 
         # 计算第一步时间步长
         self.Caculate_global_CFL()

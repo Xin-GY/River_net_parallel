@@ -2051,3 +2051,156 @@ conda run -n python311 python result/eval_river11_nse.py \
   - `process backend`
   - `4 workers`
   - `ISLAM_USE_CYTHON_TABLE=1`
+
+## 优化 14：按可选间隔保存输出，默认对齐 yield 时刻
+
+### 修改内容
+
+- 单河道保存链改为“调度式保存”：
+  - 新增 `configure_save_scheduler()`
+  - 新增 `maybe_save_result_per_time_step()`
+- 河网层不再把“每个子步都构建一帧 xarray”当成默认行为。
+- 默认保存间隔改为：
+  - 若显式设置 `ISLAM_SAVE_INTERVAL`，按该秒数保存
+  - 否则默认按 `yield_step` 保存
+- 仍保留：
+  - 初始时刻一帧
+  - 最终时刻一帧
+  - 原始 `raw_output.nc` / `interpolated_output.nc` 文件格式和变量定义
+
+### 影响范围
+
+- [river_for_net.py](/home/xin/River_net_parallel/handoff_network_model_20260312/river_for_net.py)
+- [parallel_river_pool.py](/home/xin/River_net_parallel/handoff_network_model_20260312/parallel_river_pool.py)
+- [Rivernet.py](/home/xin/River_net_parallel/handoff_network_model_20260312/Rivernet.py)
+- [Islam.py](/home/xin/River_net_parallel/handoff_network_model_20260312/Islam.py)
+
+### 设计说明
+
+这一步是按用户要求接受的输出行为调整：
+
+- 不改变数值核
+- 不改变时间推进
+- 不改变边界/耦合
+- 只改变“什么时候把当前状态封装成 xarray 写入 `ds_list`”
+
+旧逻辑：
+
+- `river11_raw_output.nc` 在 40h full-case 中保存了 `29969` 帧
+- worker 每个子步都构建一次 xarray
+
+新逻辑：
+
+- 默认只在 `yield_step` 对齐时刻保存
+- 并保留 `t=0` 与最终时刻
+- 40h full-case 中 `river11_raw_output.nc` 降为 `81` 帧
+
+### 验证命令
+
+10 分钟 smoke：
+
+```bash
+/usr/bin/time -p -o result/tmp_saveinterval_process_10m/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_saveinterval_process_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_saveinterval_yield_process_py311_40h/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_saveinterval_yield_process_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+### 10 分钟 smoke 结果
+
+- 旧版逐子步保存：`1.28 s`
+- 新版按间隔保存：`1.23 s`
+- 绝对减少：`0.05 s`
+- 相对减少：`3.91%`
+
+输出形态：
+
+- `river11_raw_output.nc`：`181 -> 2` 帧（`t=0`, `t=600s`）
+- `river11_interpolated_output.nc`：`11` 帧（`0:60:600`）
+
+### 实测收益
+
+40 小时 full-case：
+
+- 旧版：wall `427.97 s`，模型内部 `385.73 s`
+- 新版：wall `158.33 s`，模型内部 `151.00 s`
+
+相对旧版：
+
+- wall：
+  - 绝对减少：`269.64 s`
+  - 相对减少：`63.01%`
+- 模型内部演进时间：
+  - 绝对减少：`234.73 s`
+  - 相对减少：`60.86%`
+
+相对原始基线：
+
+- wall：
+  - `890.37 s -> 158.33 s`
+  - 总降幅：`82.22%`
+- 模型内部演进时间：
+  - `832.98 s -> 151.00 s`
+  - 总降幅：`81.87%`
+
+### 结果校验结论
+
+这一步不再适合直接沿用旧版 `tools/compare_results.py` 做“目录全量 allclose”，原因是：
+
+- `raw_output.nc` 的时间维按设计变稀疏了
+- `interpolated_output.nc` 现在从 `t=0` 对齐开始，时间轴定义也按要求变了
+
+因此本次接受口径改为：
+
+- `internal_node_history.csv` 逐点一致：
+  - `max_abs = 0.0`
+- `river11_raw_output.nc` 最后一帧逐点一致：
+  - `depth/level/U/Q` 全部 `max_abs = 0.0`
+- `boundary_supercritical_counts.csv` 一致
+- 数值核没有改动，仅保存时刻改变
+
+补充说明：
+
+- `result/eval_river11_nse.py` 在新输出口径下得到：
+  - `node11_level = 0.865799`
+  - `node11_Q = -0.003330`
+  - `node12_level = 0.913786`
+  - `node12_Q = 0.020118`
+  - `mean_nse = 0.449093342258747`
+- 这组 NSE 改善主要反映“插值时间轴从 `t=0` 对齐”的输出口径变化，不应误读为数值核本身改变。
+
+### 阶段结论
+
+优化 14 可以接受：
+
+- 它准确实现了“默认按 yield 时刻保存，而不是每子步构建 xarray”的新要求
+- 它显著降低了 worker 侧保存开销
+- 它不改变数值结果，只改变输出抽样节奏
+- 当前推荐 CPU 路径更新为：
+  - `process backend`
+  - `4 workers`
+  - `ISLAM_USE_CYTHON_TABLE=1`
+  - `ISLAM_SAVE_INTERVAL` 留空（默认按 `yield_step` 保存）

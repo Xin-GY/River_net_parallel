@@ -591,11 +591,13 @@ class River(Process):
         # 测试长时案例时可仅保存首末时刻，避免小时间步导致内存膨胀
         self.save_only_end_state = False
         self.save_all_time_steps = bool(sim_data.get('save_all_time_steps', False))
-        # 原始结果默认按输出时间步抽样保存，避免 raw nc 只有首末两帧或内存膨胀。
-        self.save_min_interval = float(sim_data.get('save_min_interval', self.time_step))
-        if self.save_min_interval <= 0.0:
+        raw_save_min_interval = sim_data.get('save_min_interval')
+        self.save_min_interval = None if raw_save_min_interval is None else float(raw_save_min_interval)
+        if self.save_min_interval is not None and self.save_min_interval <= 0.0:
             self.save_min_interval = float(self.time_step) if float(self.time_step) > 0.0 else 1.0
         self._next_save_time = 0.0
+        self._active_save_interval = float(self.time_step) if float(self.time_step) > 0.0 else 1.0
+        self.total_sim_time_seconds = (self.sim_end_time - self.sim_start_time).total_seconds()
         # 可选：在每个内部时间步执行一次边界更新函数（例如测试脚本传入）
         self.boundary_updater = None
         self.constant_rectangular_width = self._detect_constant_rectangular_width()
@@ -2766,11 +2768,23 @@ class River(Process):
         ds_t = xr.Dataset(data_vars={'depth': (('time', 'space'), depth[np.newaxis, :]), 'level': (('time', 'space'), level[np.newaxis, :]), 'U': (('time', 'space'), U[np.newaxis, :]), 'Q': (('time', 'space'), Q[np.newaxis, :])}, coords={'time': [self.current_sim_time], 'space': self.ds_coords.coords['space'].values})
         self.ds_list.append(ds_t)
 
-    def _reset_save_scheduler(self):
-        self._next_save_time = 0.0
+    def configure_save_scheduler(self, default_interval=None, save_initial=False):
+        interval = self.save_min_interval
+        if interval is None:
+            if default_interval is None:
+                interval = float(self.time_step) if float(self.time_step) > 0.0 else 1.0
+            else:
+                interval = float(default_interval)
+        if interval <= 0.0:
+            interval = float(self.time_step) if float(self.time_step) > 0.0 else 1.0
+        self._active_save_interval = interval
+        self._next_save_time = interval
+        if save_initial and (not self.save_only_end_state):
+            self.Save_result_per_time_step()
+            self._advance_save_scheduler()
 
     def _advance_save_scheduler(self):
-        interval = max(float(self.save_min_interval), 1.0e-9)
+        interval = max(float(self._active_save_interval), 1.0e-9)
         while self._next_save_time <= self.current_sim_time + 1.0e-9:
             self._next_save_time += interval
 
@@ -2784,6 +2798,17 @@ class River(Process):
         if self.current_sim_time + 1.0e-9 >= float(total_sim_time):
             return True
         return self.current_sim_time + 1.0e-9 >= self._next_save_time
+
+    def maybe_save_result_per_time_step(self, force=False):
+        total_sim_time = float(self.total_sim_time_seconds)
+        if not force and (not self._should_save_current_state(total_sim_time)):
+            return False
+        if self.save_only_end_state and (not force):
+            return False
+        self.Save_result_per_time_step()
+        if self.current_sim_time + 1.0e-9 < total_sim_time:
+            self._advance_save_scheduler()
+        return True
 
     def Save_Basic_data(self):
         self.ds_list = []
@@ -2820,12 +2845,7 @@ class River(Process):
         self._reset_step_diagnostics()
         self._diagnostics_snapshot('init', success=True)
         self.Save_Basic_data()
-        self._reset_save_scheduler()
-        if self.save_only_end_state:
-            self.Save_result_per_time_step()
-        else:
-            self.Save_result_per_time_step()
-            self._advance_save_scheduler()
+        self.configure_save_scheduler(default_interval=yield_step, save_initial=True)
         while self.current_sim_time < total_sim_time:
             if self.current_sim_time + self.DT > total_sim_time:
                 self.DT = total_sim_time - self.current_sim_time
@@ -2846,11 +2866,9 @@ class River(Process):
             self.current_sim_time += self.DT
             self._diagnostics_snapshot('step', success=True)
             yield self.DT
-            if self._should_save_current_state(total_sim_time):
-                self.Save_result_per_time_step()
-                self._advance_save_scheduler()
+            self.maybe_save_result_per_time_step()
         if self.save_only_end_state:
-            self.Save_result_per_time_step()
+            self.maybe_save_result_per_time_step(force=True)
         self._write_diagnostics_outputs(success=True)
         self.Resample_and_Save_Output_result()
         if self.Plot_flag:
@@ -2883,12 +2901,7 @@ class River(Process):
         self._reset_step_diagnostics()
         self._diagnostics_snapshot('init', success=True)
         self.Save_Basic_data()
-        self._reset_save_scheduler()
-        if self.save_only_end_state:
-            self.Save_result_per_time_step()
-        else:
-            self.Save_result_per_time_step()
-            self._advance_save_scheduler()
+        self.configure_save_scheduler(default_interval=yield_step, save_initial=True)
         print('Start Evolve......')
         while self.current_sim_time < total_sim_time:
             if self.current_sim_time + self.DT > total_sim_time:
@@ -2908,9 +2921,7 @@ class River(Process):
             self.Update_cell_proprity2()
             self.current_sim_time += used_dt
             self._diagnostics_snapshot('step', success=True)
-            if self._should_save_current_state(total_sim_time):
-                self.Save_result_per_time_step()
-                self._advance_save_scheduler()
+            self.maybe_save_result_per_time_step()
             local_time_sum += used_dt
             if local_time_sum > yield_step:
                 yield self.current_sim_time
@@ -2918,7 +2929,7 @@ class River(Process):
             self._update_cfl_dt(used_dt=used_dt, advance_time=False)
             self.time_step_count = self.time_step_count + 1
         if self.save_only_end_state:
-            self.Save_result_per_time_step()
+            self.maybe_save_result_per_time_step(force=True)
         self._write_diagnostics_outputs(success=True)
         self.Resample_and_Save_Output_result()
         if self.Plot_flag:

@@ -607,6 +607,8 @@ def configure_net_options(net_obj, export_png=False):
     net_obj.parallel_n_workers = int(os.environ.get('ISLAM_N_WORKERS', str(net_obj.parallel_n_workers)))
     net_obj.parallel_start_method = os.environ.get('ISLAM_PARALLEL_START_METHOD', 'spawn').strip().lower()
     net_obj.parallel_sync_main_state_on_yield = os.environ.get('ISLAM_PARALLEL_SYNC_ON_YIELD', '1') == '1'
+    save_interval_env = os.environ.get('ISLAM_SAVE_INTERVAL', '').strip()
+    net_obj.output_save_interval = float(save_interval_env) if save_interval_env else None
     net_obj.save_cfl_history = os.environ.get('ISLAM_SAVE_CFL_HISTORY', '0') == '1'
     net_obj.external_flow_bc_use_characteristic = os.environ.get('ISLAM_USE_CHARFLOW_BC', '1') == '1'
     net_obj.external_bc_use_stabilizers = os.environ.get('ISLAM_USE_EXTERNAL_STAB', '0') == '1'

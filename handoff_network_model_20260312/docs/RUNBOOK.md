@@ -50,7 +50,7 @@ MPLCONFIGDIR=/tmp/mplconfig ISLAM_OUTPUT_PATH=result/exp_handoff_run ISLAM_SIM_E
 ```bash
 mkdir -p /tmp/mplconfig
 MPLCONFIGDIR=/tmp/mplconfig \
-ISLAM_OUTPUT_PATH=result/exp_parallel_process_cython_chi_py311_40h \
+ISLAM_OUTPUT_PATH=result/exp_saveinterval_yield_process_py311_40h \
 ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
 ISLAM_OUTPUT_RIVERS=river11 \
 ISLAM_USE_FINE_INTERPOLATION=0 \
@@ -66,6 +66,11 @@ conda run -n python311 python Islam.py
 - 该路径对应当前已验证的最快 full-case 严格校验通过 baseline。
 - 若要关闭并行，设置 `ISLAM_USE_PARALLEL=0`。
 - 若要关闭 Cython 断面表后端，设置 `ISLAM_USE_CYTHON_TABLE=0`。
+- 若要显式指定原始输出保存间隔，设置 `ISLAM_SAVE_INTERVAL=<秒>`。
+- 若不设置 `ISLAM_SAVE_INTERVAL`，当前默认行为是：
+  - 在 `t=0` 保存一帧
+  - 之后按 `yield_step` 保存
+  - 结束时再保存一帧
 
 ## 评估 NSE
 

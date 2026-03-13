@@ -23,13 +23,15 @@
   - `ISLAM_PARALLEL_BACKEND=process`
   - `ISLAM_N_WORKERS=4`
   - `ISLAM_USE_CYTHON_TABLE=1`
-- Islam 40h full-case wall time：`427.97 s`
-- 模型内部自报时间：`385.73 s`
+- `ISLAM_SAVE_INTERVAL` 留空，默认按 `yield_step` 保存输出
+- Islam 40h full-case wall time：`158.33 s`
+- 模型内部自报时间：`151.00 s`
 - 当前验收优先看模型内部自报演进时间，不计初始化时间
 
 解释：
-- 水位两条线已经进入可接受区间，但流量两条线仍明显不达标
-- `river11` 两端流量同步偏高，说明是整条 branch 的输水能力偏大
+- 本轮性能提升主要来自“输出保存节奏改为按间隔调度”
+- `river11_raw_output.nc` 已从逐子步保存改为“初始 + 间隔 + 末态”
+- 数值核未改，内部节点时序与最终 raw 末帧保持一致
 
 ## 当前已打包的历史较优结果
 
@@ -49,18 +51,18 @@
 ## 已确认的结论
 
 1. handoff 单河道核心接入成功，Islam 40h 可稳定运行。
-2. `node11/node12` 流量比较不是简单符号问题。
-3. `internal_node_history.csv` 显示结点净流量接近 0，说明结点守恒本身不是当前主问题。
-4. 当前主问题更像 `river11 / river12` 的相对 conveyance 偏差。
-5. `Fine` 会显著影响结果，但关闭 `Fine` 也无法把 Q 修好。
+2. 当前最快 CPU 路径已经把 40h full-case 的模型演进时间压到 `151.00 s`。
+3. 新输出口径下，`internal_node_history.csv` 逐点一致，`river11_raw_output.nc` 最后一帧逐点一致。
+4. `interpolated_output.nc` 现在从 `t=0` 开始重采样，因此 NSE 数值与旧版不可直接横向比较。
+5. 若继续提速，下一步应回到单河道数值热点，而不是继续压输出构建。
 
 ## 下一步最值得查的地方
 
-1. `Islam.py`
-- `river11` / `river12` 的几何、断面宽度、床线和 `section offset` 是否与论文完全一致
+1. `river_for_net.py`
+- `_refresh_cell_state()`、边界闭合链、general HR/chi 剩余 Python 热点
 
 2. `Rivernet.py`
-- 内部结点施加水位后，`river11` / `river12` 的 branch 响应是否存在系统偏置
+- 内部结点串行/并行调度还有没有可以继续下沉的纯 Python 开销
 
-3. `river_for_net.py`
-- 在矩形支路 + 内部固定水位边界条件下，摩阻/几何链是否仍与河网层口径不完全一致
+3. `Islam.py`
+- 是否需要把 `ISLAM_SAVE_INTERVAL` 暴露到更细的案例配置层
