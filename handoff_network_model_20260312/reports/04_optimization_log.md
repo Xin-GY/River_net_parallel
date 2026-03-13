@@ -1904,3 +1904,150 @@ conda run -n python311 python result/eval_river11_nse.py \
   - `process backend`
   - `4 workers`
   - `ISLAM_USE_CYTHON_TABLE=1`
+
+## 优化 13：worker 侧聚合内部结点接口量
+
+提交：`待提交`
+
+### 修改内容
+
+- `parallel_river_pool.py`
+  - 新增 `NODE_AGG_*` 聚合字段常量
+  - 新增 `_node_aggregate_from_specs()`，worker 侧直接按结点累计：
+    - 相邻实格平均水位所需和/计数
+    - ghost 平均水位所需和/计数
+    - 结点质量残差
+    - paper-AC 导数近似
+  - 新增 `call_batch_and_node_aggregates()`，在同一次 worker 往返里：
+    - 先执行边界施加
+    - 再只返回每个 internal node 的紧凑聚合量
+- `Rivernet.py`
+  - 新增 `_parallel_node_*_from_aggregates()` 一组 helper
+  - 新增 `_parallel_internal_node_aggregate_specs()` 缓存，把 internal node 对应的 river 端点规格固定下来
+  - `_update_boundary_conditions_parallel()` 在默认 internal node 配置下改为：
+    - 外边界阶段直接返回 internal node 聚合量
+    - internal iteration 每轮只返回聚合量
+    - 仅在最终记录 `internal_node_history.csv` 前再强制取一次 full snapshot
+
+### 原理说明
+
+这一步不改变：
+
+- 外边界 / 内部边界公式
+- 结点牛顿迭代的数学含义
+- 单河道边界处理方式
+- 时间推进顺序
+- CFL
+- 输出文件定义
+
+它只把“内部结点迭代阶段从 worker 回传的接口信息”从逐河道 compact snapshot 改成逐结点聚合量。
+
+### 验证命令
+
+10 分钟 smoke：
+
+```bash
+/usr/bin/time -p -o result/tmp_nodeagg_process_10m/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_nodeagg_process_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_parallel_process_nodeagg_py311_40h/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_parallel_process_nodeagg_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  conda run -n python311 python Islam.py
+```
+
+比较：
+
+```bash
+conda run -n python311 python tools/compare_results.py \
+  result/exp_parallel_process_compactsnap_py311_40h \
+  result/exp_parallel_process_nodeagg_py311_40h \
+  --out result/exp_parallel_process_nodeagg_py311_40h/compare_to_prev_best.json
+
+conda run -n python311 python result/eval_river11_nse.py \
+  result/exp_parallel_process_nodeagg_py311_40h
+```
+
+### 10 分钟 smoke 结果
+
+- 优化 12：`1.38 s`
+- 优化 13：`1.31 s`
+- 绝对减少：`0.07 s`
+- 相对减少：`5.07%`
+
+### 实测收益
+
+40 小时 full-case：
+
+- 优化 12：wall `442.12 s`，模型内部 `399.33 s`
+- 优化 13：wall `427.97 s`，模型内部 `385.73 s`
+
+相对优化 12：
+
+- wall：
+  - 绝对减少：`14.15 s`
+  - 相对减少：`3.20%`
+- 模型内部演进时间：
+  - 绝对减少：`13.60 s`
+  - 相对减少：`3.41%`
+
+相对原始基线：
+
+- wall：
+  - `890.37 s -> 427.97 s`
+  - 总降幅：`51.93%`
+- 模型内部演进时间：
+  - `832.98 s -> 385.73 s`
+  - 总降幅：`53.69%`
+
+### 结果校验结论
+
+- `result/eval_river11_nse.py`：
+  - `node11_level = 0.873332`
+  - `node11_Q = -0.089159`
+  - `node12_level = 0.911626`
+  - `node12_Q = -0.105344`
+  - `mean_nse = 0.3976138544055814`
+- `tools/compare_results.py` 返回 `allclose = true`
+- `river11_raw_output.nc`
+- `river11_interpolated_output.nc`
+- 控制点时序
+- 最终状态
+
+以上全部 `max_abs = 0.0`
+
+- `internal_node_history.csv`
+  - 少数 `face_level` / `face_Q` 列出现 `1e-16 ~ 2e-13` 量级差异
+  - 原因是 worker 侧先做局部结点聚合，再由主进程按 worker 顺序合并，浮点加和分组与逐支路 snapshot 求和略有不同
+  - 当前 compare 仍为 `allclose = true`
+
+### 阶段结论
+
+优化 13 可以接受：
+
+- 它继续压缩内部结点阶段的 worker 回传 payload
+- 在不改数值链的前提下继续降低了 `_update_boundary_conditions_parallel()` 成本
+- 当前最快严格 compare 通过的 CPU 方案更新为：
+  - `process backend`
+  - `4 workers`
+  - `ISLAM_USE_CYTHON_TABLE=1`

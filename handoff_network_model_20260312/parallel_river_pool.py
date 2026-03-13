@@ -26,6 +26,13 @@ SNAP_COMPACT_GHOST_Q = 2
 SNAP_COMPACT_GHOST_S = 3
 SNAP_COMPACT_GHOST_WIDTH = 4
 
+NODE_AGG_REAL_SUM = 0
+NODE_AGG_REAL_COUNT = 1
+NODE_AGG_GHOST_SUM = 2
+NODE_AGG_GHOST_COUNT = 3
+NODE_AGG_RESIDUAL = 4
+NODE_AGG_AC = 5
+
 
 def _advance_local_river_step(river, use_implicit_branch_update=False, save_output=False):
     river.Caculate_face_U_C()
@@ -47,6 +54,44 @@ def _safe_float(value):
     if value is None:
         return math.nan
     return float(value)
+
+
+def _node_aggregate_from_specs(river_map, specs, g):
+    eps_a = 1.0e-12
+    tiny = 1.0e-12
+    aggregates = {}
+    for node_name, river_name, side_code, flow_sign in specs:
+        river = river_map[river_name]
+        if side_code == SNAP_LEFT:
+            ghost_idx = 0
+            cell_idx = 1
+        else:
+            ghost_idx = -1
+            cell_idx = -2
+        ghost_area_raw = float(max(river.S[ghost_idx], 0.0))
+        ghost_width = 0.0
+        if ghost_area_raw > 0.0:
+            ghost_width = float(
+                river.cross_section_table.get_width_by_area(
+                    river.cell_sections[ghost_idx],
+                    max(ghost_area_raw, tiny),
+                )
+            )
+        ghost_area = float(max(ghost_area_raw, eps_a))
+        ghost_width = float(max(ghost_width, eps_a))
+        ghost_q = float(river.Q[ghost_idx])
+        rec = aggregates.setdefault(node_name, [0.0, 0, 0.0, 0, 0.0, 0.0])
+        rec[NODE_AGG_REAL_SUM] += float(river.water_level[cell_idx])
+        rec[NODE_AGG_REAL_COUNT] += 1
+        rec[NODE_AGG_GHOST_SUM] += float(river.water_level[ghost_idx])
+        rec[NODE_AGG_GHOST_COUNT] += 1
+        rec[NODE_AGG_RESIDUAL] += float(flow_sign) * ghost_q
+        ac_term = math.sqrt(g * ghost_area * ghost_width)
+        if flow_sign > 0:
+            rec[NODE_AGG_AC] += ac_term - ghost_q * ghost_width / ghost_area
+        else:
+            rec[NODE_AGG_AC] += ac_term + ghost_q * ghost_width / ghost_area
+    return aggregates
 
 
 def _river_interface_snapshot(river, mode='full'):
@@ -162,6 +207,24 @@ def _worker_main(connection, rivers):
                 connection.send((task_id, 'ok', results))
                 continue
 
+            if command == 'call_batch_and_node_aggregates':
+                for call in payload['calls']:
+                    river = river_map[call['river']]
+                    method = getattr(river, call['method'])
+                    method(*call.get('args', ()), **call.get('kwargs', {}))
+                connection.send(
+                    (
+                        task_id,
+                        'ok',
+                        _node_aggregate_from_specs(
+                            river_map,
+                            payload.get('node_specs', ()),
+                            float(payload['g']),
+                        ),
+                    )
+                )
+                continue
+
             if command == 'get_rivers':
                 names = payload['names']
                 connection.send(
@@ -267,6 +330,10 @@ class PersistentRiverThreadPool:
         for name, future in futures:
             results[name] = future.result()
         return results
+
+    def call_batch_and_node_aggregates(self, calls, node_specs, g):
+        self.call_batch(calls, collect=False)
+        return _node_aggregate_from_specs(self._river_map, node_specs, float(g))
 
     def shutdown(self):
         self._executor.shutdown(wait=True, cancel_futures=False)
@@ -443,6 +510,41 @@ class PersistentRiverProcessPool:
         results = {}
         for worker, task_id in pending:
             results.update(self._collect(worker, task_id))
+        return results
+
+    def call_batch_and_node_aggregates(self, calls, node_specs, g):
+        grouped_calls = {worker['id']: [] for worker in self._workers}
+        for call in calls:
+            grouped_calls[self._river_to_worker[call['river']]].append(call)
+
+        grouped_specs = {worker['id']: [] for worker in self._workers}
+        for spec in node_specs:
+            grouped_specs[self._river_to_worker[spec[1]]].append(spec)
+
+        pending = []
+        for worker in self._workers:
+            worker_calls = grouped_calls[worker['id']]
+            worker_specs = grouped_specs[worker['id']]
+            if not worker_calls and not worker_specs:
+                continue
+            task_id = self._submit(
+                worker,
+                'call_batch_and_node_aggregates',
+                {
+                    'calls': worker_calls,
+                    'node_specs': worker_specs,
+                    'g': float(g),
+                },
+            )
+            pending.append((worker, task_id))
+
+        results = {}
+        for worker, task_id in pending:
+            payload = self._collect(worker, task_id)
+            for node_name, values in payload.items():
+                rec = results.setdefault(node_name, [0.0, 0, 0.0, 0, 0.0, 0.0])
+                for idx, value in enumerate(values):
+                    rec[idx] += value
         return results
 
     def get_rivers(self, names=None):

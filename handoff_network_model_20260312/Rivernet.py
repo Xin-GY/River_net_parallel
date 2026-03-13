@@ -11,6 +11,12 @@ import pandas as pd
 import datetime
 import numpy as np
 from parallel_river_pool import (
+    NODE_AGG_AC,
+    NODE_AGG_GHOST_COUNT,
+    NODE_AGG_GHOST_SUM,
+    NODE_AGG_REAL_COUNT,
+    NODE_AGG_REAL_SUM,
+    NODE_AGG_RESIDUAL,
     PersistentRiverProcessPool,
     PersistentRiverThreadPool,
     SNAP_BOUNDARY_FACE_AREA,
@@ -149,6 +155,7 @@ class Rivernet():
             for n in self.G.nodes()
         }
         self._river_method_cache = {}
+        self._parallel_internal_node_specs_cache = None
 
     def _all_river_names(self):
         return [data.get('name') for _, _, data in self._river_edges]
@@ -1236,6 +1243,12 @@ class Rivernet():
             return float(np.average(level_list))
         return np.nan
 
+    def _parallel_node_average_level_at_real_cell_from_aggregates(self, node, aggregates):
+        rec = aggregates.get(node)
+        if rec is None or rec[NODE_AGG_REAL_COUNT] <= 0:
+            return np.nan
+        return float(rec[NODE_AGG_REAL_SUM] / rec[NODE_AGG_REAL_COUNT])
+
     def _parallel_node_average_level_at_ghost_cell(self, node, snapshots):
         level_list = []
         for _, name in self._in_branches_by_node[node]:
@@ -1253,6 +1266,12 @@ class Rivernet():
         if level_list:
             return float(np.average(level_list))
         return np.nan
+
+    def _parallel_node_average_level_at_ghost_cell_from_aggregates(self, node, aggregates):
+        rec = aggregates.get(node)
+        if rec is None or rec[NODE_AGG_GHOST_COUNT] <= 0:
+            return np.nan
+        return float(rec[NODE_AGG_GHOST_SUM] / rec[NODE_AGG_GHOST_COUNT])
 
     def _parallel_node_mass_residual(self, node, snapshots):
         pure_q = 0.0
@@ -1284,6 +1303,12 @@ class Rivernet():
                 q_out = float(end[SNAP_GHOST_Q])
             pure_q -= q_out
         return float(pure_q)
+
+    def _parallel_node_mass_residual_from_aggregates(self, node, aggregates):
+        rec = aggregates.get(node)
+        if rec is None:
+            return 0.0
+        return float(rec[NODE_AGG_RESIDUAL])
 
     def _parallel_node_ac(self, node, snapshots):
         eps_a = 1e-12
@@ -1378,6 +1403,12 @@ class Rivernet():
             ac += np.sqrt(self.g * area * width) + discharge * width / area
 
         return float(self.alpha * ac)
+
+    def _parallel_node_ac_from_aggregates(self, node, aggregates):
+        rec = aggregates.get(node)
+        if rec is None:
+            return 0.0
+        return float(self.alpha * rec[NODE_AGG_AC])
 
     def _build_parallel_external_boundary_ops(self):
         ops = []
@@ -1479,22 +1510,55 @@ class Rivernet():
             and (not self.internal_node_use_boundary_face_ac)
         )
 
+    def _parallel_can_use_node_aggregates(self):
+        return self._parallel_can_use_compact_snapshots()
+
+    def _parallel_internal_node_aggregate_specs(self):
+        cache = getattr(self, '_parallel_internal_node_specs_cache', None)
+        if cache is not None:
+            return cache
+        specs = []
+        for node_name in self.internal_nodes:
+            for _, river_name in self._in_branches_by_node[node_name]:
+                specs.append((node_name, river_name, SNAP_RIGHT, 1.0))
+            for _, river_name in self._out_branches_by_node[node_name]:
+                specs.append((node_name, river_name, SNAP_LEFT, -1.0))
+        self._parallel_internal_node_specs_cache = specs
+        return specs
+
     def _update_boundary_conditions_parallel(self, pool):
         external_ops = self._build_parallel_external_boundary_ops()
-        compact_snapshots = self._parallel_can_use_compact_snapshots()
-        snapshot_mode = 'compact' if compact_snapshots else 'full'
-        snapshots = pool.call_batch_and_interface_snapshots(external_ops, snapshot_mode=snapshot_mode)
         if not self.internal_nodes:
-            return snapshots
+            return pool.call_batch_and_interface_snapshots(external_ops, snapshot_mode='full')
+
+        use_node_aggregates = self._parallel_can_use_node_aggregates()
+        compact_snapshots = self._parallel_can_use_compact_snapshots() and (not use_node_aggregates)
+        snapshot_mode = 'compact' if compact_snapshots else 'full'
+        if use_node_aggregates:
+            aggregates = pool.call_batch_and_node_aggregates(
+                external_ops,
+                self._parallel_internal_node_aggregate_specs(),
+                g=self.g,
+            )
+            snapshots = None
+        else:
+            snapshots = pool.call_batch_and_interface_snapshots(external_ops, snapshot_mode=snapshot_mode)
+            aggregates = None
 
         node_levels = {}
         for n in self.internal_nodes:
             if self.internal_level_predict_from_last and n in self._internal_node_level_cache:
                 z0 = float(self._internal_node_level_cache[n])
             else:
-                z0 = float(self._parallel_node_average_level_at_real_cell(n, snapshots))
+                if use_node_aggregates:
+                    z0 = float(self._parallel_node_average_level_at_real_cell_from_aggregates(n, aggregates))
+                else:
+                    z0 = float(self._parallel_node_average_level_at_real_cell(n, snapshots))
                 if np.isnan(z0):
-                    z0 = float(self._parallel_node_average_level_at_ghost_cell(n, snapshots))
+                    if use_node_aggregates:
+                        z0 = float(self._parallel_node_average_level_at_ghost_cell_from_aggregates(n, aggregates))
+                    else:
+                        z0 = float(self._parallel_node_average_level_at_ghost_cell(n, snapshots))
                 if np.isnan(z0):
                     z0 = 0.0
             node_levels[n] = max(0.0, z0)
@@ -1502,15 +1566,26 @@ class Rivernet():
         converged = False
         max_abs_q = np.inf
         for _ in range(1, self.max_iteration + 1):
-            snapshots = pool.call_batch_and_interface_snapshots(
-                self._build_parallel_internal_level_ops(node_levels, snapshots),
-                snapshot_mode=snapshot_mode,
-            )
+            iter_ops = self._build_parallel_internal_level_ops(node_levels, snapshots)
+            if use_node_aggregates:
+                aggregates = pool.call_batch_and_node_aggregates(
+                    iter_ops,
+                    self._parallel_internal_node_aggregate_specs(),
+                    g=self.g,
+                )
+            else:
+                snapshots = pool.call_batch_and_interface_snapshots(
+                    iter_ops,
+                    snapshot_mode=snapshot_mode,
+                )
 
             node_residual = {}
             max_abs_q = 0.0
             for n in self.internal_nodes:
-                pure_q = self._parallel_node_mass_residual(n, snapshots)
+                if use_node_aggregates:
+                    pure_q = self._parallel_node_mass_residual_from_aggregates(n, aggregates)
+                else:
+                    pure_q = self._parallel_node_mass_residual(n, snapshots)
                 node_residual[n] = pure_q
                 max_abs_q = max(max_abs_q, abs(pure_q))
 
@@ -1518,7 +1593,10 @@ class Rivernet():
             max_abs_dz = 0.0
             for n in self.internal_nodes:
                 pure_q = node_residual[n]
-                dR_dZ = -float(self._parallel_node_ac(n, snapshots))
+                if use_node_aggregates:
+                    dR_dZ = -float(self._parallel_node_ac_from_aggregates(n, aggregates))
+                else:
+                    dR_dZ = -float(self._parallel_node_ac(n, snapshots))
                 if abs(dR_dZ) < 1e-10:
                     dz = 0.0
                 else:

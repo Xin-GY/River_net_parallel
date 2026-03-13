@@ -23,8 +23,8 @@
   - `ISLAM_PARALLEL_BACKEND=process`
   - `ISLAM_N_WORKERS=4`
   - `ISLAM_USE_CYTHON_TABLE=1`
-- Islam 40h full-case wall time：`442.12 s`
-- 模型内部自报时间：`399.33 s`
+- Islam 40h full-case wall time：`427.97 s`
+- 模型内部自报时间：`385.73 s`
 - 当前验收优先看模型内部自报演进时间，不计初始化时间
 
 解释：
