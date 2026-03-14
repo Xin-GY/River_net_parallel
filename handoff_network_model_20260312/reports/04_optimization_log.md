@@ -2399,3 +2399,180 @@ conda run -n python311 python Islam.py
 - 命中的是当前汊点默认 fast path，而不是仅优化 Python fallback
 - 结果与上一接受版逐点一致
 - 收益不大，但属于低风险、可叠加的 `evolve` 侧等价缓存优化
+
+## 优化 17: 修复 `sections_data` 共享可变状态，并压缩 general HR 热路径查表与并行启动成本
+
+### 改动目标
+
+- 修复多个 `River` 共享可变 `sections_data` 带来的污染风险，确保 Fine 插值只影响当前河道实例
+- 压低 general HR 显式通量路径中的字符串查找、`tables` dict 查找和 Python 对象分配
+- 在 Linux 上实测并行后端，确认 `serial / threads / process(fork) / process(spawn)` 的真实 wall-clock 表现
+
+### 具体修改
+
+- `river_for_net.py`
+  - 引入：
+    - `raw_sections_data`：只读共享的冻结断面数据
+    - `runtime_sections_data`：每个 `River` 私有的可变运行态断面数据
+  - `self.sections_data` 保留为 `runtime_sections_data` 的兼容别名
+  - `CrossSectionModel_V3` 改为基于 `raw_sections_data` 构建，避免输入断面在运行期被污染
+  - `Fine_cell_property()` / `Fine_cell_property2()`、`Create_cross_section_table()` 后统一重绑 runtime 视图
+  - 新增 `_rebind_runtime_section_views()`，为 cell / face 预绑定：
+    - section id
+    - per-cell table ref
+    - general HR 左右 table ref
+  - `_compute_general_hr_interface_flux()` 默认热路径不再走 dict-heavy 详情链，优先走：
+    - 单界面 Cython fast path
+    - 否则走新的轻量 Python fast path
+  - `_caculate_roe_flux_general_hr()` 新增界面批处理 Cython 路径，减少 Python 层函数调度
+  - `_refresh_cell_state()`、`_apply_explicit_friction_substep()` 改为直接使用预绑定 table ref
+- `cython_cross_section.pyx`
+  - 新增 `compute_general_hr_flux_batch(...)`
+  - 批量处理 general HR 界面通量与 positivity control
+- `Rivernet.py`
+  - 新增 `_resolve_process_start_method()`
+  - `parallel_start_method=auto` 时，Linux 默认使用 `fork`
+- `Islam.py`
+  - `ISLAM_PARALLEL_START_METHOD` 默认值改为 `auto`
+  - 断面家族检查改用 `river.raw_sections_data`
+- `tests/test_runtime_sections_isolation.py`
+  - 新增回归测试，验证一个 `River` 做 Fine 插值不会污染：
+    - 另一个 `River`
+    - `raw_sections_data`
+    - 调用方传入的原始 `section_data`
+
+### 等价性约束
+
+- general HR 热路径只做“查表引用绑定”和“批量调用下沉”，没有改变：
+  - HR 修正公式
+  - Roe / HLL 分支判定
+  - positivity flux control 语义
+- `runtime_sections_data` 与 `raw_sections_data` 分离只修复共享可变状态，不改变数值输入
+- `process + auto` 在 Linux 上解析为 `fork`，只是显式化既有最优启动策略
+
+### 验证命令
+
+共享状态回归测试：
+
+```bash
+env MPLCONFIGDIR=/tmp/mplconfig \
+  conda run -n python311 python -m unittest \
+  handoff_network_model_20260312.tests.test_runtime_sections_isolation
+```
+
+10 分钟并行矩阵：
+
+```bash
+env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_optghr_serial_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=0 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  ISLAM_USE_STAGE_TARGET_LEVEL_CACHE=1 \
+  /usr/bin/time -p -o result/tmp_optghr_serial_10m.time \
+  conda run -n python311 python Islam.py
+```
+
+```bash
+env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_optghr_threads_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=threads \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  ISLAM_USE_STAGE_TARGET_LEVEL_CACHE=1 \
+  /usr/bin/time -p -o result/tmp_optghr_threads_10m.time \
+  conda run -n python311 python Islam.py
+```
+
+```bash
+env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_optghr_process_fork_10m \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_PARALLEL_START_METHOD=fork \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  ISLAM_USE_STAGE_TARGET_LEVEL_CACHE=1 \
+  /usr/bin/time -p -o result/tmp_optghr_process_fork_10m.time \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_optghr_process_auto_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_PARALLEL_START_METHOD=auto \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  ISLAM_USE_STAGE_TARGET_LEVEL_CACHE=1 \
+  /usr/bin/time -p -o result/exp_optghr_process_auto_py311_40h.time \
+  conda run -n python311 python Islam.py
+```
+
+### 实测收益
+
+10 分钟矩阵，相对当前代码同配置的不同并行策略：
+
+- `serial`
+  - 模型内部自报时间：`1.63 s`
+  - wall：`5.10 s`
+- `threads, 4 workers`
+  - 模型内部自报时间：`1.79 s`
+  - wall：`5.28 s`
+- `process, 4 workers, fork`
+  - 模型内部自报时间：`1.13 s`
+  - wall：`4.68 s`
+- `process, 4 workers, spawn`
+  - 30 秒内未完成，判定为当前 Linux 环境下不可接受
+
+40 小时 full-case，相对上一接受版 `2bb984e` / `result/exp_stage_target_cache_process_py311_40h`：
+
+- 模型内部自报时间：`147.45 s -> 139.86 s`
+- 绝对减少：`7.59 s`
+- 相对减少：`5.15%`
+- `/usr/bin/time` wall：`154.72 s -> 147.10 s`
+- wall 绝对减少：`7.62 s`
+- wall 相对减少：`4.93%`
+
+### 校验结果
+
+- 共享状态回归测试通过
+- `tools/compare_results.py` 对：
+  - `result/tmp_stagecache_process_10m_v2`
+  - `result/tmp_optghr_serial_10m`
+  - 返回 `allclose = true`
+- `tools/compare_results.py` 对：
+  - `result/tmp_stagecache_process_10m_v2`
+  - `result/tmp_optghr_threads_10m`
+  - 返回 `allclose = true`
+- `tools/compare_results.py` 对：
+  - `result/tmp_stagecache_process_10m_v2`
+  - `result/tmp_optghr_process_fork_10m`
+  - 返回 `allclose = true`
+- `tools/compare_results.py` 对：
+  - `result/exp_stage_target_cache_process_py311_40h`
+  - `result/exp_optghr_process_auto_py311_40h`
+  - 返回 `allclose = true`
+
+### 结论
+
+优化 17 可以接受：
+
+- 修复了一个真实的共享可变状态风险，属于正确性增强
+- general HR 热路径的预绑定和批处理在 full-case 上留下了稳定净收益
+- Linux 下并行层应明确优先 `process + fork`，线程没有收益，`spawn` 当前不可接受

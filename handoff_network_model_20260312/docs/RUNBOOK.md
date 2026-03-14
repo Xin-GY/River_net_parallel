@@ -50,12 +50,13 @@ MPLCONFIGDIR=/tmp/mplconfig ISLAM_OUTPUT_PATH=result/exp_handoff_run ISLAM_SIM_E
 ```bash
 mkdir -p /tmp/mplconfig
 MPLCONFIGDIR=/tmp/mplconfig \
-ISLAM_OUTPUT_PATH=result/exp_stage_target_cache_process_py311_40h \
+ISLAM_OUTPUT_PATH=result/exp_optghr_process_auto_py311_40h \
 ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
 ISLAM_OUTPUT_RIVERS=river11 \
 ISLAM_USE_FINE_INTERPOLATION=0 \
 ISLAM_USE_PARALLEL=1 \
 ISLAM_PARALLEL_BACKEND=process \
+ISLAM_PARALLEL_START_METHOD=auto \
 ISLAM_N_WORKERS=4 \
 ISLAM_SAVE_CFL_HISTORY=1 \
 ISLAM_USE_CYTHON_TABLE=1 \
@@ -66,6 +67,11 @@ conda run -n python311 python Islam.py
 说明：
 - 该路径对应当前已验证的最快 full-case 严格校验通过 baseline。
 - 若要关闭并行，设置 `ISLAM_USE_PARALLEL=0`。
+- 若显式指定 `ISLAM_PARALLEL_START_METHOD=auto`，Linux 会自动选 `fork`。
+- 当前 Linux 实测下：
+  - `threads` 比 `serial` 慢
+  - `process + fork` 最快
+  - `process + spawn` 在 10 分钟案例上 30 秒内未完成，不推荐
 - 若要关闭 Cython 断面表后端，设置 `ISLAM_USE_CYTHON_TABLE=0`。
 - 若要关闭固定水位边界目标侧预构建缓存，设置 `ISLAM_USE_STAGE_TARGET_LEVEL_CACHE=0`。
 - 默认输出模式为 `ISLAM_OUTPUT_WRITE_MODE=single_resampled`，仅写一个最终重采样结果文件。
@@ -76,6 +82,16 @@ conda run -n python311 python Islam.py
   - 之后按 `yield_step` 保存
   - 结束时再保存一帧
   - 中途只在内存中缓冲，不会逐次写盘
+
+## 回归测试
+
+共享断面运行态隔离回归测试：
+
+```bash
+env MPLCONFIGDIR=/tmp/mplconfig \
+  conda run -n python311 python -m unittest \
+  handoff_network_model_20260312.tests.test_runtime_sections_isolation
+```
 
 ## 评估 NSE
 

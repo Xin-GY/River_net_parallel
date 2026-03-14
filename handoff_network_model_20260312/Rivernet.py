@@ -134,7 +134,7 @@ class Rivernet():
         self.use_parallel_workers = False
         self.parallel_backend = 'threads'
         self.parallel_n_workers = max((os.cpu_count() or 1), 1)
-        self.parallel_start_method = 'spawn'
+        self.parallel_start_method = 'auto'
         self.parallel_sync_main_state_on_yield = True
         self.save_cfl_history = False
         self.cfl_history = []
@@ -179,6 +179,14 @@ class Rivernet():
             or self.internal_sync_branch_end_Q
             or self.internal_node_use_face_flux_residual
         )
+
+    def _resolve_process_start_method(self):
+        method = str(getattr(self, 'parallel_start_method', 'auto')).strip().lower()
+        if method in {'', 'auto'}:
+            return 'fork' if os.name == 'posix' else 'spawn'
+        if method == 'fork' and os.name != 'posix':
+            return 'spawn'
+        return method
 
     # 创建河网
     def Create_Rivernet(self):
@@ -1974,9 +1982,7 @@ class Rivernet():
                     for t in self._evolve_base(yield_step):
                         yield t
                     return
-                start_method = self.parallel_start_method
-                if start_method == 'spawn' and os.name == 'posix':
-                    start_method = 'fork'
+                start_method = self._resolve_process_start_method()
                 pool = PersistentRiverProcessPool(
                     river_items=river_items,
                     n_workers=self.parallel_n_workers,

@@ -24,13 +24,29 @@ from multiprocessing import Process, Queue
 try:
     from cython_cross_section import (
         CrossSectionTableCython,
+        compute_general_hr_flux_batch as cython_compute_general_hr_flux_batch,
         compute_general_hr_flux_interface as cython_compute_general_hr_flux_interface,
         compute_stage_boundary_mainline_fast as cython_compute_stage_boundary_mainline_fast,
     )
 except Exception:
     CrossSectionTableCython = None
+    cython_compute_general_hr_flux_batch = None
     cython_compute_general_hr_flux_interface = None
     cython_compute_stage_boundary_mainline_fast = None
+
+
+def _freeze_section_data(section_data):
+    return {
+        str(name): tuple(tuple(point) for point in points)
+        for name, points in section_data.items()
+    }
+
+
+def _clone_section_data(section_data):
+    return {
+        str(name): [list(point) for point in points]
+        for name, points in section_data.items()
+    }
 
 class CrossSectionModel_V3:
 
@@ -575,11 +591,14 @@ class River(Process):
         self._char_potential_cache = {}
         self.section_table_manning_used = {}
         self.cross_section_table = CrossSectionTableManagerV2()
+        self.raw_sections_data = _freeze_section_data(section_data)
+        self.runtime_sections_data = _clone_section_data(self.raw_sections_data)
+        self.sections_data = self.runtime_sections_data
         self.section_interpolation_enabled = bool(section_pos)
         self.Interpolator = None
         if self.section_interpolation_enabled:
             self.Interpolator = CrossSectionModel_V3(
-                section_data=section_data,
+                section_data=self.raw_sections_data,
                 section_pos=section_pos,
                 use_spline_interpolator=self.use_spline_interpolator,
             )
@@ -604,7 +623,6 @@ class River(Process):
         self.cell_num = river_data['cell_num']
         self.pos = np.array(river_data['pos'], dtype=dtype)
         self.section_name = river_data['section_name']
-        self.sections_data = section_data
         self.section_pos = section_pos
         self.DT = 0.1
         self.DT_old = self.DT
@@ -810,12 +828,34 @@ class River(Process):
         self.boundary_face_width_right = None
         self.boundary_face_level_left = None
         self.boundary_face_level_right = None
+        self._section_name_to_id = {}
+        self._section_table_refs_by_id = []
+        self._section_id_by_cell = np.zeros(self.cell_num + 2, dtype=np.int32)
+        self._cell_section_tables = ()
+        self._general_hr_left_tables = ()
+        self._general_hr_right_tables = ()
+        self._general_hr_cython_batch_ready = False
+        self._general_hr_flux_mass_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_flux_momentum_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_press_left_hr_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_press_right_hr_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_h_left_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_h_right_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_z_left_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_z_right_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_area_left_center_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_area_right_center_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_q_left_center_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_q_right_center_buf = np.zeros(self.cell_num + 1, dtype=float)
+        self._general_hr_cell_area_buf = np.zeros(self.cell_num + 2, dtype=float)
+        self._general_hr_cell_length_buf = np.asarray(self.cell_lengths, dtype=float).copy()
+        self._rebind_runtime_section_views()
         self.use_boundary_face_flux_override = bool(sim_data.get('use_boundary_face_flux_override', False))
         self.use_boundary_face_mass_flux_override = bool(sim_data.get('use_boundary_face_mass_flux_override', False))
 
     def _detect_constant_rectangular_width(self):
         width_ref = None
-        for section_name, section_point in self.sections_data.items():
+        for section_name, section_point in self.raw_sections_data.items():
             pts = np.asarray(section_point, dtype=float)
             if pts.ndim != 2 or pts.shape[1] != 2 or pts.shape[0] < 4:
                 return None
@@ -854,6 +894,39 @@ class River(Process):
         lengths = np.insert(lengths, 0, lengths[0], axis=0)
         lengths = np.insert(lengths, lengths.shape[0], lengths[-1], axis=0)
         return sections, pos, lengths
+
+    def _rebind_runtime_section_views(self):
+        section_names = list(self.runtime_sections_data.keys())
+        self._section_name_to_id = {name: idx for idx, name in enumerate(section_names)}
+        self._section_table_refs_by_id = [
+            self.cross_section_table.tables.get(name)
+            for name in section_names
+        ]
+        if len(self._section_id_by_cell) != len(self.cell_sections):
+            self._section_id_by_cell = np.zeros(len(self.cell_sections), dtype=np.int32)
+        for idx, name in enumerate(self.cell_sections):
+            self._section_id_by_cell[idx] = int(self._section_name_to_id.get(name, -1))
+        self._cell_section_tables = tuple(
+            self.cross_section_table.tables.get(name)
+            for name in self.cell_sections
+        )
+        self._general_hr_left_tables = self._cell_section_tables[:-1]
+        self._general_hr_right_tables = self._cell_section_tables[1:]
+        self._general_hr_cython_batch_ready = bool(
+            CrossSectionTableCython is not None
+            and self._general_hr_left_tables
+            and all(
+                isinstance(tbl, CrossSectionTableCython)
+                for tbl in self._general_hr_left_tables + self._general_hr_right_tables
+            )
+        )
+
+    def _get_cell_table_ref(self, idx):
+        if 0 <= idx < len(self._cell_section_tables):
+            tbl = self._cell_section_tables[idx]
+            if tbl is not None:
+                return tbl
+        return self.cross_section_table.tables.get(self.cell_sections[idx])
 
     def _real_cell_slice(self):
         return slice(1, self.cell_num + 1)
@@ -997,16 +1070,17 @@ class River(Process):
         """Conservative owner: apply post-flux friction update on Q."""
         if self.FRTIMP:
             for i in range(1, self.cell_num + 1):
+                tbl = self._get_cell_table_ref(i)
                 prev_s = float(self.S[i])
                 prev_depth = float(self.water_depth[i])
-                depth_i = self.cross_section_table.get_depth_by_area(self.cell_sections[i], max(self.S[i], 0.0))
+                depth_i = tbl.get_depth_by_area(max(self.S[i], 0.0))
                 if self._is_cell_dry(i, area=self.S[i], depth=depth_i):
                     self._apply_conservative_dry_guard(i, prev_s=prev_s, prev_depth=prev_depth)
                 else:
                     if self.friction_min_depth > 0.0 and depth_i <= self.friction_min_depth:
                         coef = 0.0
                     else:
-                        deb = self.cross_section_table.get_DEB_by_area(self.cell_sections[i], self.S[i])
+                        deb = tbl.get_DEB_by_area(self.S[i])
                         coef = self.g * self.DT * self.S[i] / (deb * deb)
                     delta = 1 + 4 * coef * np.abs(self.Q[i])
                     if coef > 1e-06:
@@ -1026,8 +1100,9 @@ class River(Process):
             c2 = self.chezy_friction_c * self.chezy_friction_c
             for i in range(1, self.cell_num + 1):
                 if self.S[i] > self._get_cell_s_limit(i):
+                    tbl = self._get_cell_table_ref(i)
                     area_i = max(float(self.S[i]), self._get_cell_s_limit(i))
-                    radius_i = self.cross_section_table.get_hydraulic_radius_by_area(self.cell_sections[i], area_i)
+                    radius_i = tbl.get_hydraulic_radius_by_area(area_i)
                     radius_i = max(float(radius_i), self.water_depth_limit)
                     coef = self.DT * self.g * np.abs(self.Q[i]) / (c2 * area_i * radius_i + self.EPSILON)
                     self.Q[i] = self.Q[i] / (1.0 + coef)
@@ -1035,14 +1110,14 @@ class River(Process):
             c2 = self.chezy_friction_c * self.chezy_friction_c
             for i in range(1, self.cell_num + 1):
                 if self.S[i] > self._get_cell_s_limit(i):
-                    depth_i = self.cross_section_table.get_depth_by_area(self.cell_sections[i], self.S[i])
+                    depth_i = self._get_cell_table_ref(i).get_depth_by_area(self.S[i])
                     depth_i = max(float(depth_i), self.water_depth_limit)
                     coef = self.DT * self.g * np.abs(self.Q[i]) / (c2 * depth_i * depth_i + self.EPSILON)
                     self.Q[i] = self.Q[i] / (1.0 + coef)
         elif self.friction_model == 'laminar_h2' and self.laminar_friction_k > 0.0:
             for i in range(1, self.cell_num + 1):
                 if self.S[i] > self._get_cell_s_limit(i):
-                    depth_i = self.cross_section_table.get_depth_by_area(self.cell_sections[i], self.S[i])
+                    depth_i = self._get_cell_table_ref(i).get_depth_by_area(self.S[i])
                     depth_i = max(depth_i, self.water_depth_limit)
                     coef = max(self.DT * self.laminar_friction_k / (depth_i * depth_i + self.EPSILON), 0.0)
                     self.Q[i] = self.Q[i] * np.exp(-coef)
@@ -1056,8 +1131,13 @@ class River(Process):
             if self._is_cell_dry(i, area=self.S[i], depth=depth_i):
                 self._apply_conservative_dry_guard(i, prev_s=prev_s, prev_depth=prev_depth)
 
-    def _resolve_width_for_state(self, section_name, area, depth):
-        width = float(self.cross_section_table.get_width_by_area(section_name, area))
+    def _resolve_width_for_state(self, section_name, area, depth, table_ref=None):
+        if table_ref is None:
+            table_ref = self.cross_section_table.tables.get(section_name)
+        if table_ref is not None:
+            width = float(table_ref.get_width_by_area(area))
+        else:
+            width = float(self.cross_section_table.get_width_by_area(section_name, area))
         if (not self.fix_02_preserve_true_width) and width < self.EPSILON and depth > self.water_depth_limit:
             width = max(area / max(depth, self.water_depth_limit), self.EPSILON)
         return max(width, self.EPSILON)
@@ -2397,47 +2477,153 @@ class River(Process):
             'corr_right': float(corr_right),
         }
 
+    def _compute_general_hr_interface_flux_fast_python(self, i, tiny):
+        left_tbl = self._general_hr_left_tables[i]
+        right_tbl = self._general_hr_right_tables[i]
+
+        z_left = float(self.river_bed_height[i])
+        z_right = float(self.river_bed_height[i + 1])
+        h_left = max(float(self.water_depth[i]), 0.0)
+        h_right = max(float(self.water_depth[i + 1]), 0.0)
+        eta_left = z_left + h_left
+        eta_right = z_right + h_right
+
+        if float(self.S[i]) > tiny and h_left > tiny:
+            u_left = float(self.Q[i]) / max(float(self.S[i]), tiny)
+        else:
+            u_left = 0.0
+        if float(self.S[i + 1]) > tiny and h_right > tiny:
+            u_right = float(self.Q[i + 1]) / max(float(self.S[i + 1]), tiny)
+        else:
+            u_right = 0.0
+
+        z_face = max(z_left, z_right)
+        h_left_hr = max(0.0, eta_left - z_face)
+        h_right_hr = max(0.0, eta_right - z_face)
+        a_left = float(left_tbl.get_area_by_depth(h_left_hr))
+        a_right = float(right_tbl.get_area_by_depth(h_right_hr))
+        p_left_hr = float(left_tbl.get_press_by_area(a_left))
+        p_right_hr = float(right_tbl.get_press_by_area(a_right))
+        q_left = a_left * u_left
+        q_right = a_right * u_right
+        f_left0 = q_left
+        f_left1 = q_left * u_left + p_left_hr
+        f_right0 = q_right
+        f_right1 = q_right * u_right + p_right_hr
+
+        if a_left <= tiny and a_right <= tiny:
+            flux0 = 0.0
+            flux1 = 0.0
+        else:
+            t_left = float(left_tbl.get_width_by_area(max(a_left, tiny)))
+            t_right = float(right_tbl.get_width_by_area(max(a_right, tiny)))
+            t_left = max(t_left, tiny)
+            t_right = max(t_right, tiny)
+            c_left = np.sqrt(max(self.g * a_left / t_left, 0.0)) if a_left > tiny else 0.0
+            c_right = np.sqrt(max(self.g * a_right / t_right, 0.0)) if a_right > tiny else 0.0
+            s_left = min(u_left - c_left, u_right - c_right)
+            s_right = max(u_left + c_left, u_right + c_right)
+
+            if a_left > tiny and a_right > tiny:
+                sqrt_al = np.sqrt(max(a_left, 0.0))
+                sqrt_ar = np.sqrt(max(a_right, 0.0))
+                denom = sqrt_al + sqrt_ar
+                if denom <= tiny:
+                    u_roe = 0.0
+                else:
+                    u_roe = (u_left * sqrt_al + u_right * sqrt_ar) / denom
+                if abs(a_right - a_left) > tiny:
+                    c_roe = np.sqrt(max((p_right_hr - p_left_hr) / (a_right - a_left), 0.0))
+                else:
+                    c_roe = 0.5 * (c_left + c_right)
+                if c_roe <= tiny:
+                    flux0 = 0.5 * (f_left0 + f_right0)
+                    flux1 = 0.5 * (f_left1 + f_right1)
+                else:
+                    da = a_right - a_left
+                    dq = q_right - q_left
+                    alpha1 = ((u_roe + c_roe) * da - dq) / (2.0 * c_roe)
+                    alpha2 = (dq - (u_roe - c_roe) * da) / (2.0 * c_roe)
+                    lam1 = u_roe - c_roe
+                    lam2 = u_roe + c_roe
+                    abs1 = self._roe_abs_with_fix(lam1, c_roe)
+                    abs2 = self._roe_abs_with_fix(lam2, c_roe)
+                    flux0 = 0.5 * (f_left0 + f_right0) - 0.5 * (abs1 * alpha1 + abs2 * alpha2)
+                    flux1 = 0.5 * (f_left1 + f_right1) - 0.5 * (
+                        abs1 * alpha1 * (u_roe - c_roe) + abs2 * alpha2 * (u_roe + c_roe)
+                    )
+            elif s_left >= 0.0:
+                flux0 = f_left0
+                flux1 = f_left1
+            elif s_right <= 0.0:
+                flux0 = f_right0
+                flux1 = f_right1
+            elif s_right - s_left <= tiny:
+                flux0 = 0.0
+                flux1 = 0.0
+            else:
+                flux0 = (s_right * f_left0 - s_left * f_right0 + s_left * s_right * (a_right - a_left)) / (s_right - s_left)
+                flux1 = (s_right * f_left1 - s_left * f_right1 + s_left * s_right * (q_right - q_left)) / (s_right - s_left)
+
+        if self.positivity_flux_control and abs(flux0) > tiny and self.DT > 0.0:
+            donor = None
+            if flux0 > 0.0 and 1 <= i <= self.cell_num:
+                donor = i
+            elif flux0 < 0.0 and 1 <= i + 1 <= self.cell_num:
+                donor = i + 1
+            if donor is not None:
+                available = max(float(self.S[donor]), 0.0) * max(float(self.cell_lengths[donor]), tiny)
+                max_flux = available / max(float(self.DT), tiny)
+                if max_flux < abs(flux0):
+                    scale = max_flux / max(abs(flux0), tiny)
+                    flux0 *= scale
+                    flux1 *= scale
+
+        corr_left = float(self.PRESS[i]) - p_left_hr
+        corr_right = float(self.PRESS[i + 1]) - p_right_hr
+        return np.array([flux0, flux1], dtype=float), corr_left, corr_right
+
     def _compute_general_hr_interface_flux(self, i, return_details=False):
         tiny = max(self.S_limit, self.EPSILON)
-        if (not return_details) and cython_compute_general_hr_flux_interface is not None and CrossSectionTableCython is not None:
-            sec_left = self.cell_sections[i]
-            sec_right = self.cell_sections[i + 1]
-            tbl_left = self.cross_section_table.tables.get(sec_left)
-            tbl_right = self.cross_section_table.tables.get(sec_right)
-            if isinstance(tbl_left, CrossSectionTableCython) and isinstance(tbl_right, CrossSectionTableCython):
-                flux0, flux1, p_left_hr, p_right_hr = cython_compute_general_hr_flux_interface(
-                    tbl_left,
-                    tbl_right,
-                    float(self.g),
-                    float(tiny),
-                    float(self.roe_entropy_fix),
-                    float(self.roe_entropy_fix_factor),
-                    float(self.river_bed_height[i]),
-                    float(self.river_bed_height[i + 1]),
-                    max(float(self.water_depth[i]), 0.0),
-                    max(float(self.water_depth[i + 1]), 0.0),
-                    float(self.S[i]),
-                    float(self.S[i + 1]),
-                    float(self.Q[i]),
-                    float(self.Q[i + 1]),
-                )
-                if self.positivity_flux_control and abs(flux0) > tiny and self.DT > 0.0:
-                    donor = None
-                    if flux0 > 0.0 and 1 <= i <= self.cell_num:
-                        donor = i
-                    elif flux0 < 0.0 and 1 <= i + 1 <= self.cell_num:
-                        donor = i + 1
-                    if donor is not None:
-                        available = max(float(self.S[donor]), 0.0) * max(float(self.cell_lengths[donor]), tiny)
-                        max_flux = available / max(float(self.DT), tiny)
-                        if max_flux < abs(flux0):
-                            scale = max_flux / max(abs(flux0), tiny)
-                            flux0 *= scale
-                            flux1 *= scale
-                flux = np.array([flux0, flux1], dtype=float)
-                corr_left = float(self.PRESS[i]) - float(p_left_hr)
-                corr_right = float(self.PRESS[i + 1]) - float(p_right_hr)
-                return flux, corr_left, corr_right
+        if not return_details:
+            if cython_compute_general_hr_flux_interface is not None and CrossSectionTableCython is not None:
+                tbl_left = self._general_hr_left_tables[i]
+                tbl_right = self._general_hr_right_tables[i]
+                if isinstance(tbl_left, CrossSectionTableCython) and isinstance(tbl_right, CrossSectionTableCython):
+                    flux0, flux1, p_left_hr, p_right_hr = cython_compute_general_hr_flux_interface(
+                        tbl_left,
+                        tbl_right,
+                        float(self.g),
+                        float(tiny),
+                        float(self.roe_entropy_fix),
+                        float(self.roe_entropy_fix_factor),
+                        float(self.river_bed_height[i]),
+                        float(self.river_bed_height[i + 1]),
+                        max(float(self.water_depth[i]), 0.0),
+                        max(float(self.water_depth[i + 1]), 0.0),
+                        float(self.S[i]),
+                        float(self.S[i + 1]),
+                        float(self.Q[i]),
+                        float(self.Q[i + 1]),
+                    )
+                    if self.positivity_flux_control and abs(flux0) > tiny and self.DT > 0.0:
+                        donor = None
+                        if flux0 > 0.0 and 1 <= i <= self.cell_num:
+                            donor = i
+                        elif flux0 < 0.0 and 1 <= i + 1 <= self.cell_num:
+                            donor = i + 1
+                        if donor is not None:
+                            available = max(float(self.S[donor]), 0.0) * max(float(self.cell_lengths[donor]), tiny)
+                            max_flux = available / max(float(self.DT), tiny)
+                            if max_flux < abs(flux0):
+                                scale = max_flux / max(abs(flux0), tiny)
+                                flux0 *= scale
+                                flux1 *= scale
+                    flux = np.array([flux0, flux1], dtype=float)
+                    corr_left = float(self.PRESS[i]) - float(p_left_hr)
+                    corr_right = float(self.PRESS[i + 1]) - float(p_right_hr)
+                    return flux, corr_left, corr_right
+            return self._compute_general_hr_interface_flux_fast_python(i, tiny)
         state = self._load_general_interface_center_state(i, tiny)
         state = self._project_general_hr_face_state(state)
         state = self._solve_general_hr_roe_flux(state, tiny)
@@ -2476,16 +2662,53 @@ class River(Process):
         self.Flux_Friction_left.fill(0.0)
         self.Flux_Friction_right.fill(0.0)
         self.cell_press_source.fill(0.0)
-        for i in range(self.cell_num + 1):
-            flux, corr_left, corr_right = self._compute_general_hr_interface_flux(i)
-            self.Flux_LOC[i, :] = flux
-            self.Flux_Source_right[i, 1] = corr_left
-            self.Flux_Source_left[i + 1, 1] = -corr_right
-        for j in range(1, self.cell_num + 1):
-            if abs(float(self.QIN[j])) > 0.0:
-                rain_half = -0.5 * float(self.cell_lengths[j]) * float(self.QIN[j])
-                self.Flux_Source_left[j, 0] += rain_half
-                self.Flux_Source_right[j, 0] += rain_half
+        if self._general_hr_cython_batch_ready and cython_compute_general_hr_flux_batch is not None:
+            np.maximum(self.water_depth[:self.cell_num + 1], 0.0, out=self._general_hr_h_left_buf)
+            np.maximum(self.water_depth[1:self.cell_num + 2], 0.0, out=self._general_hr_h_right_buf)
+            self._general_hr_z_left_buf[:] = self.river_bed_height[:self.cell_num + 1]
+            self._general_hr_z_right_buf[:] = self.river_bed_height[1:self.cell_num + 2]
+            self._general_hr_area_left_center_buf[:] = self.S[:self.cell_num + 1]
+            self._general_hr_area_right_center_buf[:] = self.S[1:self.cell_num + 2]
+            self._general_hr_q_left_center_buf[:] = self.Q[:self.cell_num + 1]
+            self._general_hr_q_right_center_buf[:] = self.Q[1:self.cell_num + 2]
+            self._general_hr_cell_area_buf[:] = self.S
+            flux_mass, flux_momentum, p_left_hr, p_right_hr = cython_compute_general_hr_flux_batch(
+                self._general_hr_left_tables,
+                self._general_hr_right_tables,
+                float(self.g),
+                float(max(self.S_limit, self.EPSILON)),
+                float(self.roe_entropy_fix),
+                float(self.roe_entropy_fix_factor),
+                self._general_hr_z_left_buf,
+                self._general_hr_z_right_buf,
+                self._general_hr_h_left_buf,
+                self._general_hr_h_right_buf,
+                self._general_hr_area_left_center_buf,
+                self._general_hr_area_right_center_buf,
+                self._general_hr_q_left_center_buf,
+                self._general_hr_q_right_center_buf,
+                self._general_hr_cell_area_buf,
+                self._general_hr_cell_length_buf,
+                float(self.DT),
+                int(self.cell_num),
+            )
+            self._general_hr_flux_mass_buf[:] = flux_mass
+            self._general_hr_flux_momentum_buf[:] = flux_momentum
+            self._general_hr_press_left_hr_buf[:] = p_left_hr
+            self._general_hr_press_right_hr_buf[:] = p_right_hr
+            self.Flux_LOC[:self.cell_num + 1, 0] = self._general_hr_flux_mass_buf
+            self.Flux_LOC[:self.cell_num + 1, 1] = self._general_hr_flux_momentum_buf
+            self.Flux_Source_right[:self.cell_num + 1, 1] = self.PRESS[:self.cell_num + 1] - self._general_hr_press_left_hr_buf
+            self.Flux_Source_left[1:self.cell_num + 2, 1] = -(self.PRESS[1:self.cell_num + 2] - self._general_hr_press_right_hr_buf)
+        else:
+            for i in range(self.cell_num + 1):
+                flux, corr_left, corr_right = self._compute_general_hr_interface_flux(i)
+                self.Flux_LOC[i, :] = flux
+                self.Flux_Source_right[i, 1] = corr_left
+                self.Flux_Source_left[i + 1, 1] = -corr_right
+        rain_half = -0.5 * self.cell_lengths[1:self.cell_num + 1] * self.QIN[1:self.cell_num + 1]
+        self.Flux_Source_left[1:self.cell_num + 1, 0] += rain_half
+        self.Flux_Source_right[1:self.cell_num + 1, 0] += rain_half
 
     def Caculate_Roe_Flux_2(self):
         if self.use_rectangular_hr_flux and self.constant_rectangular_width is not None:
@@ -3110,13 +3333,14 @@ class River(Process):
     def _refresh_cell_state(self, idx, level_hint=None):
         """State-refresh owner for a single cell after S/Q have been settled."""
         sec = self.cell_sections[idx]
-        section_bed = self._get_section_table_bed_level(sec)
+        tbl = self._get_cell_table_ref(idx)
+        section_bed = float(tbl.get_bed_level()) if tbl is not None else self._get_section_table_bed_level(sec)
         prev_s = float(self.S[idx])
         prev_depth = float(self.water_depth[idx])
         S = float(max(self.S[idx], 0.0))
         self.S[idx] = S
         if level_hint is None:
-            level = float(self.cross_section_table.get_level_by_area(sec, S))
+            level = float(tbl.get_level_by_area(S)) if tbl is not None else float(self.cross_section_table.get_level_by_area(sec, S))
         else:
             level = float(level_hint)
         self.water_level[idx] = level
@@ -3139,13 +3363,18 @@ class River(Process):
                     self._compute_near_dry_derived_state(idx)
             else:
                 self.U[idx] = float(self.Q[idx]) / self.S[idx]
-                width = self._resolve_width_for_state(sec, self.S[idx], self.water_depth[idx])
+                width = self._resolve_width_for_state(sec, self.S[idx], self.water_depth[idx], table_ref=tbl)
                 self.C[idx] = np.sqrt(self.g * self.S[idx] / width)
                 self.FR[idx] = np.abs(self.U[idx]) / max(self.C[idx], self.EPSILON)
         final_area = float(self.S[idx])
-        self.P[idx] = float(self.cross_section_table.get_wetted_perimeter_by_area(sec, final_area))
-        self.PRESS[idx] = float(self.cross_section_table.get_press_by_area(sec, final_area))
-        self.R[idx] = float(self.cross_section_table.get_hydraulic_radius_by_area(sec, final_area))
+        if tbl is not None:
+            self.P[idx] = float(tbl.get_wetted_perimeter_by_area(final_area))
+            self.PRESS[idx] = float(tbl.get_press_by_area(final_area))
+            self.R[idx] = float(tbl.get_hydraulic_radius_by_area(final_area))
+        else:
+            self.P[idx] = float(self.cross_section_table.get_wetted_perimeter_by_area(sec, final_area))
+            self.PRESS[idx] = float(self.cross_section_table.get_press_by_area(sec, final_area))
+            self.R[idx] = float(self.cross_section_table.get_hydraulic_radius_by_area(sec, final_area))
 
     def Set_ghost_from_face_state(self, side, level, flow):
         side_txt = str(side).lower()
@@ -3242,7 +3471,7 @@ class River(Process):
         # If stricter main-channel cropping is needed in the future, the
         # preprocessing hook belongs here rather than inside the geometric
         # clipping kernel.
-        return self.sections_data[section_name]
+        return self.runtime_sections_data[section_name]
 
     def _char_potential_from_width(self, section_name, area, tinyA=1e-12, tinyT=1e-08):
         A = float(max(area, tinyA))
@@ -4357,6 +4586,7 @@ class River(Process):
                 press = press_list[i - 1] + self.g * (area_list[i - 1] + area_list[i]) * dz[i - 1] / 2
                 press_list.append(press)
             self.cross_section_table.add_table(name=section_name, depths=depth_list, level=level_list, areas=area_list, width=width_list, wetted_perimeter=wetted_perimeter_list, hydraulic_radius=hydraulic_radius_list, press=press_list, DEB=DEB)
+        self._rebind_runtime_section_views()
         self._update_section_S_min()
 
     def Debug(self):
@@ -4454,6 +4684,7 @@ class River(Process):
             new_section_point = [[x, y - diff] for x, y in section_point]
             self.sections_data[new_section_name] = new_section_point
             self.cell_sections[i] = new_section_name
+        self._rebind_runtime_section_views()
         self.Plot_fined_cell_property()
 
     def Fine_cell_property2(self):
@@ -4493,6 +4724,7 @@ class River(Process):
                 self.Slop[i] = (self.river_bed_height[i] - self.river_bed_height[i + 1]) / self.cell_lengths[i]
             if self.Slop[i] == 0:
                 self.Slop[i] = self.EPSILON
+        self._rebind_runtime_section_views()
 
     def Plot_fined_cell_property(self):
         fig, axs = plt.subplots(2, 1, figsize=(40, 50))

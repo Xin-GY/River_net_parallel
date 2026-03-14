@@ -727,6 +727,93 @@ cpdef tuple compute_general_hr_flux_interface(
     return (flux0, flux1, p_left_hr, p_right_hr)
 
 
+cpdef tuple compute_general_hr_flux_batch(
+    object left_tables,
+    object right_tables,
+    double g,
+    double tiny,
+    double roe_entropy_fix,
+    double roe_entropy_fix_factor,
+    double[:] z_left,
+    double[:] z_right,
+    double[:] h_left,
+    double[:] h_right,
+    double[:] area_left_center,
+    double[:] area_right_center,
+    double[:] q_left_center,
+    double[:] q_right_center,
+    double[:] cell_areas,
+    double[:] cell_lengths,
+    double dt,
+    int cell_num,
+):
+    cdef Py_ssize_t n = z_left.shape[0]
+    cdef Py_ssize_t i
+    cdef CrossSectionTableCython left_tbl
+    cdef CrossSectionTableCython right_tbl
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] flux_mass = np.empty(n, dtype=np.float64)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] flux_momentum = np.empty(n, dtype=np.float64)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] p_left_hr = np.empty(n, dtype=np.float64)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] p_right_hr = np.empty(n, dtype=np.float64)
+    cdef tuple result
+    cdef double flux0
+    cdef double flux1
+    cdef double press_left
+    cdef double press_right
+    cdef double available
+    cdef double max_flux
+    cdef double scale
+    cdef int donor
+
+    for i in range(n):
+        left_tbl = <CrossSectionTableCython> left_tables[i]
+        right_tbl = <CrossSectionTableCython> right_tables[i]
+        result = compute_general_hr_flux_interface(
+            left_tbl,
+            right_tbl,
+            g,
+            tiny,
+            roe_entropy_fix,
+            roe_entropy_fix_factor,
+            z_left[i],
+            z_right[i],
+            h_left[i],
+            h_right[i],
+            area_left_center[i],
+            area_right_center[i],
+            q_left_center[i],
+            q_right_center[i],
+        )
+        flux0 = float(result[0])
+        flux1 = float(result[1])
+        press_left = float(result[2])
+        press_right = float(result[3])
+
+        if dt > 0.0:
+            donor = -1
+            if flux0 > tiny and 1 <= i <= cell_num:
+                donor = <int> i
+            elif flux0 < -tiny and 1 <= i + 1 <= cell_num:
+                donor = <int> (i + 1)
+            if donor >= 0:
+                available = cell_areas[donor]
+                if available < 0.0:
+                    available = 0.0
+                available = available * (cell_lengths[donor] if cell_lengths[donor] > tiny else tiny)
+                max_flux = available / (dt if dt > tiny else tiny)
+                if max_flux < fabs(flux0):
+                    scale = max_flux / (fabs(flux0) if fabs(flux0) > tiny else tiny)
+                    flux0 = flux0 * scale
+                    flux1 = flux1 * scale
+
+        flux_mass[i] = flux0
+        flux_momentum[i] = flux1
+        p_left_hr[i] = press_left
+        p_right_hr[i] = press_right
+
+    return (flux_mass, flux_momentum, p_left_hr, p_right_hr)
+
+
 cpdef object compute_stage_boundary_mainline_fast(
     CrossSectionTableCython inner_tbl,
     CrossSectionTableCython target_tbl,

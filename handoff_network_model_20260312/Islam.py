@@ -607,7 +607,7 @@ def configure_net_options(net_obj, export_png=False):
     net_obj.use_parallel_workers = os.environ.get('ISLAM_USE_PARALLEL', '0') == '1'
     net_obj.parallel_backend = os.environ.get('ISLAM_PARALLEL_BACKEND', 'threads').strip().lower()
     net_obj.parallel_n_workers = int(os.environ.get('ISLAM_N_WORKERS', str(net_obj.parallel_n_workers)))
-    net_obj.parallel_start_method = os.environ.get('ISLAM_PARALLEL_START_METHOD', 'spawn').strip().lower()
+    net_obj.parallel_start_method = os.environ.get('ISLAM_PARALLEL_START_METHOD', 'auto').strip().lower()
     net_obj.parallel_sync_main_state_on_yield = os.environ.get('ISLAM_PARALLEL_SYNC_ON_YIELD', '1') == '1'
     save_interval_env = os.environ.get('ISLAM_SAVE_INTERVAL', '').strip()
     net_obj.output_save_interval = float(save_interval_env) if save_interval_env else None
@@ -793,7 +793,7 @@ def initialize_rivers(net_obj):
         river.bc_general_chi_candidate_mode = bc_general_chi_candidate_mode
         river.bc_general_chi_guard_selector = bc_general_chi_guard_selector
         river.bc_general_chi_guard_q_delta = bc_general_chi_guard_q_delta
-        if bc_use_general_chi_stage_nonrect and not section_family_is_vertical_rectangular(river.sections_data):
+        if bc_use_general_chi_stage_nonrect and not section_family_is_vertical_rectangular(river.raw_sections_data):
             river.bc_use_general_chi_stage = True
         river.bc_moc_with_source = bc_moc_with_source
         river.bc_moc_with_source_flow = bc_moc_with_source_flow
