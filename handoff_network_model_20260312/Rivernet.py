@@ -1,6 +1,7 @@
 import random
 import time
 import os
+import json
 from copy import deepcopy
 
 from river_for_net import River
@@ -38,6 +39,7 @@ from parallel_river_pool import (
     SNAP_COMPACT_GHOST_WIDTH,
     SNAP_LEFT,
     SNAP_RIGHT,
+    _exact_node_eval_from_plan,
 )
 
 class Rivernet():
@@ -136,9 +138,32 @@ class Rivernet():
         self.parallel_n_workers = max((os.cpu_count() or 1), 1)
         self.parallel_start_method = 'auto'
         self.parallel_sync_main_state_on_yield = True
+        self.internal_exact_backend = 'legacy_parallel'
         self.save_cfl_history = False
         self.cfl_history = []
         self.output_save_interval = None
+        self.save_perf_report = False
+        self.internal_use_response_table = False
+        self.internal_response_samples = 9
+        self.internal_response_base_span = 0.25
+        self.internal_response_max_span = 2.0
+        self.internal_response_refine_steps = 2
+        self.fast_mode_enabled = False
+        self.fast_mode_name = 'off'
+        self.fast_node_solver_mode = 'off'
+        self.fast_node_correction_iters = 1
+        self.fast_node_dz_tol = 5.0e-4
+        self.fast_node_q_tol = 5.0e-3
+        self.fast_cfl_scale = 1.0
+        self.fast_dt_increase_factor = None
+        self.save_internal_node_history = True
+        self.save_run_summary = False
+        self._internal_node_solver_cache = {}
+        self._perf_sections = {}
+        self._perf_local_sections = {}
+        self._perf_internal_node_stats = {}
+        self._perf_internal_orchestration = {}
+        self._reset_perf_stats()
 
     def _refresh_river_cache(self):
         # Topology is fixed after construction in the current workflow. Cache
@@ -157,12 +182,287 @@ class Rivernet():
         }
         self._river_method_cache = {}
         self._parallel_internal_node_specs_cache = None
+        self._internal_node_branch_specs_cache = None
+        self._internal_dense_plan_cache = None
+        self._parallel_dense_plan_cache = None
+        self._internal_snapshot_names_cache = None
 
     def _all_river_names(self):
         return [data.get('name') for _, _, data in self._river_edges]
 
     def _river_map(self):
         return {data.get('name'): data['river'] for _, _, data in self._river_edges}
+
+    def _new_perf_bucket(self):
+        return {'time': 0.0, 'calls': 0}
+
+    def _new_internal_orchestration_bucket(self):
+        return {'time': 0.0, 'calls': 0}
+
+    def _reset_perf_stats(self):
+        self._perf_sections = {
+            'boundary_updater': self._new_perf_bucket(),
+            'face_uc_net': self._new_perf_bucket(),
+            'roe_matrix_net': self._new_perf_bucket(),
+            'source_net': self._new_perf_bucket(),
+            'roe_flux_net': self._new_perf_bucket(),
+            'assemble_net': self._new_perf_bucket(),
+            'update_net': self._new_perf_bucket(),
+            'advance_local_step_wall': self._new_perf_bucket(),
+            'cfl_update': self._new_perf_bucket(),
+        }
+        self._perf_local_sections = {
+            'face_uc': self._new_perf_bucket(),
+            'roe_matrix': self._new_perf_bucket(),
+            'source_term': self._new_perf_bucket(),
+            'roe_flux': self._new_perf_bucket(),
+            'assemble': self._new_perf_bucket(),
+            'update': self._new_perf_bucket(),
+            'cfl_update': self._new_perf_bucket(),
+            'boundary_updater': self._new_perf_bucket(),
+        }
+        self._perf_internal_node_stats = {}
+        self._perf_stage_boundary = {
+            'cython_fast_calls': 0,
+            'cython_fast_hits': 0,
+            'fast_reject_reasons': {},
+            'runtime_reject_reasons': {},
+            'overall': {'calls': 0, 'fast_hits': 0, 'precheck': {}, 'runtime': {}},
+            'by_scenario': {},
+            'by_node': {},
+            'by_river_side': {},
+            'by_call_scene': {},
+        }
+        self._perf_internal_orchestration = {
+            'backend': None,
+            'solve_calls': 0,
+            'phase_times': {
+                'initial_guess': self._new_internal_orchestration_bucket(),
+                'trial_level_prepare': self._new_internal_orchestration_bucket(),
+                'apply_prepare': self._new_internal_orchestration_bucket(),
+                'pool_submit_dispatch': self._new_internal_orchestration_bucket(),
+                'worker_apply': self._new_internal_orchestration_bucket(),
+                'worker_aggregate': self._new_internal_orchestration_bucket(),
+                'worker_snapshot': self._new_internal_orchestration_bucket(),
+                'collect_deserialize_merge': self._new_internal_orchestration_bucket(),
+                'residual_assembly': self._new_internal_orchestration_bucket(),
+                'jacobian_assembly': self._new_internal_orchestration_bucket(),
+                'relax_checks': self._new_internal_orchestration_bucket(),
+                'diagnostics_history': self._new_internal_orchestration_bucket(),
+            },
+            'round_trips': 0,
+            'payload_bytes_sent': 0,
+            'payload_bytes_recv': 0,
+            'river_side_applies': 0,
+            'final_snapshot_calls': 0,
+            'backend_counts': {},
+        }
+
+    def _new_stage_boundary_dim_bucket(self):
+        return {'calls': 0, 'fast_hits': 0, 'precheck': {}, 'runtime': {}}
+
+    def _merge_stage_boundary_dim_map(self, dest, src):
+        for key, bucket in src.items():
+            rec = dest.setdefault(key, self._new_stage_boundary_dim_bucket())
+            rec['calls'] += int(bucket.get('calls', 0))
+            rec['fast_hits'] += int(bucket.get('fast_hits', 0))
+            for phase in ('precheck', 'runtime'):
+                phase_map = rec[phase]
+                for reason, count in bucket.get(phase, {}).items():
+                    phase_map[reason] = int(phase_map.get(reason, 0)) + int(count)
+
+    def _merge_stage_boundary_perf(self, stage_boundary):
+        if not stage_boundary:
+            return
+        perf = self._perf_stage_boundary
+        perf['cython_fast_calls'] += int(stage_boundary.get('cython_fast_calls', 0))
+        perf['cython_fast_hits'] += int(stage_boundary.get('cython_fast_hits', 0))
+        for reason, count in stage_boundary.get('fast_reject_reasons', {}).items():
+            perf['fast_reject_reasons'][reason] = int(perf['fast_reject_reasons'].get(reason, 0)) + int(count)
+        for reason, count in stage_boundary.get('runtime_reject_reasons', {}).items():
+            perf['runtime_reject_reasons'][reason] = int(perf['runtime_reject_reasons'].get(reason, 0)) + int(count)
+        overall = stage_boundary.get('overall', {})
+        perf['overall']['calls'] += int(overall.get('calls', 0))
+        perf['overall']['fast_hits'] += int(overall.get('fast_hits', 0))
+        for phase in ('precheck', 'runtime'):
+            for reason, count in overall.get(phase, {}).items():
+                perf['overall'][phase][reason] = int(perf['overall'][phase].get(reason, 0)) + int(count)
+        self._merge_stage_boundary_dim_map(perf['by_scenario'], stage_boundary.get('by_scenario', {}))
+        self._merge_stage_boundary_dim_map(perf['by_node'], stage_boundary.get('by_node', {}))
+        self._merge_stage_boundary_dim_map(perf['by_river_side'], stage_boundary.get('by_river_side', {}))
+        self._merge_stage_boundary_dim_map(perf['by_call_scene'], stage_boundary.get('by_call_scene', {}))
+
+    def _perf_add_time(self, bucket_map, key, elapsed):
+        bucket = bucket_map.setdefault(key, self._new_perf_bucket())
+        bucket['time'] += float(elapsed)
+        bucket['calls'] += 1
+
+    def _perf_add_internal_orchestration_time(self, key, elapsed):
+        bucket = self._perf_internal_orchestration['phase_times'].setdefault(
+            key,
+            self._new_internal_orchestration_bucket(),
+        )
+        bucket['time'] += float(elapsed)
+        bucket['calls'] += 1
+
+    def _perf_record_internal_backend(self, backend_name):
+        if not self.save_perf_report:
+            return
+        backend = str(backend_name)
+        self._perf_internal_orchestration['backend'] = backend
+        backend_counts = self._perf_internal_orchestration['backend_counts']
+        backend_counts[backend] = int(backend_counts.get(backend, 0)) + 1
+        self._perf_internal_orchestration['solve_calls'] += 1
+
+    def _perf_record_internal_roundtrip(self, meta, final_snapshot=False):
+        if (not self.save_perf_report) or (not meta):
+            return
+        perf = self._perf_internal_orchestration
+        perf['round_trips'] += int(meta.get('round_trips', 0))
+        perf['payload_bytes_sent'] += int(meta.get('sent_bytes', 0))
+        perf['payload_bytes_recv'] += int(meta.get('recv_bytes', 0))
+        perf['river_side_applies'] += int(meta.get('apply_count', 0))
+        if final_snapshot:
+            perf['final_snapshot_calls'] += 1
+        self._perf_add_internal_orchestration_time('pool_submit_dispatch', float(meta.get('submit_time', 0.0)))
+        self._perf_add_internal_orchestration_time('worker_apply', float(meta.get('worker_apply_time', 0.0)))
+        self._perf_add_internal_orchestration_time('worker_aggregate', float(meta.get('worker_aggregate_time', 0.0)))
+        self._perf_add_internal_orchestration_time('worker_snapshot', float(meta.get('worker_snapshot_time', 0.0)))
+        collect_merge = float(meta.get('collect_time', 0.0)) + float(meta.get('merge_time', 0.0))
+        self._perf_add_internal_orchestration_time('collect_deserialize_merge', collect_merge)
+
+    def _perf_node_entry(self, node):
+        return self._perf_internal_node_stats.setdefault(
+            node,
+            {
+                'solve_calls': 0,
+                'solve_time': 0.0,
+                'iterations': 0,
+                'boundary_closure_calls': 0,
+                'table_attempts': 0,
+                'table_success': 0,
+                'table_fallbacks': 0,
+                'exact_refine_iterations': 0,
+                'fast_calls': 0,
+                'fast_hits': 0,
+                'fallback_reasons': {},
+                'final_abs_residual_sum': 0.0,
+            },
+        )
+
+    def _perf_record_node_solve(self, node, solve_time, iterations, boundary_closure_calls, table_attempted=False, table_success=False, fast_calls=0, fast_hits=0, exact_refine_iterations=0, final_abs_residual=None, fallback_reason=None):
+        if (not self.save_perf_report) and (not self.internal_use_response_table):
+            return
+        rec = self._perf_node_entry(node)
+        rec['solve_calls'] += 1
+        rec['solve_time'] += float(solve_time)
+        rec['iterations'] += int(iterations)
+        rec['boundary_closure_calls'] += int(boundary_closure_calls)
+        rec['fast_calls'] += int(fast_calls)
+        rec['fast_hits'] += int(fast_hits)
+        rec['exact_refine_iterations'] += int(exact_refine_iterations)
+        if table_attempted:
+            rec['table_attempts'] += 1
+        if table_success:
+            rec['table_success'] += 1
+        elif table_attempted:
+            rec['table_fallbacks'] += 1
+        if final_abs_residual is not None and np.isfinite(final_abs_residual):
+            rec['final_abs_residual_sum'] += float(abs(final_abs_residual))
+        if fallback_reason:
+            reasons = rec['fallback_reasons']
+            reasons[fallback_reason] = int(reasons.get(fallback_reason, 0)) + 1
+
+    def _internal_boundary_kwargs(self):
+        return {
+            'Fr_max': 0.85,
+            'head_gain_factor': 0.65,
+            'relax_Q': 0.4,
+            'cap_du_factor': 0.8,
+            'cap_dQ_factor': 0.7,
+            'use_stabilizers': bool(self.internal_bc_use_stabilizers),
+            'respect_supercritical': bool(self.internal_bc_respect_supercritical),
+            'stage_on_face': bool(self.internal_bc_stage_on_face),
+        }
+
+    def _internal_response_solver_supported(self):
+        return (
+            bool(self.internal_use_response_table)
+            and (not self.internal_use_coupled_newton)
+            and (not self.internal_use_numeric_jacobian)
+            and (not self.internal_sync_branch_end_Q)
+            and (not self.internal_node_use_face_flux_residual)
+        )
+
+    def _fast_internal_solver_active(self):
+        mode = str(getattr(self, 'fast_node_solver_mode', 'off')).strip().lower()
+        return bool(self.fast_mode_enabled) and mode in {'response_root', 'response_corrector'} and self._internal_response_solver_supported()
+
+    def _internal_solver_iteration_limit(self):
+        if self._fast_internal_solver_active():
+            return max(1, int(getattr(self, 'fast_node_correction_iters', 1)))
+        return max(1, int(self.max_iteration))
+
+    def _internal_solver_dz_tol(self):
+        if self._fast_internal_solver_active():
+            return float(max(getattr(self, 'fast_node_dz_tol', 5.0e-4), 1.0e-8))
+        return 1.0e-4
+
+    def _internal_solver_q_tol(self):
+        if self._fast_internal_solver_active():
+            return float(max(getattr(self, 'fast_node_q_tol', 5.0e-3), self.JPWSPC_Q_limit))
+        return float(self.JPWSPC_Q_limit)
+
+    def _internal_node_history_enabled(self):
+        return bool(self.save_outputs and self.internal_nodes and self.save_internal_node_history)
+
+    def _internal_node_branch_specs(self, node_name):
+        cache = self._internal_node_branch_specs_cache
+        if cache is None:
+            cache = {}
+            for node in self.internal_nodes:
+                specs = []
+                for river_obj, river_name in self._in_branches_by_node[node]:
+                    specs.append({
+                        'river_obj': river_obj,
+                        'river': river_name,
+                        'side': 'right',
+                        'flow_sign': 1.0,
+                    })
+                for river_obj, river_name in self._out_branches_by_node[node]:
+                    specs.append({
+                        'river_obj': river_obj,
+                        'river': river_name,
+                        'side': 'left',
+                        'flow_sign': -1.0,
+                    })
+                cache[node] = specs
+            self._internal_node_branch_specs_cache = cache
+        return cache.get(node_name, ())
+
+    def _predict_internal_node_level(self, node_name, fallback_level):
+        cache = self._internal_node_solver_cache.get(node_name)
+        if cache is None:
+            return float(fallback_level)
+        last_level = cache.get('last_level')
+        prev_level = cache.get('prev_level')
+        if last_level is None or (not np.isfinite(last_level)):
+            return float(fallback_level)
+        if prev_level is None or (not np.isfinite(prev_level)):
+            return float(last_level)
+        predicted = float(last_level) + (float(last_level) - float(prev_level))
+        return max(0.0, predicted)
+
+    def _update_internal_node_solver_cache(self, node_name, level, residual=None, dR_dZ=None):
+        if not self.internal_use_response_table:
+            return
+        rec = self._internal_node_solver_cache.setdefault(node_name, {})
+        rec['prev_level'] = rec.get('last_level')
+        rec['last_level'] = float(level)
+        if residual is not None and np.isfinite(residual):
+            rec['last_residual'] = float(residual)
+        if dR_dZ is not None and np.isfinite(dR_dZ):
+            rec['last_dR_dZ'] = float(dR_dZ)
 
     def _sync_parallel_rivers_to_main(self, pool, names=None):
         main_map = self._river_map()
@@ -187,6 +487,13 @@ class Rivernet():
         if method == 'fork' and os.name != 'posix':
             return 'spawn'
         return method
+
+    def _legacy_internal_exact_default_active(self):
+        return (
+            (not self.save_perf_report)
+            and (not self.internal_use_response_table)
+            and str(getattr(self, 'internal_exact_backend', 'legacy_parallel')).strip().lower() not in {'fused_parallel', 'fused_serial'}
+        )
 
     # 创建河网
     def Create_Rivernet(self):
@@ -483,7 +790,10 @@ class Rivernet():
             name = data.get('name')
             if selected is not None and name not in selected:
                 continue
-            data['river'].Save_Basic_data()
+            river = data['river']
+            river.Save_Basic_data()
+            if river.initial_total_volume is None and hasattr(river, '_compute_total_volume'):
+                river.initial_total_volume = float(river._compute_total_volume())
 
     # 计算界面平均流速和波速
     def Caculate_face_U_C_net(self):
@@ -536,12 +846,70 @@ class Rivernet():
             data['river'].configure_save_scheduler(default_interval=default_interval, save_initial=True)
 
     def Save_internal_node_history(self):
-        if not self.internal_node_history:
+        if not (self.save_internal_node_history and self.internal_node_history):
             return
         out_path = os.path.join(self.model_data['output_path'], 'internal_node_history.csv')
         pd.DataFrame(self.internal_node_history).to_csv(out_path, index=False)
         if self.verbos:
             print(f'[OK] 内部节点时序已保存 -> {out_path}')
+
+    def Save_run_summary(self):
+        if not self.save_run_summary:
+            return
+        out_dir = self.model_data['output_path']
+        os.makedirs(out_dir, exist_ok=True)
+        river_rows = []
+        total_initial = 0.0
+        total_final = 0.0
+        for _, _, data in self._river_edges:
+            river = data['river']
+            initial_volume = getattr(river, 'initial_total_volume', None)
+            if initial_volume is None and hasattr(river, '_compute_total_volume'):
+                initial_volume = float(river._compute_total_volume())
+                river.initial_total_volume = float(initial_volume)
+            final_volume = getattr(river, 'final_total_volume', None)
+            if final_volume is None and hasattr(river, '_compute_total_volume'):
+                final_volume = float(river._compute_total_volume())
+                river.final_total_volume = float(final_volume)
+            initial_volume = float(initial_volume if initial_volume is not None else 0.0)
+            final_volume = float(final_volume if final_volume is not None else initial_volume)
+            denom = max(abs(initial_volume), 1.0e-12)
+            rel = float((final_volume - initial_volume) / denom)
+            river.volume_relative_change = rel
+            total_initial += initial_volume
+            total_final += final_volume
+            river_rows.append(
+                {
+                    'river': data.get('name'),
+                    'initial_volume': initial_volume,
+                    'final_volume': final_volume,
+                    'relative_volume_change': rel,
+                    'cell_num': int(getattr(river, 'cell_num', 0)),
+                }
+            )
+        net_denom = max(abs(total_initial), 1.0e-12)
+        summary = {
+            'model_name': self.model_data.get('model_name'),
+            'output_path': self.model_data.get('output_path'),
+            'fast_mode_enabled': bool(self.fast_mode_enabled),
+            'fast_mode_name': str(self.fast_mode_name),
+            'fast_node_solver_mode': str(self.fast_node_solver_mode),
+            'current_sim_time': float(self.current_sim_time),
+            'total_sim_time': float(self.total_sim_time),
+            'step_count': int(self.step_count),
+            'sub_step_count_last': int(self.sub_step_count),
+            'calculation_time': float(getattr(self, 'caculation_time', 0.0)),
+            'save_outputs': bool(self.save_outputs),
+            'save_internal_node_history': bool(self.save_internal_node_history),
+            'internal_node_count': int(len(self.internal_nodes)),
+            'network_total_volume_initial': float(total_initial),
+            'network_total_volume_final': float(total_final),
+            'network_relative_volume_change': float((total_final - total_initial) / net_denom),
+            'rivers': river_rows,
+        }
+        out_path = os.path.join(out_dir, 'run_summary.json')
+        with open(out_path, 'w', encoding='utf-8') as f:
+            json.dump(summary, f, ensure_ascii=False, indent=2)
 
     def _record_cfl_history(self, dt_items):
         if not self.save_cfl_history:
@@ -562,6 +930,244 @@ class Rivernet():
         pd.DataFrame(self.cfl_history).to_csv(out_path, index=False)
         if self.verbos:
             print(f'[OK] CFL 时序已保存 -> {out_path}')
+
+    def Save_perf_report(self):
+        if not self.save_perf_report:
+            return
+        out_dir = self.model_data['output_path']
+        os.makedirs(out_dir, exist_ok=True)
+        total_time = float(self.caculation_time)
+        node_summary = {}
+        total_node_solves = 0
+        total_node_iterations = 0
+        total_node_closure_calls = 0
+        total_node_solve_time = 0.0
+        for node_name, rec in self._perf_internal_node_stats.items():
+            solve_calls = max(int(rec['solve_calls']), 1)
+            total_node_solves += int(rec['solve_calls'])
+            total_node_iterations += int(rec['iterations'])
+            total_node_closure_calls += int(rec['boundary_closure_calls'])
+            total_node_solve_time += float(rec['solve_time'])
+            fast_bucket = self._perf_stage_boundary.get('by_node', {}).get(
+                node_name,
+                {'calls': int(rec['fast_calls']), 'fast_hits': int(rec['fast_hits'])},
+            )
+            fast_calls = int(fast_bucket.get('calls', rec['fast_calls']))
+            fast_hits = int(fast_bucket.get('fast_hits', rec['fast_hits']))
+            node_summary[node_name] = {
+                'solve_calls': int(rec['solve_calls']),
+                'solve_time': float(rec['solve_time']),
+                'avg_solve_time': float(rec['solve_time']) / solve_calls,
+                'avg_iterations': float(rec['iterations']) / solve_calls,
+                'avg_boundary_closure_calls': float(rec['boundary_closure_calls']) / solve_calls,
+                'table_attempts': int(rec['table_attempts']),
+                'table_success': int(rec['table_success']),
+                'table_fallbacks': int(rec['table_fallbacks']),
+                'exact_refine_iterations': int(rec['exact_refine_iterations']),
+                'fast_calls': fast_calls,
+                'fast_hits': fast_hits,
+                'fast_hit_rate': float(fast_hits) / max(fast_calls, 1),
+                'avg_final_abs_residual': float(rec['final_abs_residual_sum']) / solve_calls,
+                'fallback_reasons': dict(rec['fallback_reasons']),
+            }
+        report = {
+            'total_evolve_time': total_time,
+            'section_wall_times': {
+                key: {
+                    'time': float(bucket['time']),
+                    'calls': int(bucket['calls']),
+                    'share_of_evolve': (float(bucket['time']) / total_time) if total_time > 0.0 else 0.0,
+                }
+                for key, bucket in self._perf_sections.items()
+            },
+            'local_river_compute_times': {
+                key: {
+                    'time': float(bucket['time']),
+                    'calls': int(bucket['calls']),
+                }
+                for key, bucket in self._perf_local_sections.items()
+            },
+            'internal_node_summary': {
+                'total_solves': int(total_node_solves),
+                'avg_iterations': (float(total_node_iterations) / total_node_solves) if total_node_solves > 0 else 0.0,
+                'avg_boundary_closure_calls': (float(total_node_closure_calls) / total_node_solves) if total_node_solves > 0 else 0.0,
+                'total_solve_time': float(total_node_solve_time),
+                'share_of_evolve': (float(total_node_solve_time) / total_time) if total_time > 0.0 else 0.0,
+                'nodes': node_summary,
+            },
+            'stage_boundary_fastpath': deepcopy(self._perf_stage_boundary),
+        }
+        orchestration_phase_times = {
+            key: {
+                'time': float(bucket['time']),
+                'calls': int(bucket['calls']),
+            }
+            for key, bucket in self._perf_internal_orchestration['phase_times'].items()
+        }
+        report['internal_node_orchestration'] = {
+            'backend': self._perf_internal_orchestration.get('backend'),
+            'solve_calls': int(self._perf_internal_orchestration.get('solve_calls', 0)),
+            'phase_times': orchestration_phase_times,
+            'round_trips': int(self._perf_internal_orchestration.get('round_trips', 0)),
+            'payload_bytes_sent': int(self._perf_internal_orchestration.get('payload_bytes_sent', 0)),
+            'payload_bytes_recv': int(self._perf_internal_orchestration.get('payload_bytes_recv', 0)),
+            'river_side_applies': int(self._perf_internal_orchestration.get('river_side_applies', 0)),
+            'final_snapshot_calls': int(self._perf_internal_orchestration.get('final_snapshot_calls', 0)),
+            'backend_counts': dict(self._perf_internal_orchestration.get('backend_counts', {})),
+        }
+        json_path = os.path.join(out_dir, 'evolve_perf_report.json')
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+
+        md_lines = [
+            '# Evolve Performance Report',
+            '',
+            f'- total evolve time: {total_time:.6f} s',
+            '',
+            '## Section Wall Time',
+        ]
+        for key, bucket in report['section_wall_times'].items():
+            md_lines.append(
+                f'- {key}: {bucket["time"]:.6f} s, calls={bucket["calls"]}, share={bucket["share_of_evolve"]:.2%}'
+            )
+        md_lines.extend([
+            '',
+            '## Internal Node Solve Summary',
+            f'- total solves: {report["internal_node_summary"]["total_solves"]}',
+            f'- avg iterations: {report["internal_node_summary"]["avg_iterations"]:.4f}',
+            f'- avg boundary closure calls: {report["internal_node_summary"]["avg_boundary_closure_calls"]:.4f}',
+            f'- total solve time: {report["internal_node_summary"]["total_solve_time"]:.6f} s',
+            f'- share of evolve: {report["internal_node_summary"]["share_of_evolve"]:.2%}',
+            '',
+            '## Stage Boundary Fast Path',
+            f'- closure calls: {report["stage_boundary_fastpath"]["overall"]["calls"]}',
+            f'- cython fast attempts: {report["stage_boundary_fastpath"]["cython_fast_calls"]}',
+            f'- cython fast hits: {report["stage_boundary_fastpath"]["cython_fast_hits"]}',
+            f'- fast hit rate: {float(report["stage_boundary_fastpath"]["cython_fast_hits"]) / max(int(report["stage_boundary_fastpath"]["overall"]["calls"]), 1):.2%}',
+            '',
+            '## Local River Compute Times',
+        ])
+        for key, bucket in report['local_river_compute_times'].items():
+            md_lines.append(f'- {key}: {bucket["time"]:.6f} s, calls={bucket["calls"]}')
+        md_lines.extend(['', '## Per Node'])
+        for node_name, rec in node_summary.items():
+            md_lines.append(
+                f'- {node_name}: avg_iter={rec["avg_iterations"]:.4f}, '
+                f'avg_closure_calls={rec["avg_boundary_closure_calls"]:.4f}, '
+                f'fast_hit_rate={rec["fast_hit_rate"]:.2%}, '
+                f'table_success={rec["table_success"]}/{max(rec["table_attempts"], 1)}'
+            )
+        md_path = os.path.join(out_dir, 'evolve_perf_report.md')
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(md_lines) + '\n')
+
+        def _append_ranked(lines, title, mapping, topn=None):
+            lines.extend(['', title])
+            items = sorted(mapping.items(), key=lambda item: (-item[1], item[0]))
+            if topn is not None:
+                items = items[:topn]
+            if not items:
+                lines.append('- none')
+                return
+            for key, value in items:
+                lines.append(f'- {key}: {value}')
+
+        audit = report['stage_boundary_fastpath']
+        audit_lines = [
+            '# Stage Boundary Fast-Path Audit',
+            '',
+            f'- total closure calls: {audit["overall"]["calls"]}',
+            f'- cython fast attempts: {audit["cython_fast_calls"]}',
+            f'- cython fast hits: {audit["cython_fast_hits"]}',
+            f'- fast hit rate: {float(audit["cython_fast_hits"]) / max(int(audit["overall"]["calls"]), 1):.2%}',
+        ]
+        _append_ranked(audit_lines, '## Overall Precheck Blockers', audit.get('fast_reject_reasons', {}))
+        _append_ranked(audit_lines, '## Overall Runtime Blockers', audit.get('runtime_reject_reasons', {}))
+        audit_lines.extend(['', '## By Scenario'])
+        for key, bucket in sorted(audit.get('by_scenario', {}).items()):
+            hit_rate = float(bucket['fast_hits']) / max(int(bucket['calls']), 1)
+            audit_lines.append(
+                f'- {key}: calls={bucket["calls"]}, fast_hits={bucket["fast_hits"]}, fast_hit_rate={hit_rate:.2%}'
+            )
+            pre_top = sorted(bucket.get('precheck', {}).items(), key=lambda item: (-item[1], item[0]))[:5]
+            run_top = sorted(bucket.get('runtime', {}).items(), key=lambda item: (-item[1], item[0]))[:5]
+            audit_lines.append(f'  precheck={pre_top if pre_top else []}')
+            audit_lines.append(f'  runtime={run_top if run_top else []}')
+        audit_lines.extend(['', '## By Node'])
+        for key, bucket in sorted(audit.get('by_node', {}).items()):
+            hit_rate = float(bucket['fast_hits']) / max(int(bucket['calls']), 1)
+            audit_lines.append(
+                f'- {key}: calls={bucket["calls"]}, fast_hits={bucket["fast_hits"]}, fast_hit_rate={hit_rate:.2%}'
+            )
+        audit_lines.extend(['', '## By River Side'])
+        for key, bucket in sorted(audit.get('by_river_side', {}).items()):
+            hit_rate = float(bucket['fast_hits']) / max(int(bucket['calls']), 1)
+            audit_lines.append(
+                f'- {key}: calls={bucket["calls"]}, fast_hits={bucket["fast_hits"]}, fast_hit_rate={hit_rate:.2%}'
+            )
+        audit_lines.extend(['', '## By Call Scene'])
+        for key, bucket in sorted(audit.get('by_call_scene', {}).items()):
+            hit_rate = float(bucket['fast_hits']) / max(int(bucket['calls']), 1)
+            audit_lines.append(
+                f'- {key}: calls={bucket["calls"]}, fast_hits={bucket["fast_hits"]}, fast_hit_rate={hit_rate:.2%}'
+            )
+        audit_md_path = os.path.join(out_dir, 'stage_boundary_fastpath_audit.md')
+        with open(audit_md_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(audit_lines) + '\n')
+
+        orchestration = report['internal_node_orchestration']
+        orch_json_path = os.path.join(out_dir, 'internal_node_orchestration_profile.json')
+        with open(orch_json_path, 'w', encoding='utf-8') as f:
+            json.dump(orchestration, f, ensure_ascii=False, indent=2)
+
+        phase_items = sorted(
+            orchestration['phase_times'].items(),
+            key=lambda item: (-item[1]['time'], item[0]),
+        )
+        total_node_solve_time = max(report['internal_node_summary']['total_solve_time'], 0.0)
+        orch_lines = [
+            '# Internal Node Orchestration Profile',
+            '',
+            f'- backend: {orchestration["backend"]}',
+            f'- solve calls: {orchestration["solve_calls"]}',
+            f'- round trips: {orchestration["round_trips"]}',
+            f'- payload sent bytes: {orchestration["payload_bytes_sent"]}',
+            f'- payload recv bytes: {orchestration["payload_bytes_recv"]}',
+            f'- river-side applies: {orchestration["river_side_applies"]}',
+            f'- final snapshot calls: {orchestration["final_snapshot_calls"]}',
+            f'- avg round trips per solve: {float(orchestration["round_trips"]) / max(int(orchestration["solve_calls"]), 1):.4f}',
+            f'- avg sent bytes per round trip: {float(orchestration["payload_bytes_sent"]) / max(int(orchestration["round_trips"]), 1):.2f}',
+            f'- avg recv bytes per round trip: {float(orchestration["payload_bytes_recv"]) / max(int(orchestration["round_trips"]), 1):.2f}',
+            f'- avg river-side applies per solve: {float(orchestration["river_side_applies"]) / max(int(orchestration["solve_calls"]), 1):.4f}',
+            '',
+            '## Phase Ranking',
+        ]
+        if phase_items:
+            for key, bucket in phase_items:
+                share = float(bucket['time']) / total_node_solve_time if total_node_solve_time > 0.0 else 0.0
+                orch_lines.append(
+                    f'- {key}: {bucket["time"]:.6f} s, calls={bucket["calls"]}, share_of_node_solve={share:.2%}'
+                )
+        else:
+            orch_lines.append('- none')
+        orch_md_path = os.path.join(out_dir, 'internal_node_orchestration_profile.md')
+        with open(orch_md_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(orch_lines) + '\n')
+
+    def _unpack_advance_local_step_results(self, result_map, collect_perf=False):
+        if not collect_perf:
+            return result_map
+        dt_map = {}
+        for name, payload in result_map.items():
+            dt_map[name] = payload['dt']
+            perf = payload.get('perf', {})
+            for key, bucket in perf.get('section_times', {}).items():
+                section_key = key
+                self._perf_local_sections.setdefault(section_key, self._new_perf_bucket())
+                self._perf_local_sections[section_key]['time'] += float(bucket.get('time', 0.0))
+                self._perf_local_sections[section_key]['calls'] += int(bucket.get('calls', 0))
+            self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+        return dt_map
 
     # 更新网格参数
     def Update_cell_property_net(self):
@@ -645,7 +1251,13 @@ class Rivernet():
                             relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7,
                             use_stabilizers=self.external_bc_use_stabilizers,
                             respect_supercritical=self.external_bc_respect_supercritical,
-                            stage_on_face=self.external_bc_stage_on_face
+                            stage_on_face=self.external_bc_stage_on_face,
+                            audit_context={
+                                'scenario': 'external_in',
+                                'node': n,
+                                'river': getattr(r, 'model_name', 'unknown'),
+                                'call_scene': 'external_in',
+                            } if self.save_perf_report else None,
                         )
             if self.verbos: print(r.model_name, n, btype, value)
 
@@ -664,7 +1276,13 @@ class Rivernet():
                             relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7,
                             use_stabilizers=self.external_bc_use_stabilizers,
                             respect_supercritical=self.external_bc_respect_supercritical,
-                            stage_on_face=self.external_bc_stage_on_face
+                            stage_on_face=self.external_bc_stage_on_face,
+                            audit_context={
+                                'scenario': 'external_out',
+                                'node': n,
+                                'river': getattr(r, 'model_name', 'unknown'),
+                                'call_scene': 'external_out',
+                            } if self.save_perf_report else None,
                         )
             if self.verbos: print(r.model_name, n, btype, value)
 
@@ -685,6 +1303,270 @@ class Rivernet():
             return 'super_in', u, c, Fr   # 超临界且指向汊点 → 来流，上游控制
         else:
             return 'super_out', u, c, Fr  # 超临界且离开汊点 → 出流，受结点控制
+
+    def _is_monotonic_series(self, values, tol=1.0e-12):
+        if len(values) < 3:
+            return True
+        diffs = np.diff(np.asarray(values, dtype=float))
+        nonzero = diffs[np.abs(diffs) > tol]
+        if nonzero.size == 0:
+            return True
+        sign = 1.0 if nonzero[0] > 0.0 else -1.0
+        return bool(np.all(nonzero * sign >= -tol))
+
+    def _node_response_eta_grid(self, node_name, center_eta):
+        center = max(0.0, float(center_eta))
+        span = float(self.internal_response_base_span)
+        cache = self._internal_node_solver_cache.get(node_name)
+        if cache is not None:
+            last_level = cache.get('last_level')
+            prev_level = cache.get('prev_level')
+            if last_level is not None and prev_level is not None and np.isfinite(last_level) and np.isfinite(prev_level):
+                span = max(span, min(self.internal_response_max_span, 2.0 * abs(float(last_level) - float(prev_level))))
+            last_residual = cache.get('last_residual')
+            last_dR = cache.get('last_dR_dZ')
+            if (
+                last_residual is not None and last_dR is not None
+                and np.isfinite(last_residual) and np.isfinite(last_dR)
+                and abs(float(last_dR)) > 1.0e-10
+            ):
+                span = max(span, min(self.internal_response_max_span, 1.5 * abs(float(last_residual) / float(last_dR))))
+        span = min(max(span, 0.05), float(self.internal_response_max_span))
+        n_samples = max(int(self.internal_response_samples), 5)
+        lo = max(0.0, center - span)
+        hi = center + span
+        if hi <= lo + 1.0e-8:
+            hi = lo + max(span, 0.05)
+        return np.linspace(lo, hi, n_samples, dtype=float)
+
+    def _node_residual_pure(self, node_name, level):
+        residual = 0.0
+        closure_calls = 0
+        fast_calls = 0
+        fast_hits = 0
+        reasons = {}
+        for spec in self._internal_node_branch_specs(node_name):
+            response = spec['river_obj']._evaluate_stage_boundary_response(
+                spec['side'],
+                level,
+                **self._internal_boundary_kwargs(),
+                update_prev=False,
+            )
+            closure_calls += 1
+            fast_calls += 1
+            if response.get('mode') == 'cython_fast':
+                fast_hits += 1
+            if response.get('status') != 'ok':
+                reason = str(response.get('status'))
+                reasons[reason] = int(reasons.get(reason, 0)) + 1
+                return {
+                    'valid': False,
+                    'residual': np.nan,
+                    'closure_calls': closure_calls,
+                    'fast_calls': fast_calls,
+                    'fast_hits': fast_hits,
+                    'reasons': reasons,
+                }
+            residual += float(spec['flow_sign']) * float(response['Qb'])
+        return {
+            'valid': True,
+            'residual': float(residual),
+            'closure_calls': closure_calls,
+            'fast_calls': fast_calls,
+            'fast_hits': fast_hits,
+            'reasons': reasons,
+        }
+
+    def _build_node_response_table_serial(self, node_name, center_eta):
+        etas = self._node_response_eta_grid(node_name, center_eta)
+        residual = np.zeros(etas.shape[0], dtype=float)
+        closure_calls = 0
+        fast_calls = 0
+        fast_hits = 0
+        reasons = {}
+        # Important: this is a per-time-step local response table with frozen
+        # adjacent interior states. It is not a static mapping from external
+        # inflow Q(t) to node stage.
+        for spec in self._internal_node_branch_specs(node_name):
+            q_series = []
+            a_series = []
+            t_series = []
+            for idx, eta in enumerate(etas):
+                response = spec['river_obj']._evaluate_stage_boundary_response(
+                    spec['side'],
+                    float(eta),
+                    **self._internal_boundary_kwargs(),
+                    update_prev=False,
+                )
+                closure_calls += 1
+                fast_calls += 1
+                if response.get('mode') == 'cython_fast':
+                    fast_hits += 1
+                if response.get('status') != 'ok':
+                    reason = str(response.get('status'))
+                    reasons[reason] = int(reasons.get(reason, 0)) + 1
+                    return {
+                        'valid': False,
+                        'etas': etas,
+                        'residual': residual,
+                        'closure_calls': closure_calls,
+                        'fast_calls': fast_calls,
+                        'fast_hits': fast_hits,
+                        'reasons': reasons,
+                    }
+                q_val = float(response['Qb'])
+                a_val = float(response['Ab'])
+                t_val = float(response.get('Tb', 0.0))
+                q_series.append(q_val)
+                a_series.append(a_val)
+                t_series.append(t_val)
+                residual[idx] += float(spec['flow_sign']) * q_val
+            if (not self._is_monotonic_series(q_series)) or (not self._is_monotonic_series(a_series)) or (not self._is_monotonic_series(t_series)):
+                reasons['non_monotonic'] = int(reasons.get('non_monotonic', 0)) + 1
+                return {
+                    'valid': False,
+                    'etas': etas,
+                    'residual': residual,
+                    'closure_calls': closure_calls,
+                    'fast_calls': fast_calls,
+                    'fast_hits': fast_hits,
+                    'reasons': reasons,
+                }
+        if not self._is_monotonic_series(residual):
+            reasons['residual_non_monotonic'] = int(reasons.get('residual_non_monotonic', 0)) + 1
+            return {
+                'valid': False,
+                'etas': etas,
+                'residual': residual,
+                'closure_calls': closure_calls,
+                'fast_calls': fast_calls,
+                'fast_hits': fast_hits,
+                'reasons': reasons,
+            }
+        return {
+            'valid': True,
+            'etas': etas,
+            'residual': residual,
+            'closure_calls': closure_calls,
+            'fast_calls': fast_calls,
+            'fast_hits': fast_hits,
+            'reasons': reasons,
+        }
+
+    def _node_response_root_from_table(self, table):
+        etas = np.asarray(table.get('etas', table.get('eta')), dtype=float)
+        residual = np.asarray(table['residual'], dtype=float)
+        min_idx = int(np.argmin(np.abs(residual)))
+        if abs(float(residual[min_idx])) <= self.JPWSPC_Q_limit:
+            slope = 0.0
+            if 0 < min_idx < residual.size - 1:
+                denom = float(etas[min_idx + 1] - etas[min_idx - 1])
+                if abs(denom) > 1.0e-12:
+                    slope = float((residual[min_idx + 1] - residual[min_idx - 1]) / denom)
+            return {
+                'success': True,
+                'eta': float(etas[min_idx]),
+                'slope': float(slope),
+            }
+        for idx in range(residual.size - 1):
+            r0 = float(residual[idx])
+            r1 = float(residual[idx + 1])
+            if r0 == 0.0:
+                return {'success': True, 'eta': float(etas[idx]), 'slope': 0.0}
+            if r0 * r1 <= 0.0:
+                z0 = float(etas[idx])
+                z1 = float(etas[idx + 1])
+                if abs(r1 - r0) > 1.0e-12:
+                    eta = z0 - r0 * (z1 - z0) / (r1 - r0)
+                else:
+                    eta = 0.5 * (z0 + z1)
+                slope = (r1 - r0) / max(z1 - z0, 1.0e-12)
+                return {'success': True, 'eta': float(eta), 'slope': float(slope)}
+        return {'success': False}
+
+    def _refine_node_level_pure(self, node_name, eta_guess, slope_hint=0.0):
+        eta = max(0.0, float(eta_guess))
+        eta_prev = None
+        residual_prev = None
+        closure_calls = 0
+        fast_calls = 0
+        fast_hits = 0
+        iterations = 0
+        last_eval = None
+        slope = float(slope_hint)
+        for _ in range(max(int(self.internal_response_refine_steps), 1)):
+            iterations += 1
+            last_eval = self._node_residual_pure(node_name, eta)
+            closure_calls += int(last_eval['closure_calls'])
+            fast_calls += int(last_eval['fast_calls'])
+            fast_hits += int(last_eval['fast_hits'])
+            if (not last_eval['valid']) or abs(float(last_eval['residual'])) <= self.JPWSPC_Q_limit:
+                break
+            if eta_prev is not None and abs(eta - eta_prev) > 1.0e-10:
+                slope = float((last_eval['residual'] - residual_prev) / (eta - eta_prev))
+            elif abs(slope) <= 1.0e-10:
+                cache = self._internal_node_solver_cache.get(node_name, {})
+                slope = float(cache.get('last_dR_dZ', 0.0) or 0.0)
+            if abs(slope) <= 1.0e-10:
+                break
+            dz = -float(last_eval['residual']) / slope
+            if not self.internal_use_paper_ac:
+                dz = float(np.clip(dz, -0.5, 0.5))
+            dz = self.relax * dz
+            eta_prev = eta
+            residual_prev = float(last_eval['residual'])
+            eta = max(0.0, eta + dz)
+        return {
+            'eta': float(eta),
+            'iterations': int(iterations),
+            'closure_calls': int(closure_calls),
+            'fast_calls': int(fast_calls),
+            'fast_hits': int(fast_hits),
+            'eval': last_eval,
+            'slope': float(slope),
+        }
+
+    def _initial_internal_node_levels(self, use_node_aggregates=False, aggregates=None, snapshots=None, extrapolate=False):
+        node_levels = {}
+        for n in self.internal_nodes:
+            if self.internal_level_predict_from_last and n in self._internal_node_level_cache:
+                z0 = float(self._internal_node_level_cache[n])
+            else:
+                if use_node_aggregates:
+                    z0 = float(self._parallel_node_average_level_at_real_cell_from_aggregates(n, aggregates))
+                elif snapshots is not None:
+                    z0 = float(self._parallel_node_average_level_at_real_cell(n, snapshots))
+                else:
+                    z0 = float(self.Caculate_node_average_level_at_real_cell(n))
+                if np.isnan(z0):
+                    if use_node_aggregates:
+                        z0 = float(self._parallel_node_average_level_at_ghost_cell_from_aggregates(n, aggregates))
+                    elif snapshots is not None:
+                        z0 = float(self._parallel_node_average_level_at_ghost_cell(n, snapshots))
+                    else:
+                        z0 = float(self.Caculate_node_average_level_at_ghost_cell(n))
+                if np.isnan(z0):
+                    z0 = 0.0
+            if extrapolate:
+                node_levels[n] = max(0.0, self._predict_internal_node_level(n, z0))
+            else:
+                node_levels[n] = max(0.0, z0)
+        return node_levels
+
+    def _build_parallel_node_response_jobs(self, node_levels):
+        jobs = []
+        boundary_kwargs = self._internal_boundary_kwargs()
+        for node_name in self.internal_nodes:
+            etas = self._node_response_eta_grid(node_name, node_levels[node_name])
+            for spec in self._internal_node_branch_specs(node_name):
+                jobs.append({
+                    'node': node_name,
+                    'river': spec['river'],
+                    'side': spec['side'],
+                    'flow_sign': float(spec['flow_sign']),
+                    'etas': [float(v) for v in etas],
+                })
+        return jobs, boundary_kwargs
 
     def _node_mass_residual(self, node: str, level: float) -> float:
         """施加结点水位后，返回结点质量守恒残差（入流-出流）。"""
@@ -804,35 +1686,51 @@ class Rivernet():
         self._apply_internal_node_levels(node_levels)
         return J
 
-    # 更新内部边界条件
-    def Update_internal_boundary_conditions(self):
-        if self.verbos: print('\n更新内部边界条件...')
-        if not self.internal_nodes:
-            return
+    def _prepare_internal_node_initial_guess_serial(self, node_levels):
+        guess_levels = dict(node_levels)
+        guess_stats = {}
+        if not self._internal_response_solver_supported():
+            return guess_levels, guess_stats
+        for node_name in self.internal_nodes:
+            t0 = time.perf_counter()
+            table = self._build_node_response_table_serial(node_name, guess_levels[node_name])
+            elapsed = time.perf_counter() - t0
+            guess_stats[node_name] = {
+                'time': float(elapsed),
+                'closure_calls': int(table['closure_calls']),
+                'fast_calls': int(table['fast_calls']),
+                'fast_hits': int(table['fast_hits']),
+                'table_attempted': True,
+                'table_success': False,
+                'fallback_reason': None,
+            }
+            if not table['valid']:
+                fallback_reason = next(iter(table['reasons']), 'table_invalid')
+                guess_stats[node_name]['fallback_reason'] = fallback_reason
+                continue
+            root = self._node_response_root_from_table(table)
+            if not root.get('success', False):
+                guess_stats[node_name]['fallback_reason'] = 'no_bracket'
+                continue
+            guess_levels[node_name] = max(0.0, float(root['eta']))
+            guess_stats[node_name]['table_success'] = True
+            guess_stats[node_name]['slope'] = float(root.get('slope', 0.0))
+        return guess_levels, guess_stats
 
-        # 预测步：优先采用上一时刻收敛水位，缺失时回退到真实格平均水位
-        node_levels = {}
-        for n in self.internal_nodes:
-            if self.internal_level_predict_from_last and n in self._internal_node_level_cache:
-                z0 = float(self._internal_node_level_cache[n])
-            else:
-                z0 = float(self.Caculate_node_average_level_at_real_cell(n))
-                if np.isnan(z0):
-                    z0 = float(self.Caculate_node_average_level_at_ghost_cell(n))
-                if np.isnan(z0):
-                    z0 = 0.0
-            node_levels[n] = max(0.0, z0)
-
+    def _solve_internal_nodes_exact_serial(self, node_levels, guess_stats=None):
+        guess_stats = {} if guess_stats is None else guess_stats
+        solve_start = time.perf_counter()
         converged = False
         max_abs_q = np.inf
+        iter_count = 0
         if self.internal_use_coupled_newton:
             m = len(self.internal_nodes)
             for iter_time in range(1, self.max_iteration + 1):
+                iter_count = iter_time
                 r_vec = self._internal_residual_vector(node_levels)
                 max_abs_q = float(np.max(np.abs(r_vec))) if r_vec.size > 0 else 0.0
 
                 J = self._internal_jacobian_numeric(node_levels, r_vec)
-                # 轻度对角正则，避免近奇异导致方向失真
                 J_reg = J + 1e-9 * np.eye(m)
                 try:
                     dz_vec = np.linalg.solve(J_reg, -r_vec)
@@ -857,7 +1755,7 @@ class Rivernet():
                     break
         else:
             for iter_time in range(1, self.max_iteration + 1):
-                # 同步施加全部汊点水位（JPWSPC 风格）
+                iter_count = iter_time
                 self._apply_internal_node_levels(node_levels)
 
                 node_residual = {}
@@ -874,8 +1772,6 @@ class Rivernet():
 
                     if self.internal_use_numeric_jacobian:
                         dR_dZ = self._node_mass_jacobian_numeric_with_map(n, node_levels, pure_Q)
-
-                        # 数值导数过小则回退到解析近似
                         if abs(dR_dZ) < 1e-10:
                             if self.internal_use_paper_ac:
                                 ac = float(self.Caculate_node_Ac_at_ghost_cell_JPWSPC(n))
@@ -898,7 +1794,6 @@ class Rivernet():
                     else:
                         dz = -pure_Q / dR_dZ
 
-                    # JPWSPC 原式不含显式裁剪；仅在非 paper 模式下保留保护裁剪
                     if not self.internal_use_paper_ac:
                         dz = float(np.clip(dz, -0.5, 0.5))
                     dz = self.relax * dz
@@ -916,15 +1811,158 @@ class Rivernet():
                     converged = True
                     break
 
-        # 用最终水位统一施加一次，保证后续通量计算使用一致边界
         self._apply_internal_node_levels(node_levels)
         self._internal_node_level_cache.update(node_levels)
+        solve_time = time.perf_counter() - solve_start
+        per_node_time = solve_time / max(len(self.internal_nodes), 1)
+        final_residuals = {}
+        for n in self.internal_nodes:
+            final_residuals[n] = float(self._get_node_mass_residual_current_state(n))
+            self._update_internal_node_solver_cache(n, node_levels[n], residual=final_residuals[n])
+        for n in self.internal_nodes:
+            branch_calls = len(self._internal_node_branch_specs(n)) * (iter_count + 1)
+            pre = guess_stats.get(n, {})
+            self._perf_record_node_solve(
+                n,
+                solve_time=per_node_time + float(pre.get('time', 0.0)),
+                iterations=int(iter_count),
+                boundary_closure_calls=int(branch_calls + pre.get('closure_calls', 0)),
+                table_attempted=bool(pre.get('table_attempted', False)),
+                table_success=bool(pre.get('table_success', False)),
+                fast_calls=int(pre.get('fast_calls', 0)),
+                fast_hits=int(pre.get('fast_hits', 0)),
+                exact_refine_iterations=int(iter_count),
+                final_abs_residual=final_residuals[n],
+                fallback_reason=pre.get('fallback_reason'),
+            )
 
         if self.verbos:
             if not converged:
                 print(f'内部边界迭代达到上限 {self.max_iteration} 次，max|Qnet|={max_abs_q:.4e}')
             for n in self.internal_nodes:
                 print(f'节点 {n} 最终水位: {node_levels[n]:.4f} 米')
+
+    def _solve_internal_nodes_exact_serial_legacy_default(self, node_levels):
+        converged = False
+        max_abs_q = np.inf
+        if self.internal_use_coupled_newton:
+            m = len(self.internal_nodes)
+            for iter_time in range(1, self.max_iteration + 1):
+                r_vec = self._internal_residual_vector(node_levels)
+                max_abs_q = float(np.max(np.abs(r_vec))) if r_vec.size > 0 else 0.0
+
+                J = self._internal_jacobian_numeric(node_levels, r_vec)
+                J_reg = J + 1e-9 * np.eye(m)
+                try:
+                    dz_vec = np.linalg.solve(J_reg, -r_vec)
+                except np.linalg.LinAlgError:
+                    dz_vec = np.linalg.lstsq(J_reg, -r_vec, rcond=None)[0]
+
+                if not self.internal_use_paper_ac:
+                    dz_vec = np.clip(dz_vec, -0.5, 0.5)
+                dz_vec = self.relax * dz_vec
+                max_abs_dz = float(np.max(np.abs(dz_vec))) if dz_vec.size > 0 else 0.0
+
+                for i, n in enumerate(self.internal_nodes):
+                    node_levels[n] = max(0.0, float(node_levels[n] + dz_vec[i]))
+                    if self.verbos:
+                        print(
+                            f'节点 {n} 第{iter_time}次迭代(耦合牛顿): '
+                            f'R={r_vec[i]:.4e}, dz={dz_vec[i]:.4e}, 新水位={node_levels[n]:.4f}'
+                        )
+
+                if max_abs_dz < 1e-4 and max_abs_q < self.JPWSPC_Q_limit:
+                    converged = True
+                    break
+        else:
+            for iter_time in range(1, self.max_iteration + 1):
+                self._apply_internal_node_levels(node_levels)
+
+                node_residual = {}
+                max_abs_q = 0.0
+                for n in self.internal_nodes:
+                    pure_Q = float(self._get_node_mass_residual_current_state(n))
+                    node_residual[n] = pure_Q
+                    max_abs_q = max(max_abs_q, abs(pure_Q))
+
+                new_levels = dict(node_levels)
+                max_abs_dz = 0.0
+                for n in self.internal_nodes:
+                    pure_Q = node_residual[n]
+
+                    if self.internal_use_numeric_jacobian:
+                        dR_dZ = self._node_mass_jacobian_numeric_with_map(n, node_levels, pure_Q)
+                        if abs(dR_dZ) < 1e-10:
+                            if self.internal_use_paper_ac:
+                                ac = float(self.Caculate_node_Ac_at_ghost_cell_JPWSPC(n))
+                            elif self.internal_use_ac_v2:
+                                ac = float(self.Caculate_node_Ac_at_ghost_cell_V2(n))
+                            else:
+                                ac = float(self.Caculate_node_Ac_at_ghost_cell(n))
+                            dR_dZ = -ac
+                    else:
+                        if self.internal_use_paper_ac:
+                            ac = float(self.Caculate_node_Ac_at_ghost_cell_JPWSPC(n))
+                        elif self.internal_use_ac_v2:
+                            ac = float(self.Caculate_node_Ac_at_ghost_cell_V2(n))
+                        else:
+                            ac = float(self.Caculate_node_Ac_at_ghost_cell(n))
+                        dR_dZ = -ac
+
+                    if abs(dR_dZ) < 1e-10:
+                        dz = 0.0
+                    else:
+                        dz = -pure_Q / dR_dZ
+
+                    if not self.internal_use_paper_ac:
+                        dz = float(np.clip(dz, -0.5, 0.5))
+                    dz = self.relax * dz
+                    new_levels[n] = max(0.0, node_levels[n] + dz)
+                    max_abs_dz = max(max_abs_dz, abs(dz))
+
+                    if self.verbos:
+                        print(
+                            f'节点 {n} 第{iter_time}次迭代: '
+                            f'pure_Q={pure_Q:.4e}, dR_dZ={dR_dZ:.4e}, dz={dz:.4e}, 新水位={new_levels[n]:.4f}'
+                        )
+
+                node_levels = new_levels
+                if max_abs_dz < 1e-4 and max_abs_q < self.JPWSPC_Q_limit:
+                    converged = True
+                    break
+
+        self._apply_internal_node_levels(node_levels)
+        self._internal_node_level_cache.update(node_levels)
+        if self.verbos:
+            if not converged:
+                print(f'内部边界迭代达到上限 {self.max_iteration} 次，max|Qnet|={max_abs_q:.4e}')
+            for n in self.internal_nodes:
+                print(f'节点 {n} 最终水位: {node_levels[n]:.4f} 米')
+
+    # 更新内部边界条件
+    def Update_internal_boundary_conditions(self):
+        if self.verbos: print('\n更新内部边界条件...')
+        if not self.internal_nodes:
+            return
+        if self._fast_internal_solver_active():
+            node_levels = self._initial_internal_node_levels(extrapolate=True)
+            self._solve_internal_nodes_fast_serial(node_levels)
+            return
+        if self._legacy_internal_exact_default_active():
+            node_levels = self._initial_internal_node_levels()
+            self._solve_internal_nodes_exact_serial_legacy_default(node_levels)
+            return
+        node_levels = self._initial_internal_node_levels()
+        t0 = time.perf_counter() if self.save_perf_report else 0.0
+        guess_levels, guess_stats = self._prepare_internal_node_initial_guess_serial(node_levels)
+        if self.save_perf_report:
+            self._perf_add_internal_orchestration_time('initial_guess', time.perf_counter() - t0)
+        backend = self._select_serial_internal_backend()
+        if backend == 'fused_serial':
+            self._solve_internal_nodes_exact_fused_serial(guess_levels, guess_stats=guess_stats)
+            return
+        self._perf_record_internal_backend('legacy_serial')
+        self._solve_internal_nodes_exact_serial(guess_levels, guess_stats=guess_stats)
 
 
     # 计算节点处真实网格的平均水位
@@ -1135,7 +2173,7 @@ class Rivernet():
         # 1) 处理“入支”（node 为下游端，边方向 u -> node）
         #    下游鬼格索引为 -1（相邻实格为 -2）
         # -----------------------------
-        for r, _ in self._in_branches_by_node[node_name]:
+        for r, river_name in self._in_branches_by_node[node_name]:
             # 相邻实格（倒数第二个单元）面积与流量
             A2 = float(r.S[-2])
             Q2 = float(r.Q[-2])
@@ -1163,14 +2201,20 @@ class Rivernet():
                         level_eff,
                         use_stabilizers=self.internal_bc_use_stabilizers,
                         respect_supercritical=self.internal_bc_respect_supercritical,
-                        stage_on_face=self.internal_bc_stage_on_face
+                        stage_on_face=self.internal_bc_stage_on_face,
+                        audit_context={
+                            'scenario': 'internal_node',
+                            'node': node_name,
+                            'river': river_name,
+                            'call_scene': 'internal_node',
+                        } if self.save_perf_report else None,
                     )
 
         # -----------------------------
         # 2) 处理“出支”（node 为上游端，边方向 node -> v）
         #    上游鬼格索引为 0（相邻实格为 1）
         # -----------------------------
-        for r, _ in self._out_branches_by_node[node_name]:
+        for r, river_name in self._out_branches_by_node[node_name]:
             # 相邻实格（第一个单元）面积与流量
             A1 = float(r.S[1])
             Q1 = float(r.Q[1])
@@ -1196,7 +2240,13 @@ class Rivernet():
                         level_eff,
                         use_stabilizers=self.internal_bc_use_stabilizers,
                         respect_supercritical=self.internal_bc_respect_supercritical,
-                        stage_on_face=self.internal_bc_stage_on_face
+                        stage_on_face=self.internal_bc_stage_on_face,
+                        audit_context={
+                            'scenario': 'internal_node',
+                            'node': node_name,
+                            'river': river_name,
+                            'call_scene': 'internal_node',
+                        } if self.save_perf_report else None,
                     )
 
 
@@ -1457,6 +2507,12 @@ class Rivernet():
                                 'use_stabilizers': self.external_bc_use_stabilizers,
                                 'respect_supercritical': self.external_bc_respect_supercritical,
                                 'stage_on_face': self.external_bc_stage_on_face,
+                                'audit_context': {
+                                    'scenario': 'external_in',
+                                    'node': n,
+                                    'river': name,
+                                    'call_scene': 'external_in',
+                                } if self.save_perf_report else None,
                             },
                         })
 
@@ -1482,6 +2538,12 @@ class Rivernet():
                                 'use_stabilizers': self.external_bc_use_stabilizers,
                                 'respect_supercritical': self.external_bc_respect_supercritical,
                                 'stage_on_face': self.external_bc_stage_on_face,
+                                'audit_context': {
+                                    'scenario': 'external_out',
+                                    'node': n,
+                                    'river': name,
+                                    'call_scene': 'external_out',
+                                } if self.save_perf_report else None,
                             },
                         })
         return ops
@@ -1505,6 +2567,12 @@ class Rivernet():
                             'use_stabilizers': self.internal_bc_use_stabilizers,
                             'respect_supercritical': self.internal_bc_respect_supercritical,
                             'stage_on_face': self.internal_bc_stage_on_face,
+                            'audit_context': {
+                                'scenario': 'internal_node',
+                                'node': node_name,
+                                'river': name,
+                                'call_scene': 'internal_node',
+                            } if self.save_perf_report else None,
                         },
                     })
             for _, name in self._out_branches_by_node[node_name]:
@@ -1520,6 +2588,12 @@ class Rivernet():
                             'use_stabilizers': self.internal_bc_use_stabilizers,
                             'respect_supercritical': self.internal_bc_respect_supercritical,
                             'stage_on_face': self.internal_bc_stage_on_face,
+                            'audit_context': {
+                                'scenario': 'internal_node',
+                                'node': node_name,
+                                'river': name,
+                                'call_scene': 'internal_node',
+                            } if self.save_perf_report else None,
                         },
                     })
         return ops
@@ -1548,43 +2622,819 @@ class Rivernet():
         self._parallel_internal_node_specs_cache = specs
         return specs
 
-    def _update_boundary_conditions_parallel(self, pool):
-        external_ops = self._build_parallel_external_boundary_ops()
-        if not self.internal_nodes:
-            return pool.call_batch_and_interface_snapshots(external_ops, snapshot_mode='full')
+    def _internal_snapshot_names(self):
+        cache = self._internal_snapshot_names_cache
+        if cache is not None:
+            return cache
+        names = []
+        seen = set()
+        for node_name in self.internal_nodes:
+            for _, river_name in self._in_branches_by_node[node_name]:
+                if river_name not in seen:
+                    seen.add(river_name)
+                    names.append(river_name)
+            for _, river_name in self._out_branches_by_node[node_name]:
+                if river_name not in seen:
+                    seen.add(river_name)
+                    names.append(river_name)
+        self._internal_snapshot_names_cache = tuple(names)
+        return self._internal_snapshot_names_cache
 
-        use_node_aggregates = self._parallel_can_use_node_aggregates()
-        compact_snapshots = self._parallel_can_use_compact_snapshots() and (not use_node_aggregates)
-        snapshot_mode = 'compact' if compact_snapshots else 'full'
-        if use_node_aggregates:
-            aggregates = pool.call_batch_and_node_aggregates(
-                external_ops,
-                self._parallel_internal_node_aggregate_specs(),
-                g=self.g,
-            )
-            snapshots = None
-        else:
-            snapshots = pool.call_batch_and_interface_snapshots(external_ops, snapshot_mode=snapshot_mode)
-            aggregates = None
+    def _dense_internal_node_levels(self, node_levels):
+        return np.asarray([float(node_levels[node]) for node in self.internal_nodes], dtype=float)
 
-        node_levels = {}
-        for n in self.internal_nodes:
-            if self.internal_level_predict_from_last and n in self._internal_node_level_cache:
-                z0 = float(self._internal_node_level_cache[n])
-            else:
-                if use_node_aggregates:
-                    z0 = float(self._parallel_node_average_level_at_real_cell_from_aggregates(n, aggregates))
+    def _build_internal_dense_plan_serial(self):
+        cache = self._internal_dense_plan_cache
+        if cache is not None:
+            return cache
+        node_names = list(self.internal_nodes)
+        river_slots = {}
+        river_refs = []
+        river_names = []
+        branch_river_slots = []
+        branch_side_codes = []
+        branch_flow_signs = []
+        node_offsets = [0]
+        snapshot_slots = []
+        snapshot_seen = set()
+        for node_name in node_names:
+            for river_obj, river_name in self._in_branches_by_node[node_name]:
+                slot = river_slots.get(river_name)
+                if slot is None:
+                    slot = len(river_refs)
+                    river_slots[river_name] = slot
+                    river_refs.append(river_obj)
+                    river_names.append(river_name)
+                branch_river_slots.append(slot)
+                branch_side_codes.append(SNAP_RIGHT)
+                branch_flow_signs.append(1.0)
+                if slot not in snapshot_seen:
+                    snapshot_seen.add(slot)
+                    snapshot_slots.append(slot)
+            for river_obj, river_name in self._out_branches_by_node[node_name]:
+                slot = river_slots.get(river_name)
+                if slot is None:
+                    slot = len(river_refs)
+                    river_slots[river_name] = slot
+                    river_refs.append(river_obj)
+                    river_names.append(river_name)
+                branch_river_slots.append(slot)
+                branch_side_codes.append(SNAP_LEFT)
+                branch_flow_signs.append(-1.0)
+                if slot not in snapshot_seen:
+                    snapshot_seen.add(slot)
+                    snapshot_slots.append(slot)
+            node_offsets.append(len(branch_river_slots))
+        cache = {
+            'node_names': tuple(node_names),
+            'node_offsets': np.asarray(node_offsets, dtype=np.int32),
+            'branch_river_slots': np.asarray(branch_river_slots, dtype=np.int32),
+            'branch_side_codes': np.asarray(branch_side_codes, dtype=np.int8),
+            'branch_flow_signs': np.asarray(branch_flow_signs, dtype=float),
+            'river_refs': tuple(river_refs),
+            'river_names': tuple(river_names),
+            'active_river_slots': tuple(range(len(river_refs))),
+            'snapshot_slots': tuple(snapshot_slots),
+        }
+        self._internal_dense_plan_cache = cache
+        return cache
+
+    def _build_parallel_dense_plan(self, pool):
+        cache = self._parallel_dense_plan_cache
+        worker_groups = tuple(
+            (int(group['id']), tuple(group['rivers']))
+            for group in pool.worker_river_groups()
+        )
+        if cache is not None and cache.get('worker_groups') == worker_groups:
+            return cache
+        node_names = list(self.internal_nodes)
+        worker_plans = {}
+        for worker_id, worker_rivers in worker_groups:
+            river_slots = {name: idx for idx, name in enumerate(worker_rivers)}
+            branch_river_slots = []
+            branch_side_codes = []
+            branch_flow_signs = []
+            node_offsets = [0]
+            snapshot_slots = []
+            snapshot_seen = set()
+            active_slots = []
+            active_seen = set()
+            for node_name in node_names:
+                for _, river_name in self._in_branches_by_node[node_name]:
+                    if river_name not in river_slots:
+                        continue
+                    slot = river_slots[river_name]
+                    branch_river_slots.append(slot)
+                    branch_side_codes.append(SNAP_RIGHT)
+                    branch_flow_signs.append(1.0)
+                    if slot not in active_seen:
+                        active_seen.add(slot)
+                        active_slots.append(slot)
+                    if slot not in snapshot_seen:
+                        snapshot_seen.add(slot)
+                        snapshot_slots.append(slot)
+                for _, river_name in self._out_branches_by_node[node_name]:
+                    if river_name not in river_slots:
+                        continue
+                    slot = river_slots[river_name]
+                    branch_river_slots.append(slot)
+                    branch_side_codes.append(SNAP_LEFT)
+                    branch_flow_signs.append(-1.0)
+                    if slot not in active_seen:
+                        active_seen.add(slot)
+                        active_slots.append(slot)
+                    if slot not in snapshot_seen:
+                        snapshot_seen.add(slot)
+                        snapshot_slots.append(slot)
+                node_offsets.append(len(branch_river_slots))
+            worker_plans[worker_id] = {
+                'node_names': tuple(node_names),
+                'node_offsets': np.asarray(node_offsets, dtype=np.int32),
+                'branch_river_slots': np.asarray(branch_river_slots, dtype=np.int32),
+                'branch_side_codes': np.asarray(branch_side_codes, dtype=np.int8),
+                'branch_flow_signs': np.asarray(branch_flow_signs, dtype=float),
+                'active_river_slots': tuple(active_slots),
+                'snapshot_slots': tuple(snapshot_slots),
+            }
+        cache = {
+            'worker_groups': worker_groups,
+            'worker_plans': worker_plans,
+        }
+        self._parallel_dense_plan_cache = cache
+        return cache
+
+    def _configure_pool_exact_node_plan(self, pool):
+        if not hasattr(pool, 'configure_exact_node_plan'):
+            return False
+        dense_plan = self._build_parallel_dense_plan(pool)
+        pool.configure_exact_node_plan(dense_plan['worker_plans'])
+        return True
+
+    def _prepare_internal_node_initial_guess_parallel(self, pool, node_levels):
+        guess_levels = dict(node_levels)
+        guess_stats = {}
+        if not self._internal_response_solver_supported():
+            return guess_levels, guess_stats
+        jobs, boundary_kwargs = self._build_parallel_node_response_jobs(node_levels)
+        if not jobs:
+            return guess_levels, guess_stats
+        t0 = time.perf_counter()
+        tables = pool.node_response_tables(jobs, boundary_kwargs)
+        total_elapsed = time.perf_counter() - t0
+        per_node_time = total_elapsed / max(len(self.internal_nodes), 1)
+        for node_name in self.internal_nodes:
+            table = tables.get(node_name)
+            if table is None:
+                guess_stats[node_name] = {
+                    'time': per_node_time,
+                    'closure_calls': 0,
+                    'fast_calls': 0,
+                    'fast_hits': 0,
+                    'table_attempted': True,
+                    'table_success': False,
+                    'fallback_reason': 'missing_table',
+                }
+                continue
+            guess_stats[node_name] = {
+                'time': per_node_time,
+                'closure_calls': int(table['closure_calls']),
+                'fast_calls': int(table['fast_calls']),
+                'fast_hits': int(table['fast_hits']),
+                'table_attempted': True,
+                'table_success': False,
+                'fallback_reason': None,
+            }
+            if not bool(table.get('valid', False)):
+                guess_stats[node_name]['fallback_reason'] = next(iter(table.get('reasons', {'table_invalid': 1})), 'table_invalid')
+                continue
+            root = self._node_response_root_from_table(table)
+            if not root.get('success', False):
+                guess_stats[node_name]['fallback_reason'] = 'no_bracket'
+                continue
+            guess_levels[node_name] = max(0.0, float(root['eta']))
+            guess_stats[node_name]['table_success'] = True
+            guess_stats[node_name]['slope'] = float(root.get('slope', 0.0))
+        return guess_levels, guess_stats
+
+    def _fast_guess_is_usable(self, guess_stats):
+        return bool(guess_stats) and all(
+            bool(guess_stats.get(node_name, {}).get('table_success', False))
+            for node_name in self.internal_nodes
+        )
+
+    def _solve_internal_nodes_fast_serial(self, node_levels):
+        if not self._internal_response_solver_supported():
+            self._solve_internal_nodes_exact_serial(node_levels, guess_stats={})
+            return
+        t0 = time.perf_counter() if self.save_perf_report else 0.0
+        guess_levels, guess_stats = self._prepare_internal_node_initial_guess_serial(node_levels)
+        if self.save_perf_report:
+            self._perf_add_internal_orchestration_time('initial_guess', time.perf_counter() - t0)
+        if not self._fast_guess_is_usable(guess_stats):
+            self._solve_internal_nodes_exact_serial(guess_levels, guess_stats=guess_stats)
+            return
+
+        self._perf_record_internal_backend('fast_serial')
+        node_levels = dict(guess_levels)
+        q_tol = self._internal_solver_q_tol()
+        dz_tol = self._internal_solver_dz_tol()
+        correction_limit = 0
+        if str(self.fast_node_solver_mode).strip().lower() == 'response_corrector':
+            correction_limit = max(0, int(self.fast_node_correction_iters))
+        converged = False
+        max_abs_q = np.inf
+        iter_count = 0
+        solve_start = time.perf_counter()
+        for iter_time in range(1, correction_limit + 1):
+            iter_count = iter_time
+            self._apply_internal_node_levels(node_levels)
+            node_residual = {}
+            node_jacobian = {}
+            max_abs_q = 0.0
+            for n in self.internal_nodes:
+                pure_q = float(self._get_node_mass_residual_current_state(n))
+                node_residual[n] = pure_q
+                max_abs_q = max(max_abs_q, abs(pure_q))
+                if self.internal_use_paper_ac:
+                    node_jacobian[n] = -float(self.Caculate_node_Ac_at_ghost_cell_JPWSPC(n))
+                elif self.internal_use_ac_v2:
+                    node_jacobian[n] = -float(self.Caculate_node_Ac_at_ghost_cell_V2(n))
                 else:
-                    z0 = float(self._parallel_node_average_level_at_real_cell(n, snapshots))
-                if np.isnan(z0):
-                    if use_node_aggregates:
-                        z0 = float(self._parallel_node_average_level_at_ghost_cell_from_aggregates(n, aggregates))
-                    else:
-                        z0 = float(self._parallel_node_average_level_at_ghost_cell(n, snapshots))
-                if np.isnan(z0):
-                    z0 = 0.0
-            node_levels[n] = max(0.0, z0)
+                    node_jacobian[n] = -float(self.Caculate_node_Ac_at_ghost_cell(n))
+            new_levels = dict(node_levels)
+            max_abs_dz = 0.0
+            for n in self.internal_nodes:
+                dR_dZ = float(node_jacobian[n])
+                pure_q = float(node_residual[n])
+                dz = 0.0 if abs(dR_dZ) < 1.0e-10 else -pure_q / dR_dZ
+                if not self.internal_use_paper_ac:
+                    dz = float(np.clip(dz, -0.5, 0.5))
+                dz = self.relax * dz
+                new_levels[n] = max(0.0, float(node_levels[n]) + dz)
+                max_abs_dz = max(max_abs_dz, abs(dz))
+            node_levels = new_levels
+            if max_abs_dz < dz_tol and max_abs_q < q_tol:
+                converged = True
+                break
 
+        self._apply_internal_node_levels(node_levels)
+        solve_time = time.perf_counter() - solve_start
+        per_node_time = solve_time / max(len(self.internal_nodes), 1)
+        self._internal_node_level_cache.update(node_levels)
+        final_residuals = {}
+        for n in self.internal_nodes:
+            final_residuals[n] = float(self._get_node_mass_residual_current_state(n))
+            self._update_internal_node_solver_cache(n, node_levels[n], residual=final_residuals[n])
+        for n in self.internal_nodes:
+            pre = guess_stats.get(n, {})
+            branch_calls = len(self._internal_node_branch_specs(n)) * int(iter_count)
+            self._perf_record_node_solve(
+                n,
+                solve_time=per_node_time + float(pre.get('time', 0.0)),
+                iterations=int(iter_count),
+                boundary_closure_calls=int(pre.get('closure_calls', 0) + branch_calls),
+                table_attempted=bool(pre.get('table_attempted', False)),
+                table_success=bool(pre.get('table_success', False)),
+                fast_calls=int(pre.get('fast_calls', 0)),
+                fast_hits=int(pre.get('fast_hits', 0)),
+                exact_refine_iterations=int(iter_count),
+                final_abs_residual=final_residuals[n],
+                fallback_reason=pre.get('fallback_reason'),
+            )
+        if self.verbos and (not converged) and correction_limit > 0:
+            print(f'FAST_MODE 内部边界校正达到上限 {correction_limit} 次，max|Qnet|={max_abs_q:.4e}')
+
+    def _solve_internal_nodes_fast_parallel(
+            self,
+            pool,
+            node_levels,
+            use_node_aggregates,
+            snapshot_mode,
+            aggregates=None,
+            snapshots=None,
+    ):
+        if not self._internal_response_solver_supported():
+            return self._solve_internal_nodes_exact_parallel(
+                pool,
+                node_levels,
+                use_node_aggregates=use_node_aggregates,
+                snapshot_mode=snapshot_mode,
+                aggregates=aggregates,
+                snapshots=snapshots,
+                guess_stats={},
+            )
+
+        t0 = time.perf_counter() if self.save_perf_report else 0.0
+        guess_levels, guess_stats = self._prepare_internal_node_initial_guess_parallel(pool, node_levels)
+        if self.save_perf_report:
+            self._perf_add_internal_orchestration_time('initial_guess', time.perf_counter() - t0)
+        if not self._fast_guess_is_usable(guess_stats):
+            return self._solve_internal_nodes_exact_parallel(
+                pool,
+                guess_levels,
+                use_node_aggregates=use_node_aggregates,
+                snapshot_mode=snapshot_mode,
+                aggregates=aggregates,
+                snapshots=snapshots,
+                guess_stats=guess_stats,
+            )
+
+        self._perf_record_internal_backend('fast_parallel')
+        node_levels = dict(guess_levels)
+        q_tol = self._internal_solver_q_tol()
+        dz_tol = self._internal_solver_dz_tol()
+        correction_limit = 0
+        if str(self.fast_node_solver_mode).strip().lower() == 'response_corrector':
+            correction_limit = max(0, int(self.fast_node_correction_iters))
+        converged = False
+        max_abs_q = np.inf
+        iter_count = 0
+        solve_time_start = time.perf_counter()
+        for iter_idx in range(1, correction_limit + 1):
+            iter_count = iter_idx
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
+            iter_ops = self._build_parallel_internal_level_ops(node_levels, snapshots)
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('apply_prepare', time.perf_counter() - t0)
+
+            if use_node_aggregates:
+                agg_payload = pool.call_batch_and_node_aggregates(
+                    iter_ops,
+                    self._parallel_internal_node_aggregate_specs(),
+                    g=self.g,
+                    collect_perf=self.save_perf_report,
+                )
+                if self.save_perf_report:
+                    aggregates = agg_payload['aggregates']
+                    self._perf_record_internal_roundtrip(agg_payload.get('meta', {}))
+                    for perf in agg_payload.get('perf', {}).values():
+                        self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+                else:
+                    aggregates = agg_payload
+            else:
+                snap_payload = pool.call_batch_and_interface_snapshots(
+                    iter_ops,
+                    snapshot_mode=snapshot_mode,
+                    collect_perf=self.save_perf_report,
+                )
+                if self.save_perf_report:
+                    snapshots = snap_payload['snapshots']
+                    self._perf_record_internal_roundtrip(snap_payload.get('meta', {}))
+                    for perf in snap_payload.get('perf', {}).values():
+                        self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+                else:
+                    snapshots = snap_payload
+
+            t_resid = time.perf_counter() if self.save_perf_report else 0.0
+            node_residual = {}
+            max_abs_q = 0.0
+            for n in self.internal_nodes:
+                pure_q = (
+                    self._parallel_node_mass_residual_from_aggregates(n, aggregates)
+                    if use_node_aggregates else
+                    self._parallel_node_mass_residual(n, snapshots)
+                )
+                node_residual[n] = float(pure_q)
+                max_abs_q = max(max_abs_q, abs(float(pure_q)))
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('residual_assembly', time.perf_counter() - t_resid)
+
+            t_jac = time.perf_counter() if self.save_perf_report else 0.0
+            node_jacobian = {}
+            for n in self.internal_nodes:
+                node_jacobian[n] = -float(
+                    self._parallel_node_ac_from_aggregates(n, aggregates)
+                    if use_node_aggregates else
+                    self._parallel_node_ac(n, snapshots)
+                )
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('jacobian_assembly', time.perf_counter() - t_jac)
+
+            t_relax = time.perf_counter() if self.save_perf_report else 0.0
+            new_levels = dict(node_levels)
+            max_abs_dz = 0.0
+            for n in self.internal_nodes:
+                dR_dZ = float(node_jacobian[n])
+                pure_q = float(node_residual[n])
+                dz = 0.0 if abs(dR_dZ) < 1.0e-10 else -pure_q / dR_dZ
+                if not self.internal_use_paper_ac:
+                    dz = float(np.clip(dz, -0.5, 0.5))
+                dz = self.relax * dz
+                new_levels[n] = max(0.0, float(node_levels[n]) + dz)
+                max_abs_dz = max(max_abs_dz, abs(dz))
+            node_levels = new_levels
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('relax_checks', time.perf_counter() - t_relax)
+            if max_abs_dz < dz_tol and max_abs_q < q_tol:
+                converged = True
+                break
+
+        t0 = time.perf_counter() if self.save_perf_report else 0.0
+        final_ops = self._build_parallel_internal_level_ops(node_levels, snapshots)
+        if self.save_perf_report:
+            self._perf_add_internal_orchestration_time('apply_prepare', time.perf_counter() - t0)
+        final_payload = pool.call_batch_and_interface_snapshots(
+            final_ops,
+            snapshot_mode='full',
+            collect_perf=self.save_perf_report,
+        )
+        if self.save_perf_report:
+            snapshots = final_payload['snapshots']
+            self._perf_record_internal_roundtrip(final_payload.get('meta', {}), final_snapshot=True)
+            for perf in final_payload.get('perf', {}).values():
+                self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+        else:
+            snapshots = final_payload
+
+        solve_time = time.perf_counter() - solve_time_start
+        per_node_time = solve_time / max(len(self.internal_nodes), 1)
+        self._internal_node_level_cache.update(node_levels)
+        for n in self.internal_nodes:
+            final_residual = float(self._parallel_node_mass_residual(n, snapshots))
+            self._update_internal_node_solver_cache(n, node_levels[n], residual=final_residual)
+            pre = guess_stats.get(n, {})
+            branch_calls = len(self._internal_node_branch_specs(n)) * int(iter_count)
+            self._perf_record_node_solve(
+                n,
+                solve_time=per_node_time + float(pre.get('time', 0.0)),
+                iterations=int(iter_count),
+                boundary_closure_calls=int(pre.get('closure_calls', 0) + branch_calls),
+                table_attempted=bool(pre.get('table_attempted', False)),
+                table_success=bool(pre.get('table_success', False)),
+                fast_calls=int(pre.get('fast_calls', 0)),
+                fast_hits=int(pre.get('fast_hits', 0)),
+                exact_refine_iterations=int(iter_count),
+                final_abs_residual=final_residual,
+                fallback_reason=pre.get('fallback_reason'),
+            )
+        if self.verbos and (not converged) and correction_limit > 0:
+            print(f'FAST_MODE 内部边界校正达到上限 {correction_limit} 次，max|Qnet|={max_abs_q:.4e}')
+        return snapshots
+
+    def _select_parallel_internal_backend(self, pool, use_node_aggregates):
+        requested = str(getattr(self, 'internal_exact_backend', 'legacy_parallel')).strip().lower()
+        if (
+            requested == 'fused_parallel'
+            and use_node_aggregates
+            and (not self.use_fix_level_bc_v2)
+            and hasattr(pool, 'call_exact_node_eval_batch')
+        ):
+            return 'fused_parallel'
+        return 'legacy_parallel'
+
+    def _select_serial_internal_backend(self):
+        requested = str(getattr(self, 'internal_exact_backend', 'legacy_parallel')).strip().lower()
+        if requested != 'fused_serial':
+            return 'legacy_serial'
+        if (
+            self.internal_use_coupled_newton
+            or self.internal_use_numeric_jacobian
+            or self.internal_sync_branch_end_Q
+            or self.internal_node_use_face_flux_residual
+            or self.use_fix_level_bc_v2
+        ):
+            return 'legacy_serial'
+        return 'fused_serial'
+
+    def _solve_internal_nodes_exact_fused_parallel(self, pool, node_levels, guess_stats=None):
+        guess_stats = {} if guess_stats is None else guess_stats
+        self._perf_record_internal_backend('fused_parallel')
+        converged = False
+        max_abs_q = np.inf
+        iter_count = 0
+        solve_start = time.perf_counter()
+        for iter_idx in range(1, self.max_iteration + 1):
+            iter_count = iter_idx
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
+            dense_levels = self._dense_internal_node_levels(node_levels)
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('trial_level_prepare', time.perf_counter() - t0)
+
+            payload = pool.call_exact_node_eval_batch(
+                dense_levels,
+                g=self.g,
+                snapshot_mode=None,
+                collect_perf=self.save_perf_report,
+            )
+            aggregates = payload['aggregates']
+            if self.save_perf_report:
+                self._perf_record_internal_roundtrip(payload.get('meta', {}))
+                for perf in payload.get('perf', {}).values():
+                    self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
+            residuals = np.asarray(aggregates[:, NODE_AGG_RESIDUAL], dtype=float)
+            max_abs_q = float(np.max(np.abs(residuals))) if residuals.size > 0 else 0.0
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('residual_assembly', time.perf_counter() - t0)
+
+            t_jac = time.perf_counter() if self.save_perf_report else 0.0
+            dR_dZ = -self.alpha * np.asarray(aggregates[:, NODE_AGG_AC], dtype=float)
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('jacobian_assembly', time.perf_counter() - t_jac)
+
+            t_relax = time.perf_counter() if self.save_perf_report else 0.0
+            new_levels = dict(node_levels)
+            max_abs_dz = 0.0
+            for idx, node_name in enumerate(self.internal_nodes):
+                pure_q = float(residuals[idx])
+                deriv = float(dR_dZ[idx])
+                if abs(deriv) < 1e-10:
+                    dz = 0.0
+                else:
+                    dz = -pure_q / deriv
+                if not self.internal_use_paper_ac:
+                    dz = float(np.clip(dz, -0.5, 0.5))
+                dz = self.relax * dz
+                new_levels[node_name] = max(0.0, float(node_levels[node_name]) + dz)
+                max_abs_dz = max(max_abs_dz, abs(dz))
+            node_levels = new_levels
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('relax_checks', time.perf_counter() - t_relax)
+            if max_abs_dz < 1e-4 and max_abs_q < self.JPWSPC_Q_limit:
+                converged = True
+                break
+
+        t0 = time.perf_counter() if self.save_perf_report else 0.0
+        dense_levels = self._dense_internal_node_levels(node_levels)
+        if self.save_perf_report:
+            self._perf_add_internal_orchestration_time('trial_level_prepare', time.perf_counter() - t0)
+        final_payload = pool.call_exact_node_eval_batch(
+            dense_levels,
+            g=self.g,
+            snapshot_mode='full',
+            collect_perf=self.save_perf_report,
+        )
+        if self.save_perf_report:
+            self._perf_record_internal_roundtrip(final_payload.get('meta', {}), final_snapshot=True)
+            for perf in final_payload.get('perf', {}).values():
+                self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+        snapshots = final_payload['snapshots']
+        final_aggregates = final_payload['aggregates']
+        final_residuals = np.asarray(final_aggregates[:, NODE_AGG_RESIDUAL], dtype=float)
+
+        solve_time = time.perf_counter() - solve_start
+        per_node_time = solve_time / max(len(self.internal_nodes), 1)
+        self._internal_node_level_cache.update(node_levels)
+        for idx, node_name in enumerate(self.internal_nodes):
+            final_residual = float(final_residuals[idx]) if final_residuals.size > idx else 0.0
+            self._update_internal_node_solver_cache(node_name, node_levels[node_name], residual=final_residual)
+            pre = guess_stats.get(node_name, {})
+            branch_calls = len(self._internal_node_branch_specs(node_name)) * (iter_count + 1)
+            self._perf_record_node_solve(
+                node_name,
+                solve_time=per_node_time + float(pre.get('time', 0.0)),
+                iterations=int(iter_count),
+                boundary_closure_calls=int(branch_calls + pre.get('closure_calls', 0)),
+                table_attempted=bool(pre.get('table_attempted', False)),
+                table_success=bool(pre.get('table_success', False)),
+                fast_calls=int(pre.get('fast_calls', 0)),
+                fast_hits=int(pre.get('fast_hits', 0)),
+                exact_refine_iterations=int(iter_count),
+                final_abs_residual=final_residual,
+                fallback_reason=pre.get('fallback_reason'),
+            )
+        if self.verbos and not converged:
+            print(f'内部边界迭代达到上限 {self.max_iteration} 次，max|Qnet|={max_abs_q:.4e}')
+        return snapshots
+
+    def _solve_internal_nodes_exact_fused_serial(self, node_levels, guess_stats=None):
+        guess_stats = {} if guess_stats is None else guess_stats
+        self._perf_record_internal_backend('fused_serial')
+        plan = self._build_internal_dense_plan_serial()
+        converged = False
+        max_abs_q = np.inf
+        iter_count = 0
+        solve_start = time.perf_counter()
+        for iter_idx in range(1, self.max_iteration + 1):
+            iter_count = iter_idx
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
+            dense_levels = self._dense_internal_node_levels(node_levels)
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('trial_level_prepare', time.perf_counter() - t0)
+
+            payload = _exact_node_eval_from_plan(
+                plan['river_refs'],
+                plan['river_names'],
+                plan,
+                dense_levels,
+                self.g,
+                snapshot_mode=None,
+                collect_perf=self.save_perf_report,
+            )
+            if self.save_perf_report:
+                self._perf_record_internal_roundtrip(payload.get('meta', {}))
+                for perf in payload.get('perf', {}).values():
+                    self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+
+            aggregates = payload['aggregates']
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
+            residuals = np.asarray(aggregates[:, NODE_AGG_RESIDUAL], dtype=float)
+            max_abs_q = float(np.max(np.abs(residuals))) if residuals.size > 0 else 0.0
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('residual_assembly', time.perf_counter() - t0)
+
+            t_jac = time.perf_counter() if self.save_perf_report else 0.0
+            dR_dZ = -self.alpha * np.asarray(aggregates[:, NODE_AGG_AC], dtype=float)
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('jacobian_assembly', time.perf_counter() - t_jac)
+
+            t_relax = time.perf_counter() if self.save_perf_report else 0.0
+            new_levels = dict(node_levels)
+            max_abs_dz = 0.0
+            for idx, node_name in enumerate(self.internal_nodes):
+                pure_q = float(residuals[idx])
+                deriv = float(dR_dZ[idx])
+                if abs(deriv) < 1e-10:
+                    dz = 0.0
+                else:
+                    dz = -pure_q / deriv
+                if not self.internal_use_paper_ac:
+                    dz = float(np.clip(dz, -0.5, 0.5))
+                dz = self.relax * dz
+                new_levels[node_name] = max(0.0, float(node_levels[node_name]) + dz)
+                max_abs_dz = max(max_abs_dz, abs(dz))
+            node_levels = new_levels
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('relax_checks', time.perf_counter() - t_relax)
+            if max_abs_dz < 1e-4 and max_abs_q < self.JPWSPC_Q_limit:
+                converged = True
+                break
+
+        t0 = time.perf_counter() if self.save_perf_report else 0.0
+        dense_levels = self._dense_internal_node_levels(node_levels)
+        if self.save_perf_report:
+            self._perf_add_internal_orchestration_time('trial_level_prepare', time.perf_counter() - t0)
+        final_payload = _exact_node_eval_from_plan(
+            plan['river_refs'],
+            plan['river_names'],
+            plan,
+            dense_levels,
+            self.g,
+            snapshot_mode='full',
+            collect_perf=self.save_perf_report,
+        )
+        if self.save_perf_report:
+            self._perf_record_internal_roundtrip(final_payload.get('meta', {}), final_snapshot=True)
+            for perf in final_payload.get('perf', {}).values():
+                self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+        snapshots = final_payload['snapshots']
+        final_aggregates = final_payload['aggregates']
+        final_residuals = np.asarray(final_aggregates[:, NODE_AGG_RESIDUAL], dtype=float)
+
+        solve_time = time.perf_counter() - solve_start
+        per_node_time = solve_time / max(len(self.internal_nodes), 1)
+        self._internal_node_level_cache.update(node_levels)
+        for idx, node_name in enumerate(self.internal_nodes):
+            final_residual = float(final_residuals[idx]) if final_residuals.size > idx else 0.0
+            self._update_internal_node_solver_cache(node_name, node_levels[node_name], residual=final_residual)
+            pre = guess_stats.get(node_name, {})
+            branch_calls = len(self._internal_node_branch_specs(node_name)) * (iter_count + 1)
+            self._perf_record_node_solve(
+                node_name,
+                solve_time=per_node_time + float(pre.get('time', 0.0)),
+                iterations=int(iter_count),
+                boundary_closure_calls=int(branch_calls + pre.get('closure_calls', 0)),
+                table_attempted=bool(pre.get('table_attempted', False)),
+                table_success=bool(pre.get('table_success', False)),
+                fast_calls=int(pre.get('fast_calls', 0)),
+                fast_hits=int(pre.get('fast_hits', 0)),
+                exact_refine_iterations=int(iter_count),
+                final_abs_residual=final_residual,
+                fallback_reason=pre.get('fallback_reason'),
+            )
+        if self.verbos and not converged:
+            print(f'内部边界迭代达到上限 {self.max_iteration} 次，max|Qnet|={max_abs_q:.4e}')
+        return snapshots
+
+    def _solve_internal_nodes_exact_parallel(self, pool, node_levels, use_node_aggregates, snapshot_mode, aggregates=None, snapshots=None, guess_stats=None):
+        guess_stats = {} if guess_stats is None else guess_stats
+        self._perf_record_internal_backend('legacy_parallel')
+        converged = False
+        max_abs_q = np.inf
+        iter_count = 0
+        solve_start = time.perf_counter()
+        for iter_idx in range(1, self.max_iteration + 1):
+            iter_count = iter_idx
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
+            iter_ops = self._build_parallel_internal_level_ops(node_levels, snapshots)
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('apply_prepare', time.perf_counter() - t0)
+            if use_node_aggregates:
+                agg_payload = pool.call_batch_and_node_aggregates(
+                    iter_ops,
+                    self._parallel_internal_node_aggregate_specs(),
+                    g=self.g,
+                    collect_perf=self.save_perf_report,
+                )
+                if self.save_perf_report:
+                    aggregates = agg_payload['aggregates']
+                    self._perf_record_internal_roundtrip(agg_payload.get('meta', {}))
+                    for perf in agg_payload.get('perf', {}).values():
+                        self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+                else:
+                    aggregates = agg_payload
+            else:
+                snap_payload = pool.call_batch_and_interface_snapshots(
+                    iter_ops,
+                    snapshot_mode=snapshot_mode,
+                    collect_perf=self.save_perf_report,
+                )
+                if self.save_perf_report:
+                    snapshots = snap_payload['snapshots']
+                    self._perf_record_internal_roundtrip(snap_payload.get('meta', {}))
+                    for perf in snap_payload.get('perf', {}).values():
+                        self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+                else:
+                    snapshots = snap_payload
+
+            t_resid = time.perf_counter() if self.save_perf_report else 0.0
+            node_residual = {}
+            max_abs_q = 0.0
+            for n in self.internal_nodes:
+                if use_node_aggregates:
+                    pure_q = self._parallel_node_mass_residual_from_aggregates(n, aggregates)
+                else:
+                    pure_q = self._parallel_node_mass_residual(n, snapshots)
+                node_residual[n] = pure_q
+                max_abs_q = max(max_abs_q, abs(pure_q))
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('residual_assembly', time.perf_counter() - t_resid)
+
+            t_jac = time.perf_counter() if self.save_perf_report else 0.0
+            node_jacobian = {}
+            for n in self.internal_nodes:
+                if use_node_aggregates:
+                    node_jacobian[n] = -float(self._parallel_node_ac_from_aggregates(n, aggregates))
+                else:
+                    node_jacobian[n] = -float(self._parallel_node_ac(n, snapshots))
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('jacobian_assembly', time.perf_counter() - t_jac)
+
+            t_relax = time.perf_counter() if self.save_perf_report else 0.0
+            new_levels = dict(node_levels)
+            max_abs_dz = 0.0
+            for n in self.internal_nodes:
+                pure_q = node_residual[n]
+                dR_dZ = node_jacobian[n]
+                if abs(dR_dZ) < 1e-10:
+                    dz = 0.0
+                else:
+                    dz = -pure_q / dR_dZ
+                if not self.internal_use_paper_ac:
+                    dz = float(np.clip(dz, -0.5, 0.5))
+                dz = self.relax * dz
+                new_levels[n] = max(0.0, node_levels[n] + dz)
+                max_abs_dz = max(max_abs_dz, abs(dz))
+            node_levels = new_levels
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('relax_checks', time.perf_counter() - t_relax)
+            if max_abs_dz < 1e-4 and max_abs_q < self.JPWSPC_Q_limit:
+                converged = True
+                break
+
+        t0 = time.perf_counter() if self.save_perf_report else 0.0
+        final_ops = self._build_parallel_internal_level_ops(node_levels, snapshots)
+        if self.save_perf_report:
+            self._perf_add_internal_orchestration_time('apply_prepare', time.perf_counter() - t0)
+        final_payload = pool.call_batch_and_interface_snapshots(
+            final_ops,
+            snapshot_mode='full',
+            collect_perf=self.save_perf_report,
+        )
+        if self.save_perf_report:
+            snapshots = final_payload['snapshots']
+            self._perf_record_internal_roundtrip(final_payload.get('meta', {}), final_snapshot=True)
+            for perf in final_payload.get('perf', {}).values():
+                self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+        else:
+            snapshots = final_payload
+        solve_time = time.perf_counter() - solve_start
+        per_node_time = solve_time / max(len(self.internal_nodes), 1)
+        self._internal_node_level_cache.update(node_levels)
+        for n in self.internal_nodes:
+            final_residual = float(self._parallel_node_mass_residual(n, snapshots))
+            self._update_internal_node_solver_cache(n, node_levels[n], residual=final_residual)
+            pre = guess_stats.get(n, {})
+            branch_calls = len(self._internal_node_branch_specs(n)) * (iter_count + 1)
+            self._perf_record_node_solve(
+                n,
+                solve_time=per_node_time + float(pre.get('time', 0.0)),
+                iterations=int(iter_count),
+                boundary_closure_calls=int(branch_calls + pre.get('closure_calls', 0)),
+                table_attempted=bool(pre.get('table_attempted', False)),
+                table_success=bool(pre.get('table_success', False)),
+                fast_calls=int(pre.get('fast_calls', 0)),
+                fast_hits=int(pre.get('fast_hits', 0)),
+                exact_refine_iterations=int(iter_count),
+                final_abs_residual=final_residual,
+                fallback_reason=pre.get('fallback_reason'),
+            )
+        if self.verbos and not converged:
+            print(f'内部边界迭代达到上限 {self.max_iteration} 次，max|Qnet|={max_abs_q:.4e}')
+        return snapshots
+
+    def _solve_internal_nodes_exact_parallel_legacy_default(self, pool, node_levels, use_node_aggregates, snapshot_mode, aggregates=None, snapshots=None):
         converged = False
         max_abs_q = np.inf
         for _ in range(1, self.max_iteration + 1):
@@ -1642,6 +3492,177 @@ class Rivernet():
             print(f'内部边界迭代达到上限 {self.max_iteration} 次，max|Qnet|={max_abs_q:.4e}')
         return snapshots
 
+    def _update_boundary_conditions_parallel(self, pool):
+        if self._fast_internal_solver_active():
+            external_ops = self._build_parallel_external_boundary_ops()
+            if not self.internal_nodes:
+                payload = pool.call_batch_and_interface_snapshots(
+                    external_ops,
+                    snapshot_mode='full',
+                    collect_perf=self.save_perf_report,
+                )
+                if self.save_perf_report:
+                    self._perf_record_internal_roundtrip(payload.get('meta', {}))
+                    for perf in payload.get('perf', {}).values():
+                        self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+                    return payload['snapshots']
+                return payload
+
+            use_node_aggregates = self._parallel_can_use_node_aggregates()
+            compact_snapshots = self._parallel_can_use_compact_snapshots() and (not use_node_aggregates)
+            snapshot_mode = 'compact' if compact_snapshots else 'full'
+            if use_node_aggregates:
+                agg_payload = pool.call_batch_and_node_aggregates(
+                    external_ops,
+                    self._parallel_internal_node_aggregate_specs(),
+                    g=self.g,
+                    collect_perf=self.save_perf_report,
+                )
+                if self.save_perf_report:
+                    aggregates = agg_payload['aggregates']
+                    self._perf_record_internal_roundtrip(agg_payload.get('meta', {}))
+                    for perf in agg_payload.get('perf', {}).values():
+                        self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+                else:
+                    aggregates = agg_payload
+                snapshots = None
+            else:
+                snap_payload = pool.call_batch_and_interface_snapshots(
+                    external_ops,
+                    snapshot_mode=snapshot_mode,
+                    collect_perf=self.save_perf_report,
+                )
+                if self.save_perf_report:
+                    snapshots = snap_payload['snapshots']
+                    self._perf_record_internal_roundtrip(snap_payload.get('meta', {}))
+                    for perf in snap_payload.get('perf', {}).values():
+                        self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+                else:
+                    snapshots = snap_payload
+                aggregates = None
+
+            node_levels = self._initial_internal_node_levels(
+                use_node_aggregates=use_node_aggregates,
+                aggregates=aggregates,
+                snapshots=snapshots,
+                extrapolate=True,
+            )
+            return self._solve_internal_nodes_fast_parallel(
+                pool,
+                node_levels,
+                use_node_aggregates=use_node_aggregates,
+                snapshot_mode=snapshot_mode,
+                aggregates=aggregates,
+                snapshots=snapshots,
+            )
+
+        if self._legacy_internal_exact_default_active():
+            external_ops = self._build_parallel_external_boundary_ops()
+            if not self.internal_nodes:
+                return pool.call_batch_and_interface_snapshots(external_ops, snapshot_mode='full')
+
+            use_node_aggregates = self._parallel_can_use_node_aggregates()
+            compact_snapshots = self._parallel_can_use_compact_snapshots() and (not use_node_aggregates)
+            snapshot_mode = 'compact' if compact_snapshots else 'full'
+            if use_node_aggregates:
+                aggregates = pool.call_batch_and_node_aggregates(
+                    external_ops,
+                    self._parallel_internal_node_aggregate_specs(),
+                    g=self.g,
+                )
+                snapshots = None
+            else:
+                snapshots = pool.call_batch_and_interface_snapshots(
+                    external_ops,
+                    snapshot_mode=snapshot_mode,
+                )
+                aggregates = None
+
+            node_levels = self._initial_internal_node_levels(
+                use_node_aggregates=use_node_aggregates,
+                aggregates=aggregates,
+                snapshots=snapshots,
+            )
+            return self._solve_internal_nodes_exact_parallel_legacy_default(
+                pool,
+                node_levels,
+                use_node_aggregates=use_node_aggregates,
+                snapshot_mode=snapshot_mode,
+                aggregates=aggregates,
+                snapshots=snapshots,
+            )
+
+        external_ops = self._build_parallel_external_boundary_ops()
+        if not self.internal_nodes:
+            payload = pool.call_batch_and_interface_snapshots(
+                external_ops,
+                snapshot_mode='full',
+                collect_perf=self.save_perf_report,
+            )
+            if self.save_perf_report:
+                self._perf_record_internal_roundtrip(payload.get('meta', {}))
+                for perf in payload.get('perf', {}).values():
+                    self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+                return payload['snapshots']
+            return payload
+
+        use_node_aggregates = self._parallel_can_use_node_aggregates()
+        compact_snapshots = self._parallel_can_use_compact_snapshots() and (not use_node_aggregates)
+        snapshot_mode = 'compact' if compact_snapshots else 'full'
+        if use_node_aggregates:
+            agg_payload = pool.call_batch_and_node_aggregates(
+                external_ops,
+                self._parallel_internal_node_aggregate_specs(),
+                g=self.g,
+                collect_perf=self.save_perf_report,
+            )
+            if self.save_perf_report:
+                aggregates = agg_payload['aggregates']
+                for perf in agg_payload.get('perf', {}).values():
+                    self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+            else:
+                aggregates = agg_payload
+            snapshots = None
+        else:
+            snap_payload = pool.call_batch_and_interface_snapshots(
+                external_ops,
+                snapshot_mode=snapshot_mode,
+                collect_perf=self.save_perf_report,
+            )
+            if self.save_perf_report:
+                snapshots = snap_payload['snapshots']
+                for perf in snap_payload.get('perf', {}).values():
+                    self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+            else:
+                snapshots = snap_payload
+            aggregates = None
+
+        node_levels = self._initial_internal_node_levels(
+            use_node_aggregates=use_node_aggregates,
+            aggregates=aggregates,
+            snapshots=snapshots,
+        )
+        t0 = time.perf_counter() if self.save_perf_report else 0.0
+        guess_levels, guess_stats = self._prepare_internal_node_initial_guess_parallel(pool, node_levels)
+        if self.save_perf_report:
+            self._perf_add_internal_orchestration_time('initial_guess', time.perf_counter() - t0)
+        backend = self._select_parallel_internal_backend(pool, use_node_aggregates)
+        if backend == 'fused_parallel':
+            return self._solve_internal_nodes_exact_fused_parallel(
+                pool,
+                guess_levels,
+                guess_stats=guess_stats,
+            )
+        return self._solve_internal_nodes_exact_parallel(
+            pool,
+            guess_levels,
+            use_node_aggregates=use_node_aggregates,
+            snapshot_mode=snapshot_mode,
+            aggregates=aggregates,
+            snapshots=snapshots,
+            guess_stats=guess_stats,
+        )
+
     # 重采样并保存结果
     def Resample_and_Save_result_net(self):
         selected = self.output_river_names
@@ -1666,7 +3687,7 @@ class Rivernet():
         return list(self.output_river_names)
 
     def _record_internal_node_history_from_snapshots(self, snapshots):
-        if not (self.save_outputs and self.internal_nodes):
+        if not self._internal_node_history_enabled():
             return
         rec = {'time': float(self.current_sim_time)}
         for n in self.internal_nodes:
@@ -1706,9 +3727,12 @@ class Rivernet():
             # Keep boundary coupling on the original serial path so the
             # junction iteration and all current boundary options stay
             # bitwise-aligned with the accepted serial workflow.
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             self.Update_boundary_conditions()
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'boundary_updater', time.perf_counter() - t0)
 
-            if self.save_outputs and self.internal_nodes:
+            if self._internal_node_history_enabled():
                 rec = {'time': float(self.current_sim_time)}
                 for n in self.internal_nodes:
                     rec[f'{n}_level'] = float(self._internal_node_level_cache.get(n, np.nan))
@@ -1733,10 +3757,15 @@ class Rivernet():
                         rec[f'{n}_{name}_cell_Q'] = float(r.Q[1])
                 self.internal_node_history.append(rec)
 
-            dt_map = pool.advance_local_step(
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
+            dt_payload = pool.advance_local_step(
                 use_implicit_branch_update=self.use_implicit_branch_update,
                 save_names=selected_names if self.save_outputs else None,
+                collect_perf=self.save_perf_report,
             )
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'advance_local_step_wall', time.perf_counter() - t0)
+            dt_map = self._unpack_advance_local_step_results(dt_payload, collect_perf=self.save_perf_report)
             self._record_cfl_history(list(dt_map.items()))
             self.cfl_allowed_dt = min(dt_map.values())
 
@@ -1767,6 +3796,8 @@ class Rivernet():
             self.Resample_and_Save_result_net()
             self.Save_internal_node_history()
             self.Save_cfl_history()
+        self.Save_run_summary()
+        self.Save_perf_report()
 
     def _evolve_base_parallel_process(self, yield_step, pool):
         yield_flag = False
@@ -1785,13 +3816,24 @@ class Rivernet():
             self.sub_step_max_dt = max(self.sub_step_max_dt, self.DT)
             self.sub_step_min_dt = min(self.sub_step_min_dt, self.DT)
 
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             snapshots = self._update_boundary_conditions_parallel(pool)
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'boundary_updater', time.perf_counter() - t0)
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             self._record_internal_node_history_from_snapshots(snapshots)
+            if self.save_perf_report:
+                self._perf_add_internal_orchestration_time('diagnostics_history', time.perf_counter() - t0)
 
-            dt_map = pool.advance_local_step(
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
+            dt_payload = pool.advance_local_step(
                 use_implicit_branch_update=self.use_implicit_branch_update,
                 save_names=selected_names if self.save_outputs else None,
+                collect_perf=self.save_perf_report,
             )
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'advance_local_step_wall', time.perf_counter() - t0)
+            dt_map = self._unpack_advance_local_step_results(dt_payload, collect_perf=self.save_perf_report)
             self._record_cfl_history(list(dt_map.items()))
             self.cfl_allowed_dt = min(dt_map.values())
 
@@ -1825,6 +3867,8 @@ class Rivernet():
             self.Save_internal_node_history()
             self.Save_cfl_history()
         self._sync_parallel_rivers_to_main(pool)
+        self.Save_run_summary()
+        self.Save_perf_report()
 
     # 演进子步
     def _evolve_base(self, yield_step):
@@ -1848,10 +3892,13 @@ class Rivernet():
             self.sub_step_min_dt = min(self.sub_step_min_dt, self.DT)  # 更新子步最小时间步长
 
             # 更新边界条件
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             self.Update_boundary_conditions()
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'boundary_updater', time.perf_counter() - t0)
 
             # 记录本时间步边界更新后的结点水位与净流量（用于与节点观测口径比对）
-            if self.save_outputs and self.internal_nodes:
+            if self._internal_node_history_enabled():
                 rec = {'time': float(self.current_sim_time)}
                 for n in self.internal_nodes:
                     rec[f'{n}_level'] = float(self._internal_node_level_cache.get(n, np.nan))
@@ -1877,26 +3924,44 @@ class Rivernet():
                 self.internal_node_history.append(rec)
 
             # 计算界面U、C
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             self.Caculate_face_U_C_net()
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'face_uc_net', time.perf_counter() - t0)
 
             # 计算Roe matrix
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             self.Caculate_Roe_matrix_net()
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'roe_matrix_net', time.perf_counter() - t0)
 
             # 计算Source_term2
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             self.Caculate_Source_term_net()
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'source_net', time.perf_counter() - t0)
 
             # 计算Roe_flux2
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             self.Caculate_Roe_flux_net()
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'roe_flux_net', time.perf_counter() - t0)
 
             # 组装通量（显式/隐式分支）
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             if self.use_implicit_branch_update:
                 self.Caculate_impli_trans_coefficient_net()
                 self.Assemble_flux_impli_net()
             else:
                 self.Assemble_flux_net()
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'assemble_net', time.perf_counter() - t0)
 
             # 更新河道网格参数 cell proptirty2
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             self.Update_cell_property_net()
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'update_net', time.perf_counter() - t0)
 
             # 保存结果
             if self.save_outputs:
@@ -1919,7 +3984,10 @@ class Rivernet():
                 break
 
             # 计算CFL条件，更新时间步长
+            t0 = time.perf_counter() if self.save_perf_report else 0.0
             self.Caculate_global_CFL()
+            if self.save_perf_report:
+                self._perf_add_time(self._perf_sections, 'cfl_update', time.perf_counter() - t0)
 
             # 统计全局最小时间步长，处理时间逻辑
             # 保证最后一个时刻为总时间的最后一个时间
@@ -1941,9 +4009,12 @@ class Rivernet():
             self.Resample_and_Save_result_net()
             self.Save_internal_node_history()
             self.Save_cfl_history()
+        self.Save_run_summary()
+        self.Save_perf_report()
 
     # 演进过程
     def Evolve(self, yield_step=None):
+        self._reset_perf_stats()
         # 框定回报时间
         if yield_step is None:
             yield_step = self.model_data['time_step']
@@ -1958,6 +4029,16 @@ class Rivernet():
         # 同步各分支的隐式边界标志
         for _, _, data in self._river_edges:
             data['river'].Implic_flag = bool(self.use_implicit_branch_update)
+            data['river'].perf_timing_enabled = bool(self.save_perf_report)
+            data['river'].use_fix_level_bc_v2 = bool(self.use_fix_level_bc_v2)
+            data['river'].internal_bc_use_stabilizers = bool(self.internal_bc_use_stabilizers)
+            data['river'].internal_bc_respect_supercritical = bool(self.internal_bc_respect_supercritical)
+            data['river'].internal_bc_stage_on_face = bool(self.internal_bc_stage_on_face)
+            data['river'].internal_node_use_face_discharge = bool(self.internal_node_use_face_discharge)
+            data['river'].internal_node_prefer_boundary_face_discharge = bool(self.internal_node_prefer_boundary_face_discharge)
+            data['river'].internal_node_use_boundary_face_ac = bool(self.internal_node_use_boundary_face_ac)
+            data['river'].internal_use_paper_ac = bool(self.internal_use_paper_ac)
+            data['river'].internal_use_ac_v2 = bool(self.internal_use_ac_v2)
 
         # 初始化其余参数
         self.Init_cell_property_net()
@@ -1988,6 +4069,8 @@ class Rivernet():
                     n_workers=self.parallel_n_workers,
                     start_method=start_method,
                 )
+                if self._select_parallel_internal_backend(pool, self._parallel_can_use_node_aggregates()) == 'fused_parallel':
+                    self._configure_pool_exact_node_plan(pool)
                 evolve_fn = self._evolve_base_parallel_process
             else:
                 pool = PersistentRiverThreadPool(
@@ -1995,6 +4078,8 @@ class Rivernet():
                     n_workers=self.parallel_n_workers,
                     start_method=self.parallel_start_method,
                 )
+                if self._select_parallel_internal_backend(pool, self._parallel_can_use_node_aggregates()) == 'fused_parallel':
+                    self._configure_pool_exact_node_plan(pool)
                 evolve_fn = self._evolve_base_parallel_threads
             try:
                 for t in evolve_fn(yield_step, pool):

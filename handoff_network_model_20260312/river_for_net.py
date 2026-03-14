@@ -1,6 +1,7 @@
 import datetime
 import json
 import math
+import time
 import numpy as np
 import pandas as pd
 import config as config
@@ -20,6 +21,9 @@ import os
 from scipy.interpolate import UnivariateSpline, CubicSpline
 from pyproj import Transformer
 from multiprocessing import Process, Queue
+
+SIDE_LEFT = 0
+SIDE_RIGHT = 1
 
 try:
     from cython_cross_section import (
@@ -46,6 +50,33 @@ def _clone_section_data(section_data):
     return {
         str(name): [list(point) for point in points]
         for name, points in section_data.items()
+    }
+
+
+def _new_timing_bucket():
+    return {'time': 0.0, 'calls': 0}
+
+
+def _new_stage_boundary_dim_bucket():
+    return {
+        'calls': 0,
+        'fast_hits': 0,
+        'precheck': {},
+        'runtime': {},
+    }
+
+
+def _new_stage_boundary_perf_bucket():
+    return {
+        'cython_fast_hits': 0,
+        'cython_fast_calls': 0,
+        'fast_reject_reasons': {},
+        'runtime_reject_reasons': {},
+        'overall': _new_stage_boundary_dim_bucket(),
+        'by_scenario': {},
+        'by_node': {},
+        'by_river_side': {},
+        'by_call_scene': {},
     }
 
 class CrossSectionModel_V3:
@@ -569,6 +600,11 @@ class River(Process):
         self.fix_06_section_area_threshold = bool(sim_data.get('fix_06_section_area_threshold', False))
         self.debug_supercritical_in_count = 0
         self.debug_supercritical_out_count = 0
+        self.swap_moc_sign = False
+        self.swap_moc_sign_flow = None
+        self.swap_moc_sign_stage = None
+        self.swap_moc_sign_stage_in = None
+        self.swap_moc_sign_stage_out = None
         self.bc_moc_with_source = False
         self.bc_moc_with_source_flow = False
         self.bc_moc_with_source_stage = False
@@ -828,6 +864,19 @@ class River(Process):
         self.boundary_face_width_right = None
         self.boundary_face_level_left = None
         self.boundary_face_level_right = None
+        self.perf_timing_enabled = False
+        self._perf_section_times = {
+            'boundary_updater': _new_timing_bucket(),
+            'face_uc': _new_timing_bucket(),
+            'roe_matrix': _new_timing_bucket(),
+            'source_term': _new_timing_bucket(),
+            'roe_flux': _new_timing_bucket(),
+            'assemble': _new_timing_bucket(),
+            'update': _new_timing_bucket(),
+            'dam': _new_timing_bucket(),
+            'cfl_update': _new_timing_bucket(),
+        }
+        self._perf_stage_boundary = _new_stage_boundary_perf_bucket()
         self._section_name_to_id = {}
         self._section_table_refs_by_id = []
         self._section_id_by_cell = np.zeros(self.cell_num + 2, dtype=np.int32)
@@ -849,6 +898,8 @@ class River(Process):
         self._general_hr_q_right_center_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_cell_area_buf = np.zeros(self.cell_num + 2, dtype=float)
         self._general_hr_cell_length_buf = np.asarray(self.cell_lengths, dtype=float).copy()
+        self._stage_boundary_layouts = {}
+        self._stage_boundary_fast_static = {}
         self._rebind_runtime_section_views()
         self.use_boundary_face_flux_override = bool(sim_data.get('use_boundary_face_flux_override', False))
         self.use_boundary_face_mass_flux_override = bool(sim_data.get('use_boundary_face_mass_flux_override', False))
@@ -920,6 +971,8 @@ class River(Process):
                 for tbl in self._general_hr_left_tables + self._general_hr_right_tables
             )
         )
+        self._stage_boundary_layouts = {}
+        self._stage_boundary_fast_static = {}
 
     def _get_cell_table_ref(self, idx):
         if 0 <= idx < len(self._cell_section_tables):
@@ -927,6 +980,168 @@ class River(Process):
             if tbl is not None:
                 return tbl
         return self.cross_section_table.tables.get(self.cell_sections[idx])
+
+    def _get_width_from_cell_state(self, idx, area, tiny=1.0e-12):
+        area_val = float(area)
+        if area_val <= 0.0:
+            return 0.0
+        tbl = self._get_cell_table_ref(idx)
+        if tbl is not None:
+            return float(tbl.get_width_by_area(max(area_val, tiny)))
+        return float(
+            self.cross_section_table.get_width_by_area(
+                self.cell_sections[idx],
+                max(area_val, tiny),
+            )
+        )
+
+    def _stage_boundary_swap_flag(self, side):
+        side_txt = 'left' if str(side).lower().startswith('l') else 'right'
+        specific = self.swap_moc_sign_stage_in if side_txt == 'left' else self.swap_moc_sign_stage_out
+        if specific is not None:
+            return bool(specific)
+        if self.swap_moc_sign_stage is not None:
+            return bool(self.swap_moc_sign_stage)
+        return bool(self.swap_moc_sign)
+
+    def _record_perf_section(self, key, elapsed):
+        if not self.perf_timing_enabled:
+            return
+        bucket = self._perf_section_times.get(key)
+        if bucket is None:
+            bucket = _new_timing_bucket()
+            self._perf_section_times[key] = bucket
+        bucket['time'] += float(elapsed)
+        bucket['calls'] += 1
+
+    def reset_perf_timing(self):
+        for bucket in self._perf_section_times.values():
+            bucket['time'] = 0.0
+            bucket['calls'] = 0
+        self._perf_stage_boundary = _new_stage_boundary_perf_bucket()
+
+    def consume_perf_timing(self):
+        section_times = {
+            key: {'time': float(bucket['time']), 'calls': int(bucket['calls'])}
+            for key, bucket in self._perf_section_times.items()
+        }
+        stage_boundary = {
+            'cython_fast_hits': int(self._perf_stage_boundary['cython_fast_hits']),
+            'cython_fast_calls': int(self._perf_stage_boundary['cython_fast_calls']),
+            'fast_reject_reasons': dict(self._perf_stage_boundary['fast_reject_reasons']),
+            'runtime_reject_reasons': dict(self._perf_stage_boundary['runtime_reject_reasons']),
+            'overall': {
+                'calls': int(self._perf_stage_boundary['overall']['calls']),
+                'fast_hits': int(self._perf_stage_boundary['overall']['fast_hits']),
+                'precheck': dict(self._perf_stage_boundary['overall']['precheck']),
+                'runtime': dict(self._perf_stage_boundary['overall']['runtime']),
+            },
+            'by_scenario': {
+                key: {
+                    'calls': int(bucket['calls']),
+                    'fast_hits': int(bucket['fast_hits']),
+                    'precheck': dict(bucket['precheck']),
+                    'runtime': dict(bucket['runtime']),
+                }
+                for key, bucket in self._perf_stage_boundary['by_scenario'].items()
+            },
+            'by_node': {
+                key: {
+                    'calls': int(bucket['calls']),
+                    'fast_hits': int(bucket['fast_hits']),
+                    'precheck': dict(bucket['precheck']),
+                    'runtime': dict(bucket['runtime']),
+                }
+                for key, bucket in self._perf_stage_boundary['by_node'].items()
+            },
+            'by_river_side': {
+                key: {
+                    'calls': int(bucket['calls']),
+                    'fast_hits': int(bucket['fast_hits']),
+                    'precheck': dict(bucket['precheck']),
+                    'runtime': dict(bucket['runtime']),
+                }
+                for key, bucket in self._perf_stage_boundary['by_river_side'].items()
+            },
+            'by_call_scene': {
+                key: {
+                    'calls': int(bucket['calls']),
+                    'fast_hits': int(bucket['fast_hits']),
+                    'precheck': dict(bucket['precheck']),
+                    'runtime': dict(bucket['runtime']),
+                }
+                for key, bucket in self._perf_stage_boundary['by_call_scene'].items()
+            },
+        }
+        self.reset_perf_timing()
+        return {
+            'section_times': section_times,
+            'stage_boundary': stage_boundary,
+        }
+
+    def set_perf_timing_enabled(self, enabled):
+        self.perf_timing_enabled = bool(enabled)
+
+    def _stage_boundary_audit_bucket(self, group_name, key):
+        group = self._perf_stage_boundary[group_name]
+        bucket = group.get(key)
+        if bucket is None:
+            bucket = _new_stage_boundary_dim_bucket()
+            group[key] = bucket
+        return bucket
+
+    def _stage_boundary_audit_keys(self, audit_context, side):
+        ctx = {} if audit_context is None else dict(audit_context)
+        side_txt = 'left' if str(side).lower().startswith('l') else 'right'
+        scenario = str(ctx.get('scenario', 'unknown'))
+        node = str(ctx.get('node', 'unknown'))
+        river = str(ctx.get('river', getattr(self, 'model_name', 'unknown')))
+        scene = str(ctx.get('call_scene', scenario))
+        river_side = f'{river}:{side_txt}'
+        return scenario, node, river_side, scene
+
+    def _record_stage_boundary_attempt(self, side, audit_context=None):
+        if not self.perf_timing_enabled:
+            return
+        scenario, node, river_side, scene = self._stage_boundary_audit_keys(audit_context, side)
+        for bucket in (
+            self._perf_stage_boundary['overall'],
+            self._stage_boundary_audit_bucket('by_scenario', scenario),
+            self._stage_boundary_audit_bucket('by_node', node),
+            self._stage_boundary_audit_bucket('by_river_side', river_side),
+            self._stage_boundary_audit_bucket('by_call_scene', scene),
+        ):
+            bucket['calls'] += 1
+
+    def _record_stage_boundary_fast_hit(self, side, audit_context=None):
+        if not self.perf_timing_enabled:
+            return
+        scenario, node, river_side, scene = self._stage_boundary_audit_keys(audit_context, side)
+        for bucket in (
+            self._perf_stage_boundary['overall'],
+            self._stage_boundary_audit_bucket('by_scenario', scenario),
+            self._stage_boundary_audit_bucket('by_node', node),
+            self._stage_boundary_audit_bucket('by_river_side', river_side),
+            self._stage_boundary_audit_bucket('by_call_scene', scene),
+        ):
+            bucket['fast_hits'] += 1
+
+    def _record_stage_boundary_fast_reject(self, reason, audit_context=None, phase='precheck', side=None):
+        if not self.perf_timing_enabled:
+            return
+        phase_key = 'runtime' if str(phase) == 'runtime' else 'precheck'
+        target_map = self._perf_stage_boundary['runtime_reject_reasons'] if phase_key == 'runtime' else self._perf_stage_boundary['fast_reject_reasons']
+        target_map[reason] = int(target_map.get(reason, 0)) + 1
+        scenario, node, river_side, scene = self._stage_boundary_audit_keys(audit_context, side or 'left')
+        for bucket in (
+            self._perf_stage_boundary['overall'],
+            self._stage_boundary_audit_bucket('by_scenario', scenario),
+            self._stage_boundary_audit_bucket('by_node', node),
+            self._stage_boundary_audit_bucket('by_river_side', river_side),
+            self._stage_boundary_audit_bucket('by_call_scene', scene),
+        ):
+            reason_map = bucket[phase_key]
+            reason_map[reason] = int(reason_map.get(reason, 0)) + 1
 
     def _real_cell_slice(self):
         return slice(1, self.cell_num + 1)
@@ -3285,15 +3500,39 @@ class River(Process):
                 break
             used_dt = float(self.DT)
             if callable(self.boundary_updater):
+                t0 = time.perf_counter() if self.perf_timing_enabled else 0.0
                 self.boundary_updater(self)
+                if self.perf_timing_enabled:
+                    self._record_perf_section('boundary_updater', time.perf_counter() - t0)
             self._reset_step_diagnostics()
+            t0 = time.perf_counter() if self.perf_timing_enabled else 0.0
             self.Caculate_face_U_C()
+            if self.perf_timing_enabled:
+                self._record_perf_section('face_uc', time.perf_counter() - t0)
+            t0 = time.perf_counter() if self.perf_timing_enabled else 0.0
             self.Caculate_Roe_matrix()
+            if self.perf_timing_enabled:
+                self._record_perf_section('roe_matrix', time.perf_counter() - t0)
+            t0 = time.perf_counter() if self.perf_timing_enabled else 0.0
             self.Caculate_source_term_2()
+            if self.perf_timing_enabled:
+                self._record_perf_section('source_term', time.perf_counter() - t0)
+            t0 = time.perf_counter() if self.perf_timing_enabled else 0.0
             self.Caculate_Roe_Flux_2()
+            if self.perf_timing_enabled:
+                self._record_perf_section('roe_flux', time.perf_counter() - t0)
+            t0 = time.perf_counter() if self.perf_timing_enabled else 0.0
             self.Caculate_dam()
+            if self.perf_timing_enabled:
+                self._record_perf_section('dam', time.perf_counter() - t0)
+            t0 = time.perf_counter() if self.perf_timing_enabled else 0.0
             self.Assemble_Flux_2()
+            if self.perf_timing_enabled:
+                self._record_perf_section('assemble', time.perf_counter() - t0)
+            t0 = time.perf_counter() if self.perf_timing_enabled else 0.0
             self.Update_cell_proprity2()
+            if self.perf_timing_enabled:
+                self._record_perf_section('update', time.perf_counter() - t0)
             self.current_sim_time += used_dt
             self._diagnostics_snapshot('step', success=True)
             self.maybe_save_result_per_time_step()
@@ -3301,7 +3540,10 @@ class River(Process):
             if local_time_sum > yield_step:
                 yield self.current_sim_time
                 local_time_sum = 0
+            t0 = time.perf_counter() if self.perf_timing_enabled else 0.0
             self._update_cfl_dt(used_dt=used_dt, advance_time=False)
+            if self.perf_timing_enabled:
+                self._record_perf_section('cfl_update', time.perf_counter() - t0)
             self.time_step_count = self.time_step_count + 1
         if self.save_only_end_state:
             self.maybe_save_result_per_time_step(force=True)
@@ -3672,8 +3914,11 @@ class River(Process):
 
     def _get_stage_boundary_layout(self, side):
         side_txt = str(side).lower()
+        cached = self._stage_boundary_layouts.get(side_txt)
+        if cached is not None:
+            return cached
         if side_txt == 'left':
-            return {
+            layout = {
                 'side': 'left',
                 'ghost_idx': 0,
                 'inner_idx': 1,
@@ -3686,8 +3931,10 @@ class River(Process):
                 'swap_attr': 'swap_moc_sign_stage_in',
                 'vector_attr': 'V0',
             }
+            self._stage_boundary_layouts[side_txt] = layout
+            return layout
         if side_txt == 'right':
-            return {
+            layout = {
                 'side': 'right',
                 'ghost_idx': -1,
                 'inner_idx': -2,
@@ -3700,7 +3947,126 @@ class River(Process):
                 'swap_attr': 'swap_moc_sign_stage_out',
                 'vector_attr': 'V1',
             }
+            self._stage_boundary_layouts[side_txt] = layout
+            return layout
         raise ValueError(f'unsupported stage boundary side: {side}')
+
+    def _internal_node_audit_context(self, node_name=None, river_name=None):
+        if not self.perf_timing_enabled:
+            return None
+        return {
+            'scenario': 'internal_node',
+            'node': 'unknown' if node_name is None else str(node_name),
+            'river': getattr(self, 'model_name', 'unknown') if river_name is None else str(river_name),
+            'call_scene': 'internal_node',
+        }
+
+    def Apply_internal_node_target_level_compiled(self, side_code, level, node_name=None, river_name=None):
+        side_code_int = int(side_code)
+        use_fix_level_bc_v2 = bool(getattr(self, 'use_fix_level_bc_v2', False))
+        audit_context = self._internal_node_audit_context(node_name=node_name, river_name=river_name)
+        if side_code_int == SIDE_LEFT:
+            if use_fix_level_bc_v2:
+                self.InBound_Fix_level_V2(level)
+            else:
+                self.InBound_Fix_level_V3(
+                    level,
+                    use_stabilizers=self.internal_bc_use_stabilizers,
+                    respect_supercritical=self.internal_bc_respect_supercritical,
+                    stage_on_face=self.internal_bc_stage_on_face,
+                    audit_context=audit_context,
+                )
+            return
+        if side_code_int == SIDE_RIGHT:
+            if use_fix_level_bc_v2:
+                self.OutBound_Fix_level_V2(level)
+            else:
+                self.OutBound_Fix_level_V3(
+                    level,
+                    use_stabilizers=self.internal_bc_use_stabilizers,
+                    respect_supercritical=self.internal_bc_respect_supercritical,
+                    stage_on_face=self.internal_bc_stage_on_face,
+                    audit_context=audit_context,
+                )
+            return
+        raise ValueError(f'unsupported internal node side code: {side_code}')
+
+    def Collect_internal_node_terms_compiled(self, side_code, flow_sign, g):
+        eps_a = 1.0e-12
+        side_code_int = int(side_code)
+        if side_code_int == SIDE_LEFT:
+            ghost_idx = 0
+            cell_idx = 1
+            face_area = self.boundary_face_area_left
+            face_width = self.boundary_face_width_left
+            face_q = self.boundary_face_discharge_left
+        elif side_code_int == SIDE_RIGHT:
+            ghost_idx = -1
+            cell_idx = -2
+            face_area = self.boundary_face_area_right
+            face_width = self.boundary_face_width_right
+            face_q = self.boundary_face_discharge_right
+        else:
+            raise ValueError(f'unsupported internal node side code: {side_code}')
+
+        real_level = float(self.water_level[cell_idx])
+        ghost_level = float(self.water_level[ghost_idx])
+        ghost_q = float(self.Q[ghost_idx])
+        cell_q = float(self.Q[cell_idx])
+
+        if self.internal_node_prefer_boundary_face_discharge and face_q is not None and np.isfinite(face_q):
+            discharge_for_residual = float(face_q)
+        elif self.internal_node_use_face_discharge:
+            discharge_for_residual = 0.5 * (ghost_q + cell_q)
+        else:
+            discharge_for_residual = ghost_q
+        residual_term = float(flow_sign) * float(discharge_for_residual)
+
+        if self.internal_use_paper_ac:
+            use_face = (
+                self.internal_node_use_boundary_face_ac
+                and face_area is not None
+                and face_width is not None
+                and face_q is not None
+                and np.isfinite(face_area)
+                and np.isfinite(face_width)
+                and np.isfinite(face_q)
+            )
+            if use_face:
+                area = float(max(face_area, eps_a))
+                width = float(max(face_width, eps_a))
+                discharge_for_ac = float(face_q)
+            else:
+                area = float(max(self.S[ghost_idx], eps_a))
+                width = float(max(self._get_width_from_cell_state(ghost_idx, area), eps_a))
+                discharge_for_ac = ghost_q
+            ac_term = math.sqrt(float(g) * area * width)
+            if float(flow_sign) > 0.0:
+                ac_term -= discharge_for_ac * width / area
+            else:
+                ac_term += discharge_for_ac * width / area
+            return real_level, ghost_level, residual_term, float(ac_term)
+
+        if self.internal_use_ac_v2:
+            area = float(max(self.S[cell_idx], eps_a))
+            width = float(max(self._get_width_from_cell_state(cell_idx, area), eps_a))
+            discharge = cell_q
+            if float(flow_sign) > 0.0:
+                regime, u_loc, c_loc, _ = self._branch_regime(area, width, discharge, flow_dir_sign=+1)
+                ac_term = 0.0 if regime == 'super_in' else width * (c_loc - u_loc)
+            else:
+                regime, u_loc, c_loc, _ = self._branch_regime(area, width, discharge, flow_dir_sign=-1)
+                ac_term = 0.0 if regime == 'super_in' else width * (c_loc + u_loc)
+            return real_level, ghost_level, residual_term, float(ac_term)
+
+        area = float(max(self.S[ghost_idx], eps_a))
+        width = float(max(self._get_width_from_cell_state(ghost_idx, area), eps_a))
+        ac_term = math.sqrt(float(g) * area * width)
+        if float(flow_sign) > 0.0:
+            ac_term -= ghost_q * width / area
+        else:
+            ac_term += ghost_q * width / area
+        return real_level, ghost_level, residual_term, float(ac_term)
 
     def _prepare_stage_boundary_context(self, side, level, stage_on_face, tinyA, tinyT, g):
         ctx = self._get_stage_boundary_layout(side)
@@ -3792,7 +4158,7 @@ class River(Process):
         else:
             jm = jm1
             jp = jp1
-        swap_moc_sign = bool(getattr(self, ctx['swap_attr'], getattr(self, 'swap_moc_sign_stage', getattr(self, 'swap_moc_sign', False))))
+        swap_moc_sign = self._stage_boundary_swap_flag(ctx['side'])
         ctx['swap_moc_sign'] = bool(swap_moc_sign)
         if ctx['side'] == 'left':
             return jp - chi_b if swap_moc_sign else jm + chi_b
@@ -3806,7 +4172,7 @@ class River(Process):
         near_dry_entry = (ctx['Ai'] <= near_dry_limit) or (inner_depth <= max(self.water_depth_limit * 20.0, 5.0e-4))
         return (bool(dry_entry), bool(near_dry_entry))
 
-    def _apply_stage_boundary_stabilizers(self, ctx, target, ub, Fr_max, head_gain_factor, relax_Q, cap_du_factor, cap_dQ_factor, use_stabilizers=True, q_hint=None, q_hint_blend=0.0, q_hint_cap_factor=0.0, dry_entry=None, near_dry_entry=None):
+    def _apply_stage_boundary_stabilizers(self, ctx, target, ub, Fr_max, head_gain_factor, relax_Q, cap_du_factor, cap_dQ_factor, use_stabilizers=True, q_hint=None, q_hint_blend=0.0, q_hint_cap_factor=0.0, dry_entry=None, near_dry_entry=None, update_prev=True):
         g = getattr(self, 'g', 9.81)
         tinyC = 1e-08
         if dry_entry is None or near_dry_entry is None:
@@ -3847,7 +4213,8 @@ class River(Process):
                 prev = 0.0 if dry_entry else Qb_raw
             relax = relax_Q if not dry_entry else min(relax_Q, 0.2)
             Qb = prev + relax * (Qb_raw - prev)
-            setattr(self, ctx['prev_q_attr'], Qb)
+            if update_prev:
+                setattr(self, ctx['prev_q_attr'], Qb)
         else:
             Qb = Qb_raw
         return {
@@ -3856,6 +4223,252 @@ class River(Process):
             'dry_entry': bool(dry_entry),
             'near_dry_entry': bool(near_dry_entry),
             'head_cap_applied': bool(head_cap_applied),
+        }
+
+    def _stage_boundary_fast_reject_reason(self, side, use_stabilizers, respect_supercritical, stage_on_face, q_hint=None, q_hint_blend=0.0, q_hint_cap_factor=0.0):
+        if cython_compute_stage_boundary_mainline_fast is None or CrossSectionTableCython is None:
+            return 'cython_unavailable'
+        if stage_on_face:
+            return 'stage_on_face'
+        if use_stabilizers:
+            return 'use_stabilizers'
+        if not respect_supercritical:
+            return 'ignore_supercritical'
+        if q_hint is not None or q_hint_blend != 0.0 or q_hint_cap_factor != 0.0:
+            return 'q_hint'
+        if self.enable_boundary_diagnostics:
+            return 'boundary_diagnostics'
+        if not self.bc_use_general_chi:
+            return 'general_chi_disabled'
+        if self.bc_general_chi_candidate_mode != 'guarded_clamp':
+            return 'candidate_mode'
+        if self.bc_general_chi_guard_selector != 'closure_q_delta':
+            return 'guard_selector'
+        if self.bc_moc_with_source or self.bc_moc_with_source_stage:
+            return 'moc_with_source'
+        side_txt = str(side).lower()
+        ghost_idx = 0 if side_txt == 'left' else -1
+        second_idx = 2 if side_txt == 'left' else -3
+        sec_inner = self.cell_sections[1 if side_txt == 'left' else -2]
+        sec_target = self.cell_sections[ghost_idx]
+        tbl_inner = self.cross_section_table.tables.get(sec_inner)
+        tbl_target = self.cross_section_table.tables.get(sec_target)
+        if not isinstance(tbl_inner, CrossSectionTableCython) or not isinstance(tbl_target, CrossSectionTableCython):
+            return 'non_cython_table'
+        if self.bc_use_order2_extrap_stage and self.cell_num >= 3:
+            tbl_second = self.cross_section_table.tables.get(self.cell_sections[second_idx])
+            if not isinstance(tbl_second, CrossSectionTableCython):
+                return 'non_cython_second_table'
+        return None
+
+    def _compute_stage_boundary_cython_fast_result(self, side, level):
+        tinyA = 1.0e-12
+        tinyT = 1.0e-08
+        side_txt = str(side).lower()
+        if side_txt == 'left':
+            is_left = True
+            ghost_idx = 0
+            inner_idx = 1
+            second_idx = 2
+            dry_limit_idx = 1
+        else:
+            is_left = False
+            ghost_idx = -1
+            inner_idx = -2
+            second_idx = -3
+            dry_limit_idx = self.cell_num
+        sec_inner = self.cell_sections[inner_idx]
+        sec_target = self.cell_sections[ghost_idx]
+        tbl_inner = self.cross_section_table.tables.get(sec_inner)
+        tbl_target = self.cross_section_table.tables.get(sec_target)
+        use_o2 = self.bc_use_order2_extrap_stage and self.cell_num >= 3
+        tbl_second = None
+        A2 = 0.0
+        Q2 = 0.0
+        if use_o2:
+            tbl_second = self.cross_section_table.tables.get(self.cell_sections[second_idx])
+            A2 = float(max(self.S[second_idx], tinyA))
+            Q2 = float(self.Q[second_idx])
+
+        return cython_compute_stage_boundary_mainline_fast(
+            tbl_inner,
+            tbl_target,
+            tbl_second,
+            bool(is_left),
+            float(self.g),
+            float(tinyA),
+            float(tinyT),
+            float(level),
+            float(self.S[inner_idx]),
+            float(self.Q[inner_idx]),
+            float(self.water_depth[inner_idx]),
+            float(self._get_cell_s_limit(dry_limit_idx)),
+            float(self.water_depth_limit),
+            float(self.DT),
+            bool(use_o2),
+            float(A2),
+            float(Q2),
+            float(max(self.bc_general_chi_guard_q_delta, 0.0)),
+            float(max(self.bc_general_chi_guard_abs_delta, 0.0)),
+            bool(self._stage_boundary_swap_flag(side_txt)),
+        )
+
+    def _stage_boundary_runtime_block_reason(self, side, level):
+        tinyA = 1.0e-12
+        tinyT = 1.0e-08
+        side_txt = str(side).lower()
+        if side_txt == 'left':
+            inner_idx = 1
+            second_idx = 2
+            dry_limit_idx = 1
+        else:
+            inner_idx = -2
+            second_idx = -3
+            dry_limit_idx = self.cell_num
+
+        sec_inner = self.cell_sections[inner_idx]
+        sec_target = self.cell_sections[0 if side_txt == 'left' else -1]
+        tbl_inner = self.cross_section_table.tables.get(sec_inner)
+        tbl_target = self.cross_section_table.tables.get(sec_target)
+        if not isinstance(tbl_inner, CrossSectionTableCython) or not isinstance(tbl_target, CrossSectionTableCython):
+            return 'non_cython_table'
+
+        Ai = float(self.S[inner_idx])
+        Qi = float(self.Q[inner_idx])
+        inner_depth = float(self.water_depth[inner_idx])
+        Ti = float(tbl_inner.get_width_by_area(Ai))
+        Ti = max(Ti, tinyT)
+        ui = Qi / max(Ai, tinyA)
+        ci = (self.g * Ai / Ti) ** 0.5
+        if abs(ui) >= ci:
+            return 'supercritical'
+
+        target_bundle = tbl_target.get_stage_target_bundle_by_level(level, self.g, tinyA=tinyA, tinyT=tinyT)
+        Ab = float(target_bundle[0])
+        if Ab <= 0.0:
+            return 'empty'
+
+        dry_limit = max(self._get_cell_s_limit(dry_limit_idx) * 10.0, tinyA * 10.0)
+        near_dry_limit = max(self._get_cell_s_limit(dry_limit_idx) * 40.0, tinyA * 40.0)
+        if Ai <= dry_limit or inner_depth <= max(self.water_depth_limit * 5.0, 1.0e-4):
+            return 'dry_entry'
+        if Ai <= near_dry_limit or inner_depth <= max(self.water_depth_limit * 20.0, 5.0e-4):
+            return 'near_dry_entry'
+
+        if self.bc_use_order2_extrap_stage and self.cell_num >= 3:
+            tbl_second = self.cross_section_table.tables.get(self.cell_sections[second_idx])
+            if not isinstance(tbl_second, CrossSectionTableCython):
+                return 'non_cython_second_table'
+        return 'cython_runtime_other'
+
+    def _evaluate_stage_boundary_response(self, side, level, Fr_max=0.85, head_gain_factor=0.65, relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7, use_stabilizers=True, respect_supercritical=True, stage_on_face=None, q_hint=None, q_hint_blend=0.0, q_hint_cap_factor=0.0, update_prev=False, audit_context=None):
+        g = getattr(self, 'g', 9.81)
+        tinyA, tinyT = (1e-12, 1e-08)
+        side_txt = str(side).lower()
+        perf_enabled = self.perf_timing_enabled
+        if stage_on_face is None:
+            stage_on_face = bool(getattr(self, 'bc_stage_on_face', False))
+
+        fast_reason = self._stage_boundary_fast_reject_reason(
+            side_txt,
+            use_stabilizers=use_stabilizers,
+            respect_supercritical=respect_supercritical,
+            stage_on_face=stage_on_face,
+            q_hint=q_hint,
+            q_hint_blend=q_hint_blend,
+            q_hint_cap_factor=q_hint_cap_factor,
+        )
+        if perf_enabled:
+            self._record_stage_boundary_attempt(side_txt, audit_context=audit_context)
+            self._perf_stage_boundary['cython_fast_calls'] += 1
+        if fast_reason is None:
+            result = self._compute_stage_boundary_cython_fast_result(side_txt, level)
+            if result is not None:
+                if perf_enabled:
+                    self._perf_stage_boundary['cython_fast_hits'] += 1
+                    self._record_stage_boundary_fast_hit(side_txt, audit_context=audit_context)
+                Ab, Tb, Qb = result
+                return {
+                    'status': 'ok',
+                    'mode': 'cython_fast',
+                    'Ab': float(Ab),
+                    'Tb': float(Tb),
+                    'Qb': float(Qb),
+                    'level': float(level),
+                    'dry_entry': False,
+                    'near_dry_entry': False,
+                    'fast_reason': None,
+                }
+            fast_reason = self._stage_boundary_runtime_block_reason(side_txt, level)
+        if fast_reason is not None and perf_enabled:
+            phase = 'runtime' if fast_reason in {'supercritical', 'empty', 'dry_entry', 'near_dry_entry', 'non_cython_second_table', 'cython_runtime_other', 'non_cython_table'} else 'precheck'
+            self._record_stage_boundary_fast_reject(fast_reason, audit_context=audit_context, phase=phase, side=side_txt)
+
+        ctx = self._prepare_stage_boundary_context(side_txt, level, stage_on_face, tinyA, tinyT, g)
+        if respect_supercritical and abs(ctx['ui']) >= ctx['ci']:
+            return {
+                'status': 'supercritical',
+                'mode': 'python',
+                'Ab': float(self.S[ctx['inner_idx']]),
+                'Tb': float(ctx['Ti']),
+                'Qb': float(self.Q[ctx['inner_idx']]),
+                'level': float(self.water_level[ctx['inner_idx']]),
+                'dry_entry': False,
+                'near_dry_entry': False,
+                'fast_reason': fast_reason,
+            }
+        target = self._prepare_stage_boundary_target_state(ctx, tinyA, tinyT, g)
+        if target['Ab'] <= 0.0:
+            return {
+                'status': 'empty',
+                'mode': 'python',
+                'Ab': 0.0,
+                'Tb': 0.0,
+                'Qb': 0.0,
+                'level': float(ctx['level']),
+                'dry_entry': False,
+                'near_dry_entry': False,
+                'fast_reason': fast_reason,
+            }
+        dry_entry, near_dry_entry = self._classify_stage_boundary_entry(ctx, tinyA)
+        chi_bundle = self._resolve_stage_boundary_chi_bundle(ctx, target, dry_entry, near_dry_entry)
+        ub = self._compute_stage_boundary_characteristic_velocity_with_explicit_chi(
+            ctx,
+            chi_bundle['inner_selected']['selected'],
+            chi_bundle['target_selected']['selected'],
+            None if chi_bundle['second_selected'] is None else chi_bundle['second_selected']['selected'],
+        )
+        stabilizer_state = self._apply_stage_boundary_stabilizers(
+            ctx,
+            target,
+            ub,
+            Fr_max=Fr_max,
+            head_gain_factor=head_gain_factor,
+            relax_Q=relax_Q,
+            cap_du_factor=cap_du_factor,
+            cap_dQ_factor=cap_dQ_factor,
+            use_stabilizers=use_stabilizers,
+            q_hint=q_hint,
+            q_hint_blend=q_hint_blend,
+            q_hint_cap_factor=q_hint_cap_factor,
+            dry_entry=dry_entry,
+            near_dry_entry=near_dry_entry,
+            update_prev=update_prev,
+        )
+        stabilizer_state['chi_bundle'] = chi_bundle
+        return {
+            'status': 'ok',
+            'mode': 'python',
+            'Ab': float(target['Ab']),
+            'Tb': float(target.get('Tb', 0.0)),
+            'Qb': float(stabilizer_state['Qb']),
+            'level': float(ctx['level']),
+            'dry_entry': bool(dry_entry),
+            'near_dry_entry': bool(near_dry_entry),
+            'fast_reason': fast_reason,
+            'stabilizer_state': stabilizer_state,
+            'target': target,
+            'ctx': ctx,
         }
 
     def _apply_supercritical_stage_boundary_copy(self, ctx):
@@ -3953,84 +4566,39 @@ class River(Process):
             )
         self._append_boundary_diagnostics(record)
 
-    def _stage_boundary_fix_level_cython_fast(self, side, level, use_stabilizers, respect_supercritical, stage_on_face, q_hint=None, q_hint_blend=0.0, q_hint_cap_factor=0.0):
-        if cython_compute_stage_boundary_mainline_fast is None or CrossSectionTableCython is None:
-            return False
-        if stage_on_face or use_stabilizers or (not respect_supercritical):
-            return False
-        if q_hint is not None or q_hint_blend != 0.0 or q_hint_cap_factor != 0.0:
-            return False
-        if self.enable_boundary_diagnostics:
-            return False
-        if not bool(getattr(self, 'bc_use_general_chi', False)):
-            return False
-        if str(getattr(self, 'bc_general_chi_candidate_mode', 'off')).lower() != 'guarded_clamp':
-            return False
-        if str(getattr(self, 'bc_general_chi_guard_selector', 'closure_q_delta')).lower() != 'closure_q_delta':
-            return False
-        if bool(getattr(self, 'bc_moc_with_source', False)) or bool(getattr(self, 'bc_moc_with_source_stage', False)):
-            return False
-
-        tinyA = 1.0e-12
-        tinyT = 1.0e-08
+    def _stage_boundary_fix_level_cython_fast(self, side, level, use_stabilizers, respect_supercritical, stage_on_face, q_hint=None, q_hint_blend=0.0, q_hint_cap_factor=0.0, audit_context=None):
         side_txt = str(side).lower()
-        if side_txt == 'left':
-            is_left = True
-            ghost_idx = 0
-            inner_idx = 1
-            second_idx = 2
-            dry_limit_idx = 1
-            swap_moc_sign = bool(getattr(self, 'swap_moc_sign_stage_in', getattr(self, 'swap_moc_sign_stage', getattr(self, 'swap_moc_sign', False))))
-        else:
-            is_left = False
-            ghost_idx = -1
-            inner_idx = -2
-            second_idx = -3
-            dry_limit_idx = self.cell_num
-            swap_moc_sign = bool(getattr(self, 'swap_moc_sign_stage_out', getattr(self, 'swap_moc_sign_stage', getattr(self, 'swap_moc_sign', False))))
-
-        sec_inner = self.cell_sections[inner_idx]
-        sec_target = self.cell_sections[ghost_idx]
-        tbl_inner = self.cross_section_table.tables.get(sec_inner)
-        tbl_target = self.cross_section_table.tables.get(sec_target)
-        if not isinstance(tbl_inner, CrossSectionTableCython) or not isinstance(tbl_target, CrossSectionTableCython):
-            return False
-
-        use_o2 = bool(getattr(self, 'bc_use_order2_extrap_stage', getattr(self, 'bc_use_order2_extrap', False))) and self.cell_num >= 3
-        tbl_second = None
-        A2 = 0.0
-        Q2 = 0.0
-        if use_o2:
-            tbl_second = self.cross_section_table.tables.get(self.cell_sections[second_idx])
-            if not isinstance(tbl_second, CrossSectionTableCython):
-                return False
-            A2 = float(max(self.S[second_idx], tinyA))
-            Q2 = float(self.Q[second_idx])
-
-        result = cython_compute_stage_boundary_mainline_fast(
-            tbl_inner,
-            tbl_target,
-            tbl_second,
-            bool(is_left),
-            float(self.g),
-            float(tinyA),
-            float(tinyT),
-            float(level),
-            float(self.S[inner_idx]),
-            float(self.Q[inner_idx]),
-            float(self.water_depth[inner_idx]),
-            float(self._get_cell_s_limit(dry_limit_idx)),
-            float(self.water_depth_limit),
-            float(getattr(self, 'DT', 0.0)),
-            bool(use_o2),
-            float(A2),
-            float(Q2),
-            float(max(getattr(self, 'bc_general_chi_guard_q_delta', 0.005), 0.0)),
-            float(max(getattr(self, 'bc_general_chi_guard_abs_delta', 0.15), 0.0)),
-            bool(swap_moc_sign),
+        perf_enabled = self.perf_timing_enabled
+        if perf_enabled:
+            self._record_stage_boundary_attempt(side_txt, audit_context=audit_context)
+        reason = self._stage_boundary_fast_reject_reason(
+            side_txt,
+            use_stabilizers=use_stabilizers,
+            respect_supercritical=respect_supercritical,
+            stage_on_face=stage_on_face,
+            q_hint=q_hint,
+            q_hint_blend=q_hint_blend,
+            q_hint_cap_factor=q_hint_cap_factor,
         )
-        if result is None:
+        if reason is not None:
+            if perf_enabled:
+                self._record_stage_boundary_fast_reject(reason, audit_context=audit_context, phase='precheck', side=side_txt)
             return False
+        if perf_enabled:
+            self._perf_stage_boundary['cython_fast_calls'] += 1
+        result = self._compute_stage_boundary_cython_fast_result(side_txt, level)
+        if result is None:
+            if perf_enabled:
+                self._record_stage_boundary_fast_reject(
+                    self._stage_boundary_runtime_block_reason(side_txt, level),
+                    audit_context=audit_context,
+                    phase='runtime',
+                    side=side_txt,
+                )
+            return False
+        if perf_enabled:
+            self._perf_stage_boundary['cython_fast_hits'] += 1
+            self._record_stage_boundary_fast_hit(side_txt, audit_context=audit_context)
         Ab, Tb, Qb = result
         ctx = self._get_stage_boundary_layout(side_txt)
         ctx['level'] = float(level)
@@ -4295,7 +4863,7 @@ class River(Process):
             self.V1[0] = self.S[-1] - self.S_old[-1]
             self.V1[1] = self.Q[-1] - self.Q_old[-1]
 
-    def InBound_Fix_level_V3(self, level, Fr_max=0.85, head_gain_factor=0.65, relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7, use_stabilizers=True, respect_supercritical=True, stage_on_face=None, q_hint=None, q_hint_blend=0.0, q_hint_cap_factor=0.0):
+    def InBound_Fix_level_V3(self, level, Fr_max=0.85, head_gain_factor=0.65, relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7, use_stabilizers=True, respect_supercritical=True, stage_on_face=None, q_hint=None, q_hint_blend=0.0, q_hint_cap_factor=0.0, audit_context=None):
         g = getattr(self, 'g', 9.81)
         tinyA, tinyT, tinyC = (1e-12, 1e-08, 1e-08)
         if stage_on_face is None:
@@ -4309,6 +4877,7 @@ class River(Process):
             q_hint=q_hint,
             q_hint_blend=q_hint_blend,
             q_hint_cap_factor=q_hint_cap_factor,
+            audit_context=audit_context,
         ):
             return
         ctx = self._prepare_stage_boundary_context('left', level, stage_on_face, tinyA, tinyT, g)
@@ -4347,7 +4916,7 @@ class River(Process):
         self._commit_stage_boundary_state(ctx, target['Ab'], stabilizer_state['Qb'], Tb=target.get('Tb'))
         self._append_stage_boundary_record(ctx, target, stabilizer_state)
 
-    def OutBound_Fix_level_V3(self, level, Fr_max=0.85, head_gain_factor=0.65, relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7, use_stabilizers=True, respect_supercritical=True, stage_on_face=None):
+    def OutBound_Fix_level_V3(self, level, Fr_max=0.85, head_gain_factor=0.65, relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7, use_stabilizers=True, respect_supercritical=True, stage_on_face=None, audit_context=None):
         g = getattr(self, 'g', 9.81)
         tinyA, tinyT, tinyC = (1e-12, 1e-08, 1e-08)
         if stage_on_face is None:
@@ -4358,6 +4927,7 @@ class River(Process):
             use_stabilizers=use_stabilizers,
             respect_supercritical=respect_supercritical,
             stage_on_face=stage_on_face,
+            audit_context=audit_context,
         ):
             return
         ctx = self._prepare_stage_boundary_context('right', level, stage_on_face, tinyA, tinyT, g)
