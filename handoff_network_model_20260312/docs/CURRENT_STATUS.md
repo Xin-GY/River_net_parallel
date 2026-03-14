@@ -24,14 +24,15 @@
   - `ISLAM_N_WORKERS=4`
   - `ISLAM_USE_CYTHON_TABLE=1`
 - `ISLAM_SAVE_INTERVAL` 留空，默认按 `yield_step` 保存输出
-- Islam 40h full-case wall time：`158.33 s`
-- 模型内部自报时间：`151.00 s`
+- 默认输出模式：`ISLAM_OUTPUT_WRITE_MODE=single_resampled`
+- Islam 40h full-case 模型内部自报时间：`148.54 s`
 - 当前验收优先看模型内部自报演进时间，不计初始化时间
 
 解释：
-- 本轮性能提升主要来自“输出保存节奏改为按间隔调度”
-- `river11_raw_output.nc` 已从逐子步保存改为“初始 + 间隔 + 末态”
-- 数值核未改，内部节点时序与最终 raw 末帧保持一致
+- 本轮性能提升主要来自“输出仅在内存缓冲，结束时一次性构造 xarray 并写单文件”
+- 默认只保留 `river11_interpolated_output.nc`
+- 若需要历史双文件行为，可设 `ISLAM_OUTPUT_WRITE_MODE=legacy_dual`
+- 数值核未改，内部节点时序与最终重采样结果保持一致
 
 ## 当前已打包的历史较优结果
 
@@ -51,9 +52,9 @@
 ## 已确认的结论
 
 1. handoff 单河道核心接入成功，Islam 40h 可稳定运行。
-2. 当前最快 CPU 路径已经把 40h full-case 的模型演进时间压到 `151.00 s`。
-3. 新输出口径下，`internal_node_history.csv` 逐点一致，`river11_raw_output.nc` 最后一帧逐点一致。
-4. `interpolated_output.nc` 现在从 `t=0` 开始重采样，因此 NSE 数值与旧版不可直接横向比较。
+2. 当前最快 CPU 路径已经把 40h full-case 的模型内部自报时间压到 `148.54 s`。
+3. 新输出口径下，`internal_node_history.csv` 与 `river11_interpolated_output.nc` 均逐点一致。
+4. `interpolated_output.nc` 现在是唯一默认产物，因此下游脚本应优先依赖它。
 5. 若继续提速，下一步应回到单河道数值热点，而不是继续压输出构建。
 
 ## 下一步最值得查的地方

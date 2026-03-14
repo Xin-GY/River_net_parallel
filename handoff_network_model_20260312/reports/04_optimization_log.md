@@ -2204,3 +2204,82 @@ conda run -n python311 python result/eval_river11_nse.py \
   - `4 workers`
   - `ISLAM_USE_CYTHON_TABLE=1`
   - `ISLAM_SAVE_INTERVAL` 留空（默认按 `yield_step` 保存）
+
+## 优化 15: 输出只做内存缓冲，结束时单次构造 xarray 并写单文件
+
+### 改动目标
+
+- 不再在每次命中保存调度时构造 `xarray.Dataset`
+- 不再默认写 `raw_output.nc`
+- 默认只保留单个最终重采样结果文件
+- 保留 `legacy_dual` 回退开关，避免打断历史诊断链
+
+### 具体修改
+
+- `river_for_net.py`
+  - 把 `Save_result_per_time_step()` 改成纯 `numpy` 快照缓冲
+  - 新增缓冲拼装、时间去重、统一重采样、单文件写盘逻辑
+  - 默认 `save_output_mode='single_resampled'`
+- `Islam.py`
+  - 增加 `ISLAM_OUTPUT_WRITE_MODE` 环境变量透传
+
+### 默认行为
+
+- `t=0` 保存一帧到内存
+- 之后按 `yield_step` 或 `ISLAM_SAVE_INTERVAL` 命中时缓冲快照
+- 结束时一次性：
+  - 拼装 `Dataset`
+  - 时间去重
+  - 按 `time_step` 重采样
+  - 写出 `river11_interpolated_output.nc`
+
+### 实测收益
+
+40 小时 full-case，配置：
+
+```bash
+MPLCONFIGDIR=/tmp/mplconfig \
+ISLAM_OUTPUT_RIVERS=river11 \
+ISLAM_USE_FINE_INTERPOLATION=0 \
+ISLAM_USE_PARALLEL=1 \
+ISLAM_PARALLEL_BACKEND=process \
+ISLAM_N_WORKERS=4 \
+ISLAM_USE_CYTHON_TABLE=1 \
+conda run -n python311 python Islam.py
+```
+
+相对上一接受版 `6f2c885` 的同配置：
+
+- 模型内部自报时间：`151.00 s -> 148.54 s`
+- 绝对减少：`2.46 s`
+- 相对减少：`1.63%`
+
+补充：
+
+- 10 分钟串行 smoke：
+  - 改造前后 `river11_interpolated_output.nc` 逐点一致
+- 10 分钟进程 smoke：
+  - 改造前后 `river11_interpolated_output.nc` 逐点一致
+- 40 小时 full-case：
+  - 相对 `result/exp_saveinterval_yield_process_py311_40h`
+  - `internal_node_history.csv` 逐点一致
+  - `river11_interpolated_output.nc` 逐点一致
+  - `max_abs = 0.0`
+
+### 输出结构变化
+
+- 默认目录中只保留：
+  - `river11_interpolated_output.nc`
+  - `internal_node_history.csv`
+  - `boundary_supercritical_counts.csv`
+- 不再默认生成：
+  - `river11_raw_output.nc`
+
+### 结论
+
+优化 15 可以接受：
+
+- 数值结果不变
+- 进程池 worker 侧不再高频构造 `xarray`
+- 输出逻辑更简单，默认只有一个河道结果文件
+- full-case 仍有可测的正向收益，但这已经不是主要提速来源

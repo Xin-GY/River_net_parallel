@@ -66,11 +66,14 @@ conda run -n python311 python Islam.py
 - 该路径对应当前已验证的最快 full-case 严格校验通过 baseline。
 - 若要关闭并行，设置 `ISLAM_USE_PARALLEL=0`。
 - 若要关闭 Cython 断面表后端，设置 `ISLAM_USE_CYTHON_TABLE=0`。
+- 默认输出模式为 `ISLAM_OUTPUT_WRITE_MODE=single_resampled`，仅写一个最终重采样结果文件。
+- 若必须保留历史 `raw + interpolated` 双文件，设置 `ISLAM_OUTPUT_WRITE_MODE=legacy_dual`。
 - 若要显式指定原始输出保存间隔，设置 `ISLAM_SAVE_INTERVAL=<秒>`。
 - 若不设置 `ISLAM_SAVE_INTERVAL`，当前默认行为是：
   - 在 `t=0` 保存一帧
   - 之后按 `yield_step` 保存
   - 结束时再保存一帧
+  - 中途只在内存中缓冲，不会逐次写盘
 
 ## 评估 NSE
 
@@ -100,3 +103,5 @@ MPLCONFIGDIR=/tmp/mplconfig conda run -n python311 python result/package_river11
   - `internal_node_history.csv`
 - 外边界超临界触发统计：
   - `boundary_supercritical_counts.csv`
+- 默认河道结果：
+  - `river11_interpolated_output.nc`

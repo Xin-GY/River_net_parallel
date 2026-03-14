@@ -591,12 +591,18 @@ class River(Process):
         # 测试长时案例时可仅保存首末时刻，避免小时间步导致内存膨胀
         self.save_only_end_state = False
         self.save_all_time_steps = bool(sim_data.get('save_all_time_steps', False))
+        self.save_output_mode = str(sim_data.get('save_output_mode', 'single_resampled')).strip().lower()
+        if self.save_output_mode not in {'single_resampled', 'legacy_dual'}:
+            self.save_output_mode = 'single_resampled'
         raw_save_min_interval = sim_data.get('save_min_interval')
         self.save_min_interval = None if raw_save_min_interval is None else float(raw_save_min_interval)
         if self.save_min_interval is not None and self.save_min_interval <= 0.0:
             self.save_min_interval = float(self.time_step) if float(self.time_step) > 0.0 else 1.0
         self._next_save_time = 0.0
         self._active_save_interval = float(self.time_step) if float(self.time_step) > 0.0 else 1.0
+        self._output_snapshot_times = []
+        self._output_snapshot_vars = {'depth': [], 'level': [], 'U': [], 'Q': []}
+        self._output_coord_arrays = {}
         self.total_sim_time_seconds = (self.sim_end_time - self.sim_start_time).total_seconds()
         # 可选：在每个内部时间步执行一次边界更新函数（例如测试脚本传入）
         self.boundary_updater = None
@@ -2660,63 +2666,61 @@ class River(Process):
         DT = np.minimum(self.DT, self.DT_old * self.DT_increase_factor)
         return DT
 
-    def Resample_and_Save_Output_result(self):
-        os.makedirs(self.output_folder_path, exist_ok=True)
-        ds_data = xr.concat(self.ds_list, dim='time')
-        ds = self.ds_coords.merge(ds_data)
-        t_fixed = np.arange(0, ds.time.max().item(), self.time_step)
-        ds_fixed = ds.interp(time=t_fixed)
-        if self.save_result_name == None:
-            out_raw = os.path.join(self.output_folder_path, f'{self.model_name}_raw_output.nc')
-            out_interp = os.path.join(self.output_folder_path, f'{self.model_name}_interpolated_output.nc')
-            for p in (out_raw, out_interp):
-                if os.path.exists(p):
-                    os.remove(p)
-            ds.to_netcdf(path=out_raw, mode='w', format='NETCDF4', engine='h5netcdf')
-            ds_fixed.to_netcdf(path=out_interp, mode='w', format='NETCDF4', engine='h5netcdf')
+    def _reset_output_snapshot_buffer(self):
+        self._output_snapshot_times = []
+        self._output_snapshot_vars = {'depth': [], 'level': [], 'U': [], 'Q': []}
+
+    def _saved_snapshot_count(self):
+        return len(self._output_snapshot_times)
+
+    def _build_output_dataset_from_buffer(self):
+        if not self._output_snapshot_times:
+            raise ValueError('输出缓冲区为空，无法生成结果数据集')
+        if not self._output_coord_arrays:
+            raise ValueError('输出坐标未初始化，无法生成结果数据集')
+        data_vars = {}
+        for name, samples in self._output_snapshot_vars.items():
+            data_vars[name] = (('time', 'space'), np.stack(samples, axis=0))
+        coords = {
+            'time': np.asarray(self._output_snapshot_times, dtype=float),
+            'space': self._output_coord_arrays['space'],
+            'x': ('space', self._output_coord_arrays['x']),
+            'y': ('space', self._output_coord_arrays['y']),
+            'z': ('space', self._output_coord_arrays['z']),
+            'lon': ('space', self._output_coord_arrays['lon']),
+            'lat': ('space', self._output_coord_arrays['lat']),
+        }
+        return xr.Dataset(data_vars=data_vars, coords=coords)
+
+    def _make_unique_time_dataset(self, ds, dim='time', float_round_decimals=6, dt_floor_freq='S', agg='mean'):
+        if dim not in ds.coords:
+            raise KeyError(f'Dataset 中不存在坐标 {dim!r}')
+        t = ds[dim].values
+        ds2 = ds.copy()
+        if np.issubdtype(t.dtype, np.floating):
+            t_new = np.round(t, float_round_decimals)
+            ds2 = ds2.assign_coords({dim: t_new})
+        elif np.issubdtype(t.dtype, np.datetime64):
+            t_new = pd.to_datetime(t).floor(dt_floor_freq).to_numpy()
+            ds2 = ds2.assign_coords({dim: t_new})
+        gb = ds2.groupby(dim)
+        if agg == 'mean':
+            ds2 = gb.mean()
+        elif agg == 'median':
+            ds2 = gb.median()
+        elif agg == 'first':
+            ds2 = gb.first()
+        elif agg == 'last':
+            ds2 = gb.last()
+        elif agg == 'max':
+            ds2 = gb.max()
+        elif agg == 'min':
+            ds2 = gb.min()
         else:
-            output_path = os.path.join(self.output_folder_path, f'{self.save_result_name}.nc')
-            if os.path.exists(output_path):
-                os.remove(output_path)
-            ds_fixed.to_netcdf(path=output_path, mode='w', format='NETCDF4', engine='h5netcdf')
+            raise ValueError('agg 必须为 mean/median/first/last/max/min 之一')
+        return ds2.sortby(dim)
 
-    def Check_Resample_and_Save_Output_result(self):
-        import os
-        import numpy as np
-        import pandas as pd
-        import xarray as xr
-
-        def _make_unique_time(ds: xr.Dataset, dim: str='time', float_round_decimals: int=6, dt_floor_freq: str='S', agg: str='mean') -> xr.Dataset:
-            if dim not in ds.coords:
-                raise KeyError(f'Dataset 中不存在坐标 {dim!r}')
-            t = ds[dim].values
-            ds2 = ds.copy()
-            if np.issubdtype(t.dtype, np.floating):
-                t_new = np.round(t, float_round_decimals)
-                ds2 = ds2.assign_coords({dim: t_new})
-            elif np.issubdtype(t.dtype, np.datetime64):
-                t_new = pd.to_datetime(t).floor(dt_floor_freq).to_numpy()
-                ds2 = ds2.assign_coords({dim: t_new})
-            gb = ds2.groupby(dim)
-            if agg == 'mean':
-                ds2 = gb.mean()
-            elif agg == 'median':
-                ds2 = gb.median()
-            elif agg == 'first':
-                ds2 = gb.first()
-            elif agg == 'last':
-                ds2 = gb.last()
-            elif agg == 'max':
-                ds2 = gb.max()
-            elif agg == 'min':
-                ds2 = gb.min()
-            else:
-                raise ValueError('agg 必须为 mean/median/first/last/max/min 之一')
-            ds2 = ds2.sortby(dim)
-            return ds2
-        ds_data = xr.concat(self.ds_list, dim='time')
-        ds = self.ds_coords.merge(ds_data)
-        ds = _make_unique_time(ds, dim='time', float_round_decimals=6, dt_floor_freq='S', agg='mean')
+    def _build_resample_axis(self, ds):
         t0 = ds['time'].values[0]
         t1 = ds['time'].values[-1]
         step = float(self.time_step)
@@ -2726,35 +2730,59 @@ class River(Process):
             start = float(t0)
             end = float(t1)
             t_fixed = np.arange(start, end + step * 0.5, step, dtype=float)
-        elif np.issubdtype(ds['time'].dtype, np.datetime64):
+            tmin = ds['time'].values[0]
+            tmax = ds['time'].values[-1]
+            return t_fixed[(t_fixed >= tmin) & (t_fixed <= tmax)]
+        if np.issubdtype(ds['time'].dtype, np.datetime64):
             start = pd.to_datetime(t0)
             end = pd.to_datetime(t1)
             step_seconds = int(round(step))
             if step_seconds <= 0:
                 step_seconds = 1
             t_fixed = pd.date_range(start=start, end=end, freq=f'{step_seconds}S').to_numpy()
-        else:
-            raise TypeError(f"不支持的 time dtype: {ds['time'].dtype}")
-        tmin = ds['time'].values[0]
-        tmax = ds['time'].values[-1]
-        if np.issubdtype(ds['time'].dtype, np.number):
-            t_fixed = t_fixed[(t_fixed >= tmin) & (t_fixed <= tmax)]
-        else:
-            t_fixed = t_fixed[(t_fixed >= pd.to_datetime(tmin)) & (t_fixed <= pd.to_datetime(tmax))]
-        ds_fixed = ds.interp(time=t_fixed)
+            tmin = pd.to_datetime(ds['time'].values[0])
+            tmax = pd.to_datetime(ds['time'].values[-1])
+            return t_fixed[(t_fixed >= tmin) & (t_fixed <= tmax)]
+        raise TypeError(f"不支持的 time dtype: {ds['time'].dtype}")
+
+    def _write_final_output_dataset(self, ds_raw, ds_resampled):
+        os.makedirs(self.output_folder_path, exist_ok=True)
         if self.save_result_name is None:
             out_raw = os.path.join(self.output_folder_path, f'{self.model_name}_raw_output.nc')
             out_interp = os.path.join(self.output_folder_path, f'{self.model_name}_interpolated_output.nc')
-            for p in (out_raw, out_interp):
-                if os.path.exists(p):
-                    os.remove(p)
-            ds.to_netcdf(path=out_raw, mode='w', format='NETCDF4', engine='h5netcdf')
-            ds_fixed.to_netcdf(path=out_interp, mode='w', format='NETCDF4', engine='h5netcdf')
-        else:
-            output_path = os.path.join(self.output_folder_path, f'{self.save_result_name}.nc')
-            if os.path.exists(output_path):
-                os.remove(output_path)
-            ds_fixed.to_netcdf(path=output_path, mode='w', format='NETCDF4', engine='h5netcdf')
+            if self.save_output_mode == 'legacy_dual':
+                for path in (out_raw, out_interp):
+                    if os.path.exists(path):
+                        os.remove(path)
+                ds_raw.to_netcdf(path=out_raw, mode='w', format='NETCDF4', engine='h5netcdf')
+                ds_resampled.to_netcdf(path=out_interp, mode='w', format='NETCDF4', engine='h5netcdf')
+                return
+            if os.path.exists(out_raw):
+                os.remove(out_raw)
+            if os.path.exists(out_interp):
+                os.remove(out_interp)
+            ds_resampled.to_netcdf(path=out_interp, mode='w', format='NETCDF4', engine='h5netcdf')
+            return
+        output_path = os.path.join(self.output_folder_path, f'{self.save_result_name}.nc')
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        ds_resampled.to_netcdf(path=output_path, mode='w', format='NETCDF4', engine='h5netcdf')
+
+    def _finalize_buffered_output_result(self, ensure_unique_time=True):
+        if not self._output_snapshot_times:
+            return
+        ds = self._build_output_dataset_from_buffer()
+        if ensure_unique_time:
+            ds = self._make_unique_time_dataset(ds, dim='time', float_round_decimals=6, dt_floor_freq='S', agg='mean')
+        t_fixed = self._build_resample_axis(ds)
+        ds_fixed = ds.interp(time=t_fixed)
+        self._write_final_output_dataset(ds, ds_fixed)
+
+    def Resample_and_Save_Output_result(self):
+        self._finalize_buffered_output_result(ensure_unique_time=True)
+
+    def Check_Resample_and_Save_Output_result(self):
+        self._finalize_buffered_output_result(ensure_unique_time=True)
 
     def Save_result_per_time_step(self):
         if self.save_with_ghost:
@@ -2765,8 +2793,11 @@ class River(Process):
         level = self.water_level[sl].copy()
         U = self.U[sl].copy()
         Q = self.Q[sl].copy()
-        ds_t = xr.Dataset(data_vars={'depth': (('time', 'space'), depth[np.newaxis, :]), 'level': (('time', 'space'), level[np.newaxis, :]), 'U': (('time', 'space'), U[np.newaxis, :]), 'Q': (('time', 'space'), Q[np.newaxis, :])}, coords={'time': [self.current_sim_time], 'space': self.ds_coords.coords['space'].values})
-        self.ds_list.append(ds_t)
+        self._output_snapshot_times.append(float(self.current_sim_time))
+        self._output_snapshot_vars['depth'].append(depth)
+        self._output_snapshot_vars['level'].append(level)
+        self._output_snapshot_vars['U'].append(U)
+        self._output_snapshot_vars['Q'].append(Q)
 
     def configure_save_scheduler(self, default_interval=None, save_initial=False):
         interval = self.save_min_interval
@@ -2793,7 +2824,7 @@ class River(Process):
             return False
         if self.save_all_time_steps:
             return True
-        if len(self.ds_list) == 0:
+        if self._saved_snapshot_count() == 0:
             return True
         if self.current_sim_time + 1.0e-9 >= float(total_sim_time):
             return True
@@ -2811,7 +2842,7 @@ class River(Process):
         return True
 
     def Save_Basic_data(self):
-        self.ds_list = []
+        self._reset_output_snapshot_buffer()
         if self.save_with_ghost:
             sl = slice(0, self.cell_num + 2)
             space = np.arange(self.cell_num + 2)
@@ -2824,7 +2855,14 @@ class River(Process):
         print('经纬度转化')
         transformer = Transformer.from_crs('EPSG:4546', 'EPSG:4490', always_xy=True)
         lon, lat = transformer.transform(x, y)
-        self.ds_coords = xr.Dataset(coords={'space': space, 'x': ('space', x), 'y': ('space', y), 'z': ('space', z), 'lon': ('space', lon), 'lat': ('space', lat)})
+        self._output_coord_arrays = {
+            'space': space,
+            'x': x,
+            'y': y,
+            'z': z,
+            'lon': lon,
+            'lat': lat,
+        }
 
     def Side_inflow(self, pos, side_Q):
         cell_num = self.Get_nearest_cell_num(pos)

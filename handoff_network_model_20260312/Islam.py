@@ -106,7 +106,8 @@ model_data = {
     'sim_end_time': os.environ.get('ISLAM_SIM_END_TIME', '2024-01-03 00:00:00'),
     'time_step': 60,  # 单位：秒
     'output_path': output_path,
-    'CFL': float(os.environ.get('ISLAM_CFL', '0.3'))
+    'CFL': float(os.environ.get('ISLAM_CFL', '0.3')),
+    'save_output_mode': os.environ.get('ISLAM_OUTPUT_WRITE_MODE', 'single_resampled').strip().lower(),
 }
 
 river_data_1_2 = {
