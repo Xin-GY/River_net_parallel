@@ -1,0 +1,12 @@
+timestamp: 2026-03-14T22:34:14+08:00
+repo: /home/xin/River_net_parallel
+current_branch: main
+head: dea32024e120155ba1429b292d6d9db0084dba69
+head_short: dea3202
+
+git status --short --branch
+## main
+
+preserved_experimental_snapshot_branch: fast_mode_snapshot_20260314
+preserved_safety_branch: safety_main_20260314_223414
+backup_dir: /tmp/fastmode_backup
