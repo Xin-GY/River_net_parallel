@@ -144,6 +144,9 @@ class Rivernet():
         self.initial_total_volume = None
         self.final_total_volume = None
         self.volume_relative_change = None
+        self.save_dt_profile = False
+        self.dt_profile_records = []
+        self.last_global_dt_limiter = None
 
     def _refresh_river_cache(self):
         # Topology is fixed after construction in the current workflow. Cache
@@ -269,6 +272,7 @@ class Rivernet():
 
         # 兼容旧属性：external_nodes = external_in ∪ external_out
         self.external_nodes = self.external_in_nodes + self.external_out_nodes
+        self._annotate_river_boundary_roles()
 
         if self.verbos:
             print('内部节点 (internal):', self.internal_nodes)
@@ -276,6 +280,33 @@ class Rivernet():
             print('外部出点 (external_out):', self.external_out_nodes)
             if self.isolated_nodes:
                 print('孤立节点 (degree=0):', self.isolated_nodes)
+
+    def _annotate_river_boundary_roles(self):
+        internal = set(getattr(self, 'internal_nodes', []))
+        external_in = set(getattr(self, 'external_in_nodes', []))
+        external_out = set(getattr(self, 'external_out_nodes', []))
+        for u, v, data in self._river_edges:
+            river = data['river']
+            if u in internal:
+                left_role = 'internal_node'
+            elif u in external_out:
+                left_role = 'external_out'
+            elif u in external_in:
+                left_role = 'external_in'
+            else:
+                left_role = 'other'
+            if v in internal:
+                right_role = 'internal_node'
+            elif v in external_in:
+                right_role = 'external_in'
+            elif v in external_out:
+                right_role = 'external_out'
+            else:
+                right_role = 'other'
+            river.left_boundary_role = left_role
+            river.right_boundary_role = right_role
+            river.left_boundary_node = u
+            river.right_boundary_node = v
 
     # 分别遍历内部和外部节点
     def node_flow_direction(self):
@@ -641,6 +672,45 @@ class Rivernet():
         if self.verbos:
             print(f'[OK] 运行摘要已保存 -> {out_path}')
 
+    def _record_dt_profile(self, used_dt, next_dt, schedule_reason):
+        if not self.save_dt_profile:
+            return
+        info = self.last_global_dt_limiter or {}
+        rec = {
+            'step': int(self.step_count),
+            'time_s': float(self.current_sim_time),
+            'used_dt_s': float(used_dt),
+            'next_dt_s': float(next_dt),
+            'schedule_reason': str(schedule_reason),
+            'global_cfl_dt_s': float(self.cfl_allowed_dt),
+            'river_name': info.get('river_name'),
+            'cell_index': info.get('cell_index'),
+            'raw_dt_s': info.get('raw_dt'),
+            'returned_dt_s': info.get('returned_dt'),
+            'cap_kind': info.get('cap_kind'),
+            'category': info.get('category'),
+            'side': info.get('side'),
+            'boundary_role': info.get('boundary_role'),
+            'boundary_node': info.get('boundary_node'),
+            'is_dry': info.get('is_dry'),
+            'near_dry': info.get('near_dry'),
+            'depth': info.get('depth'),
+            'area': info.get('area'),
+            'u': info.get('u'),
+            'c': info.get('c'),
+            'char_speed': info.get('char_speed'),
+            'friction_abs': info.get('friction_abs'),
+        }
+        self.dt_profile_records.append(rec)
+
+    def Save_dt_profile(self):
+        if not (self.save_dt_profile and self.dt_profile_records):
+            return
+        out_path = os.path.join(self.model_data['output_path'], 'dt_profile.csv')
+        pd.DataFrame(self.dt_profile_records).to_csv(out_path, index=False)
+        if self.verbos:
+            print(f'[OK] dt 画像已保存 -> {out_path}')
+
     # 更新网格参数
     def Update_cell_property_net(self):
         self.call_river_function_by_name('Update_cell_proprity2')
@@ -649,15 +719,22 @@ class Rivernet():
     def Caculate_global_CFL(self):
         dt_list = []
         dt_items = []
+        limiter_infos = []
 
         # 计算每条河道的CFL时间步长
         for _, _, data in self._river_edges:
-            dti = data['river'].Caculate_CFL_time_for_river_net()
+            river = data['river']
+            river.save_dt_profile = bool(self.save_dt_profile)
+            dti = river.Caculate_CFL_time_for_river_net()
             dt_list.append(dti)
             dt_items.append((data.get('name'), dti))
+            limiter_infos.append(getattr(river, 'last_dt_limiter_info', None))
 
         self.cfl_allowed_dt = min(dt_list) # 计算全局最小时间步长
         self._record_cfl_history(dt_items)
+        if self.save_dt_profile and dt_list:
+            idx = int(np.argmin(np.asarray(dt_list, dtype=float)))
+            self.last_global_dt_limiter = limiter_infos[idx] if idx < len(limiter_infos) else None
 
         if self.verbos:
             print(f'全局最小CFL时间步长: {self.cfl_allowed_dt:.4f} 秒')
@@ -1773,6 +1850,7 @@ class Rivernet():
 
         while self.current_sim_time < self.total_sim_time:
             self.Set_global_time_step(self.DT)
+            used_dt = float(self.DT)
 
             self.current_sim_time += self.DT
             self.step_count += 1
@@ -1833,11 +1911,15 @@ class Rivernet():
 
             if self.current_sim_time + self.cfl_allowed_dt > self.total_sim_time + 1e-5:
                 self.DT = self.total_sim_time - self.current_sim_time
+                schedule_reason = 'end_time_cap'
             elif self.sub_step_time + self.cfl_allowed_dt > yield_step + 1e-5:
                 self.DT = yield_step - self.sub_step_time
                 yield_flag = True
+                schedule_reason = 'yield_step_cap'
             else:
                 self.DT = self.cfl_allowed_dt
+                schedule_reason = 'cfl_cap'
+            self._record_dt_profile(used_dt=used_dt, next_dt=self.DT, schedule_reason=schedule_reason)
 
         self.caculation_time = time.time() - self.caculation_start_time
         print(f'计算结束，保存结果...\n共计算 {self.step_count} 步，总耗时: {self.caculation_time:.2f} 秒')
@@ -1845,6 +1927,7 @@ class Rivernet():
             self.Resample_and_Save_result_net()
             self.Save_internal_node_history()
             self.Save_cfl_history()
+        self.Save_dt_profile()
         self.Save_run_summary()
 
     def _evolve_base_parallel_process(self, yield_step, pool):
@@ -1856,6 +1939,7 @@ class Rivernet():
 
         while self.current_sim_time < self.total_sim_time:
             pool.call_all('set_next_dt', args=(self.DT,))
+            used_dt = float(self.DT)
 
             self.current_sim_time += self.DT
             self.step_count += 1
@@ -1891,11 +1975,15 @@ class Rivernet():
 
             if self.current_sim_time + self.cfl_allowed_dt > self.total_sim_time + 1e-5:
                 self.DT = self.total_sim_time - self.current_sim_time
+                schedule_reason = 'end_time_cap'
             elif self.sub_step_time + self.cfl_allowed_dt > yield_step + 1e-5:
                 self.DT = yield_step - self.sub_step_time
                 yield_flag = True
+                schedule_reason = 'yield_step_cap'
             else:
                 self.DT = self.cfl_allowed_dt
+                schedule_reason = 'cfl_cap'
+            self._record_dt_profile(used_dt=used_dt, next_dt=self.DT, schedule_reason=schedule_reason)
 
         self.caculation_time = time.time() - self.caculation_start_time
         print(f'计算结束，保存结果...\n共计算 {self.step_count} 步，总耗时: {self.caculation_time:.2f} 秒')
@@ -1904,6 +1992,7 @@ class Rivernet():
             self.Save_internal_node_history()
             self.Save_cfl_history()
         self._sync_parallel_rivers_to_main(pool)
+        self.Save_dt_profile()
         self.Save_run_summary()
 
     # 演进子步
@@ -1915,6 +2004,7 @@ class Rivernet():
         while self.current_sim_time < self.total_sim_time:
             # 同步时间
             self.Set_global_time_step(self.DT)
+            used_dt = float(self.DT)
 
             # 累加总时间
             self.current_sim_time += self.DT
@@ -2006,13 +2096,17 @@ class Rivernet():
             if self.current_sim_time + self.cfl_allowed_dt > self.total_sim_time + 1e-5:
                 self.DT = self.total_sim_time - self.current_sim_time # 基于总时间计算时间步长
                 # finish_flag = True
+                schedule_reason = 'end_time_cap'
 
             elif self.sub_step_time + self.cfl_allowed_dt > yield_step + 1e-5:
                 self.DT = yield_step - self.sub_step_time # 基于子步时间计算时间步长
                 yield_flag = True  # 标记需要回报子步
+                schedule_reason = 'yield_step_cap'
 
             else:
                 self.DT = self.cfl_allowed_dt # 基于全局最小CFL时间步长计算时间步长
+                schedule_reason = 'cfl_cap'
+            self._record_dt_profile(used_dt=used_dt, next_dt=self.DT, schedule_reason=schedule_reason)
 
         # 计算结束，保存结果
         self.caculation_time = time.time() - self.caculation_start_time  # 计算总耗时
@@ -2021,6 +2115,7 @@ class Rivernet():
             self.Resample_and_Save_result_net()
             self.Save_internal_node_history()
             self.Save_cfl_history()
+        self.Save_dt_profile()
         self.Save_run_summary()
 
     # 演进过程
@@ -2028,6 +2123,9 @@ class Rivernet():
         # 框定回报时间
         if yield_step is None:
             yield_step = self.model_data['time_step']
+        need_attrs = ('internal_nodes', 'external_in_nodes', 'external_out_nodes')
+        if not all(hasattr(self, a) for a in need_attrs):
+            self.classfy_nodes()
 
         # 优化网格参数
         if self.Fine_flag:

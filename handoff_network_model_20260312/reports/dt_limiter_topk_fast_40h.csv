@@ -1,0 +1,4 @@
+river_name,cell_index,boundary_node,category,schedule_reason,count,mean_used_dt_s,min_used_dt_s,median_used_dt_s,min_time_s,max_time_s
+river8,15,n11,internal_node,cfl_cap,23673,6.061808854364167,0.02880859375,6.2767415046691895,0.1099999994039535,143990.171875
+river8,15,n11,internal_node,yield_step_cap,79,6.1623837072638015,5.688969135284424,6.283279895782471,1797.955078125,142196.40625
+river8,15,n11,internal_node,end_time_cap,2,4.913746356964111,3.53125,4.913746356964111,143996.46875,144000.0

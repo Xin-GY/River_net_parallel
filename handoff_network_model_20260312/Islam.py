@@ -613,6 +613,7 @@ def configure_net_options(net_obj, export_png=False):
     net_obj.output_save_interval = float(save_interval_env) if save_interval_env else None
     net_obj.save_cfl_history = os.environ.get('ISLAM_SAVE_CFL_HISTORY', '0') == '1'
     net_obj.save_run_summary = os.environ.get('ISLAM_SAVE_RUN_SUMMARY', '0') == '1'
+    net_obj.save_dt_profile = os.environ.get('ISLAM_SAVE_DT_PROFILE', '0') == '1'
     net_obj.external_flow_bc_use_characteristic = os.environ.get('ISLAM_USE_CHARFLOW_BC', '1') == '1'
     net_obj.external_bc_use_stabilizers = os.environ.get('ISLAM_USE_EXTERNAL_STAB', '0') == '1'
     net_obj.internal_bc_use_stabilizers = os.environ.get('ISLAM_USE_INTERNAL_STAB', '0') == '1'

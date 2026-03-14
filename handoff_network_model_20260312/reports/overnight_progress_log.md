@@ -48,3 +48,31 @@
   - current clean exact rerun is still slower than the accepted 40h reference, so no exact performance commit is acceptable yet
   - current FAST artifacts are faster than the clean exact rerun, but still far from `30 s` and still exceed the desired max-abs threshold on `Q`
 - Continue: yes
+
+## Stage 3
+
+- Added default-off dt / limiter profiling infrastructure:
+  - `ISLAM_SAVE_DT_PROFILE=1`
+  - river-side limiter capture in `Caculate_CFL_time_for_river_net()`
+  - network-side step profile export to `dt_profile.csv`
+  - offline report generator `tools/dt_profile_report.py`
+- Verified 10-minute exact dt-profile smoke remains strict-equal after fixing the `dt_min -> Python float` precision regression.
+- Ran 40h exact dt-profile:
+  - output: `result/overnight_exact_dtprofile_40h`
+  - strict compare: passed
+  - report: `reports/dt_profile_exact_40h.md`
+  - top-k: `reports/dt_limiter_topk_exact_40h.csv`
+- Ran 40h FAST dt-profile on the preserved FAST snapshot worktree:
+  - output: `/tmp/overnight_fast_snapshot/handoff_network_model_20260312/result/overnight_fast_dtprofile_40h`
+  - report mirrored into exact-line reports as `reports/dt_profile_fast_40h.md`
+  - top-k: `reports/dt_limiter_topk_fast_40h.csv`
+- Key finding:
+  - exact and FAST are both overwhelmingly limited by a single internal-node-adjacent branch end
+  - exact: `river1 / cell15 / node n8`
+  - FAST: `river8 / cell15 / node n11`
+  - exact steps: `29969`
+  - FAST steps: `23754`
+  - exact model time per step: `0.00871 s`
+  - FAST model time per step: `0.00722 s`
+  - this points more strongly to total step count as the dominant barrier to a `30 s` target than to per-step Python overhead alone
+- Continue: yes
