@@ -1,6 +1,7 @@
 import random
 import time
 import os
+import json
 from copy import deepcopy
 
 from river_for_net import River
@@ -139,6 +140,10 @@ class Rivernet():
         self.save_cfl_history = False
         self.cfl_history = []
         self.output_save_interval = None
+        self.save_run_summary = False
+        self.initial_total_volume = None
+        self.final_total_volume = None
+        self.volume_relative_change = None
 
     def _refresh_river_cache(self):
         # Topology is fixed after construction in the current workflow. Cache
@@ -483,7 +488,10 @@ class Rivernet():
             name = data.get('name')
             if selected is not None and name not in selected:
                 continue
-            data['river'].Save_Basic_data()
+            river = data['river']
+            river.Save_Basic_data()
+            if river.initial_total_volume is None and hasattr(river, '_compute_total_volume'):
+                river.initial_total_volume = float(river._compute_total_volume())
 
     # 计算界面平均流速和波速
     def Caculate_face_U_C_net(self):
@@ -562,6 +570,76 @@ class Rivernet():
         pd.DataFrame(self.cfl_history).to_csv(out_path, index=False)
         if self.verbos:
             print(f'[OK] CFL 时序已保存 -> {out_path}')
+
+    def Save_run_summary(self):
+        if not self.save_run_summary:
+            return
+        out_dir = self.model_data['output_path']
+        os.makedirs(out_dir, exist_ok=True)
+
+        total_final = 0.0
+        total_initial = 0.0
+        per_river = []
+        for _, _, data in self._river_edges:
+            name = data.get('name')
+            river = data['river']
+            initial_volume = getattr(river, 'initial_total_volume', None)
+            if initial_volume is None:
+                initial_volume = float(river._compute_total_volume())
+                river.initial_total_volume = float(initial_volume)
+            final_volume = getattr(river, 'final_total_volume', None)
+            if final_volume is None:
+                final_volume = float(river._compute_total_volume())
+                river.final_total_volume = float(final_volume)
+            initial_volume = float(initial_volume)
+            final_volume = float(final_volume)
+            denom = max(abs(initial_volume), 1.0e-12)
+            relative = (final_volume - initial_volume) / denom
+            river.final_total_volume = final_volume
+            river.volume_relative_change = relative
+            total_initial += initial_volume
+            total_final += final_volume
+            per_river.append(
+                {
+                    'river': name,
+                    'initial_volume': initial_volume,
+                    'final_volume': final_volume,
+                    'relative_volume_change': relative,
+                    'cell_num': int(river.cell_num),
+                }
+            )
+
+        denom = max(abs(total_initial), 1.0e-12)
+        self.initial_total_volume = total_initial
+        self.final_total_volume = total_final
+        self.volume_relative_change = (total_final - total_initial) / denom
+        summary = {
+            'model_name': self.model_data.get('model_name', 'river_net'),
+            'output_path': self.model_data.get('output_path'),
+            'current_sim_time': float(self.current_sim_time),
+            'total_sim_time': float(self.total_sim_time),
+            'step_count': int(self.step_count),
+            'calculation_time': float(self.caculation_time),
+            'model_time_s': float(self.caculation_time),
+            'parallel_backend': str(self.parallel_backend),
+            'parallel_n_workers': int(self.parallel_n_workers),
+            'network_total_volume_initial': total_initial,
+            'network_total_volume_final': float(total_final),
+            'network_relative_volume_change': float(self.volume_relative_change),
+            'save_outputs': bool(self.save_outputs),
+            'save_internal_node_history': bool(self.save_outputs and bool(self.internal_node_history)),
+            'internal_node_count': int(len(getattr(self, 'internal_nodes', []))),
+            'rivers': per_river,
+            'initial_total_volume': total_initial,
+            'final_total_volume': float(total_final),
+            'relative_volume_change': float(self.volume_relative_change),
+            'per_river': per_river,
+        }
+        out_path = os.path.join(out_dir, 'run_summary.json')
+        with open(out_path, 'w', encoding='utf-8') as f:
+            json.dump(summary, f, ensure_ascii=False, indent=2)
+        if self.verbos:
+            print(f'[OK] 运行摘要已保存 -> {out_path}')
 
     # 更新网格参数
     def Update_cell_property_net(self):
@@ -1767,6 +1845,7 @@ class Rivernet():
             self.Resample_and_Save_result_net()
             self.Save_internal_node_history()
             self.Save_cfl_history()
+        self.Save_run_summary()
 
     def _evolve_base_parallel_process(self, yield_step, pool):
         yield_flag = False
@@ -1825,6 +1904,7 @@ class Rivernet():
             self.Save_internal_node_history()
             self.Save_cfl_history()
         self._sync_parallel_rivers_to_main(pool)
+        self.Save_run_summary()
 
     # 演进子步
     def _evolve_base(self, yield_step):
@@ -1941,6 +2021,7 @@ class Rivernet():
             self.Resample_and_Save_result_net()
             self.Save_internal_node_history()
             self.Save_cfl_history()
+        self.Save_run_summary()
 
     # 演进过程
     def Evolve(self, yield_step=None):

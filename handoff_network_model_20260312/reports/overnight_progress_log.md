@@ -28,3 +28,23 @@
   - exact line: `181` steps, model time `2.62 s`
   - FAST line baseline: `181` steps, model time `2.55 s`
 - Continue: yes
+
+## Stage 2
+
+- Added safe benchmark infrastructure:
+  - `tools/overnight_benchmark.py`
+  - env-gated `ISLAM_SAVE_RUN_SUMMARY=1`
+  - network-level `run_summary.json` export in `Rivernet.py`
+- Fixed report-root isolation so benchmark reports stay in the exact worktree, not `main`.
+- Ran fresh exact benchmarks from the clean exact line:
+  - `exact_10m`: strict compare passed, `allclose=true`
+  - `exact_40h`: strict compare passed, `allclose=true`
+- Re-evaluated current FAST 40h artifacts against the fresh exact-40h reference:
+  - `fast_40h_iter5_cfl125`
+  - `fast_40h_iter5_nocfl`
+- Wrote unified matrix:
+  - `reports/benchmark_matrix.md`
+- Key finding:
+  - current clean exact rerun is still slower than the accepted 40h reference, so no exact performance commit is acceptable yet
+  - current FAST artifacts are faster than the clean exact rerun, but still far from `30 s` and still exceed the desired max-abs threshold on `Q`
+- Continue: yes
