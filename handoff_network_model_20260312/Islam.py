@@ -604,11 +604,47 @@ output_rivers = {s.strip() for s in output_rivers_env.split(',') if s.strip()} i
 
 
 def configure_net_options(net_obj, export_png=False):
+    env = os.environ
+    fast_mode = env.get('ISLAM_FAST_MODE', '0') == '1'
     net_obj.use_parallel_workers = os.environ.get('ISLAM_USE_PARALLEL', '0') == '1'
     net_obj.parallel_backend = os.environ.get('ISLAM_PARALLEL_BACKEND', 'threads').strip().lower()
     net_obj.parallel_n_workers = int(os.environ.get('ISLAM_N_WORKERS', str(net_obj.parallel_n_workers)))
     net_obj.parallel_start_method = os.environ.get('ISLAM_PARALLEL_START_METHOD', 'auto').strip().lower()
     net_obj.parallel_sync_main_state_on_yield = os.environ.get('ISLAM_PARALLEL_SYNC_ON_YIELD', '1') == '1'
+    net_obj.internal_exact_backend = os.environ.get(
+        'ISLAM_INTERNAL_NODE_BACKEND',
+        str(net_obj.internal_exact_backend),
+    ).strip().lower()
+    net_obj.save_perf_report = os.environ.get('ISLAM_SAVE_PERF_REPORT', '0') == '1'
+    net_obj.fast_mode_enabled = fast_mode
+    net_obj.fast_node_solver_mode = env.get(
+        'ISLAM_FAST_NODE_SOLVER',
+        'response_corrector' if fast_mode else str(net_obj.fast_node_solver_mode),
+    ).strip().lower()
+    net_obj.fast_mode_name = env.get(
+        'ISLAM_FAST_MODE_NAME',
+        net_obj.fast_node_solver_mode if fast_mode else str(net_obj.fast_mode_name),
+    ).strip().lower()
+    net_obj.fast_node_correction_iters = int(
+        env.get('ISLAM_FAST_NODE_CORRECTION_ITERS', str(net_obj.fast_node_correction_iters if not fast_mode else 1))
+    )
+    net_obj.fast_node_dz_tol = float(
+        env.get('ISLAM_FAST_NODE_DZ_TOL', str(net_obj.fast_node_dz_tol if not fast_mode else 5.0e-4))
+    )
+    net_obj.fast_node_q_tol = float(
+        env.get('ISLAM_FAST_NODE_Q_TOL', str(net_obj.fast_node_q_tol if not fast_mode else 5.0e-3))
+    )
+    net_obj.fast_cfl_scale = float(env.get('ISLAM_FAST_CFL_SCALE', str(net_obj.fast_cfl_scale)))
+    fast_dt_env = env.get('ISLAM_FAST_DT_INCREASE_FACTOR', '').strip()
+    net_obj.fast_dt_increase_factor = float(fast_dt_env) if fast_dt_env else None
+    net_obj.save_internal_node_history = env.get(
+        'ISLAM_SAVE_INTERNAL_NODE_HISTORY',
+        env.get('ISLAM_FAST_SAVE_NODE_HISTORY', '0' if fast_mode else '1'),
+    ) == '1'
+    net_obj.save_run_summary = env.get(
+        'ISLAM_SAVE_RUN_SUMMARY',
+        '1' if fast_mode else '0',
+    ) == '1'
     save_interval_env = os.environ.get('ISLAM_SAVE_INTERVAL', '').strip()
     net_obj.output_save_interval = float(save_interval_env) if save_interval_env else None
     net_obj.save_cfl_history = os.environ.get('ISLAM_SAVE_CFL_HISTORY', '0') == '1'
@@ -621,6 +657,38 @@ def configure_net_options(net_obj, export_png=False):
     net_obj.internal_use_ac_v2 = os.environ.get('ISLAM_NODE_AC_V2', '1') == '1'
     net_obj.internal_use_paper_ac = os.environ.get('ISLAM_NODE_PAPER_AC', '1') == '1'
     net_obj.internal_level_predict_from_last = os.environ.get('ISLAM_NODE_PREDICT_LAST', '1') == '1'
+    if fast_mode and 'ISLAM_NODE_PREDICT_LAST' not in env:
+        net_obj.internal_level_predict_from_last = True
+    net_obj.internal_use_response_table = os.environ.get(
+        'ISLAM_USE_NODE_RESPONSE_TABLE',
+        '1' if net_obj.internal_use_response_table else '0',
+    ) == '1'
+    if fast_mode and 'ISLAM_USE_NODE_RESPONSE_TABLE' not in env:
+        net_obj.internal_use_response_table = True
+    net_obj.internal_response_samples = int(
+        os.environ.get(
+            'ISLAM_NODE_RESPONSE_SAMPLES',
+            str(7 if fast_mode else net_obj.internal_response_samples),
+        )
+    )
+    net_obj.internal_response_base_span = float(
+        os.environ.get(
+            'ISLAM_NODE_RESPONSE_BASE_SPAN',
+            str(0.35 if fast_mode else net_obj.internal_response_base_span),
+        )
+    )
+    net_obj.internal_response_max_span = float(
+        os.environ.get(
+            'ISLAM_NODE_RESPONSE_MAX_SPAN',
+            str(3.0 if fast_mode else net_obj.internal_response_max_span),
+        )
+    )
+    net_obj.internal_response_refine_steps = int(
+        os.environ.get(
+            'ISLAM_NODE_RESPONSE_REFINE',
+            str(1 if fast_mode else net_obj.internal_response_refine_steps),
+        )
+    )
     net_obj.internal_sync_branch_end_Q = os.environ.get('ISLAM_NODE_SYNC_BRANCH_END_Q', '0') == '1'
     net_obj.internal_sync_branch_end_Q_relax = float(os.environ.get('ISLAM_NODE_SYNC_BRANCH_END_Q_RELAX', '1.0'))
     net_obj.internal_node_use_face_discharge = os.environ.get('ISLAM_NODE_USE_FACE_Q', '0') == '1'
@@ -631,9 +699,9 @@ def configure_net_options(net_obj, export_png=False):
     # 默认保持 ghost-Q 残差，只有显式试验时才打开。
     net_obj.internal_node_use_face_flux_residual = os.environ.get('ISLAM_NODE_USE_FACE_FLUX', '0') == '1'
 
-    net_obj.max_iteration = int(os.environ.get('ISLAM_NODE_MAX_ITER', str(net_obj.max_iteration)))
+    net_obj.max_iteration = int(os.environ.get('ISLAM_NODE_MAX_ITER', str(5 if fast_mode else net_obj.max_iteration)))
     net_obj.alpha = float(os.environ.get('ISLAM_NODE_ALPHA', str(net_obj.alpha)))
-    net_obj.relax = float(os.environ.get('ISLAM_NODE_RELAX', str(net_obj.relax)))
+    net_obj.relax = float(os.environ.get('ISLAM_NODE_RELAX', str(0.9 if fast_mode else net_obj.relax)))
     net_obj.internal_use_numeric_jacobian = os.environ.get('ISLAM_NODE_NUMERIC_JAC', '0') == '1'
     net_obj.internal_use_coupled_newton = os.environ.get('ISLAM_NODE_COUPLED_NEWTON', '0') == '1'
     net_obj.use_implicit_branch_update = os.environ.get('ISLAM_USE_IMPLICIT_BRANCH', '0') == '1'
@@ -771,6 +839,10 @@ def initialize_rivers(net_obj):
     for _, _, data in net_obj.G.edges(data=True):
         river = data['river']
         river.Set_init_water_level(init_level)
+        if float(getattr(net_obj, 'fast_cfl_scale', 1.0)) != 1.0:
+            river.CFL = float(river.CFL) * float(net_obj.fast_cfl_scale)
+        if getattr(net_obj, 'fast_dt_increase_factor', None) is not None:
+            river.DT_increase_factor = float(net_obj.fast_dt_increase_factor)
         river.swap_moc_sign = swap_moc_all
         river.swap_moc_sign_flow = swap_moc_flow
         river.swap_moc_sign_stage = swap_moc_stage
