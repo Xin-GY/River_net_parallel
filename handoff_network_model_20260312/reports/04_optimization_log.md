@@ -2283,3 +2283,119 @@ conda run -n python311 python Islam.py
 - 进程池 worker 侧不再高频构造 `xarray`
 - 输出逻辑更简单，默认只有一个河道结果文件
 - full-case 仍有可测的正向收益，但这已经不是主要提速来源
+
+## 优化 16: 预构建固定水位边界目标侧 `level -> (A, T, general_chi, depth)` 缓存
+
+### 改动目标
+
+- 命中内部汊点默认 `stage boundary` Cython fast path 时，减少目标侧断面在每次试探水位上的重复查表
+- 仅缓存对 `level` 线性可精确重建的量，不改变节点残差公式和迭代更新公式
+- 把初始化期可接受的预构建成本移出 `evolve`
+
+### 具体修改
+
+- `cython_cross_section.pyx`
+  - 为 `CrossSectionTableCython` 新增目标侧 level-based bundle cache
+  - 预构建并查询：
+    - `area(level)`
+    - `width(level)`
+    - `general_chi(level)`
+    - `depth(level)`
+  - `compute_stage_boundary_mainline_fast()` 改为直接读取该 bundle
+- `river_for_net.py`
+  - Python 版 `CrossSectionTable` 增加同名接口，保持非 Cython fallback 一致
+  - `River.Init_cell_proprity()` 之后预构建左右边界断面的 target cache
+  - `_prepare_stage_boundary_target_state()` 复用 bundle，避免重复目标侧查表
+- `Islam.py`
+  - 增加 `ISLAM_USE_STAGE_TARGET_LEVEL_CACHE`
+  - 当前默认值为 `1`
+
+### 等价性约束
+
+- 初版实验把 `width_chi` 和 `depth_ref_chi` 也按 level 线性插值，10 分钟 smoke 出现可见漂移，已回退
+- 最终接受版本只缓存：
+  - `A`
+  - `T`
+  - `general_chi`
+  - `depth`
+- `width_chi = 2*sqrt(g*A/T)` 和 `depth_ref_chi = 2*sqrt(g*depth)` 仍在查询后按原公式即时计算
+- 因此最终版本保持和原链路逐点一致
+
+### 验证命令
+
+10 分钟 smoke：
+
+```bash
+/usr/bin/time -p -o result/tmp_stagecache_process_10m_v2/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/tmp_stagecache_process_10m_v2 \
+  ISLAM_SIM_END_TIME='2024-01-01 00:10:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  ISLAM_USE_STAGE_TARGET_LEVEL_CACHE=1 \
+  conda run -n python311 python Islam.py
+```
+
+40 小时 full-case：
+
+```bash
+/usr/bin/time -p -o result/exp_stage_target_cache_process_py311_40h/time.txt \
+  env MPLCONFIGDIR=/tmp/mplconfig \
+  ISLAM_OUTPUT_PATH=result/exp_stage_target_cache_process_py311_40h \
+  ISLAM_SIM_END_TIME='2024-01-02 16:00:00' \
+  ISLAM_OUTPUT_RIVERS=river11 \
+  ISLAM_USE_FINE_INTERPOLATION=0 \
+  ISLAM_USE_PARALLEL=1 \
+  ISLAM_PARALLEL_BACKEND=process \
+  ISLAM_N_WORKERS=4 \
+  ISLAM_USE_CYTHON_TABLE=1 \
+  ISLAM_USE_STAGE_TARGET_LEVEL_CACHE=1 \
+  conda run -n python311 python Islam.py
+```
+
+### 实测收益
+
+10 分钟 smoke，相对 clean-head 进程基线 `result/tmp_headbaseline_process_10m`：
+
+- 模型内部自报时间：`1.36 s -> 1.17 s`
+- 绝对减少：`0.19 s`
+- 相对减少：`13.97%`
+
+40 小时 full-case，相对上一接受版 `b823dae` / `result/exp_saveinterval_yield_process_py311_40h`：
+
+- 模型内部自报时间：`148.54 s -> 147.45 s`
+- 绝对减少：`1.09 s`
+- 相对减少：`0.73%`
+- `/usr/bin/time` wall：`158.33 s -> 154.72 s`
+- wall 绝对减少：`3.61 s`
+- wall 相对减少：`2.28%`
+
+### 校验结果
+
+- `tools/compare_results.py` 对：
+  - `result/tmp_headbaseline_process_10m`
+  - `result/tmp_stagecache_process_10m_v2`
+  - 返回 `allclose = true`
+- `tools/compare_results.py` 对：
+  - `result/exp_saveinterval_yield_process_py311_40h`
+  - `result/exp_stage_target_cache_process_py311_40h`
+  - 返回 `allclose = true`
+- `result/eval_river11_nse.py`：
+  - `node11_level = 0.865799`
+  - `node11_Q = -0.003330`
+  - `node12_level = 0.913786`
+  - `node12_Q = 0.020118`
+  - `mean_nse = 0.449093342258747`
+- 与 `result/exp_saveinterval_yield_process_py311_40h` 的 NSE 完全一致
+
+### 结论
+
+优化 16 可以接受：
+
+- 命中的是当前汊点默认 fast path，而不是仅优化 Python fallback
+- 结果与上一接受版逐点一致
+- 收益不大，但属于低风险、可叠加的 `evolve` 侧等价缓存优化

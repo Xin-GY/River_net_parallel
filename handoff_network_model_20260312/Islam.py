@@ -108,6 +108,7 @@ model_data = {
     'output_path': output_path,
     'CFL': float(os.environ.get('ISLAM_CFL', '0.3')),
     'save_output_mode': os.environ.get('ISLAM_OUTPUT_WRITE_MODE', 'single_resampled').strip().lower(),
+    'use_stage_target_level_cache': os.environ.get('ISLAM_USE_STAGE_TARGET_LEVEL_CACHE', '1') == '1',
 }
 
 river_data_1_2 = {

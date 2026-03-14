@@ -202,6 +202,10 @@ class CrossSectionTable:
         self._top_level = float(self._level_axis[-1]) if self._level_axis.size else 0.0
         self._min_depth = float(self._depth_axis[0]) if self._depth_axis.size else 0.0
         self._max_depth = float(self._depth_axis[-1]) if self._depth_axis.size else 0.0
+        self._general_chi_cache = None
+        self._general_chi_cache_signature = None
+        self._stage_target_cache = None
+        self._stage_target_cache_signature = None
 
     def get_area_by_depth(self, depth, method='interp'):
         if method == 'exact':
@@ -293,6 +297,101 @@ class CrossSectionTable:
                 return None
             return float(self._press_a[mask][0])
         return float(np.interp(area, self._area_axis, self._press_a))
+
+    def _ensure_general_chi_cache(self, g, tinyA=1e-12, tinyT=1e-08):
+        sig = (float(g), float(tinyA), float(tinyT))
+        if self._general_chi_cache is not None and self._general_chi_cache_signature == sig:
+            return self._general_chi_cache
+        area_axis = np.unique(np.asarray(self._area_axis, dtype=float))
+        area_axis = area_axis[np.isfinite(area_axis)]
+        area_axis = area_axis[area_axis > tinyA]
+        if area_axis.size == 0:
+            self._general_chi_cache = None
+            self._general_chi_cache_signature = sig
+            return None
+        width_axis = np.empty_like(area_axis)
+        for i, area in enumerate(area_axis):
+            width_axis[i] = max(float(self.get_width_by_area(area)), tinyT)
+        integrand = np.sqrt(g * area_axis / width_axis) / np.maximum(area_axis, tinyA)
+        chi_axis = np.zeros_like(area_axis)
+        if area_axis.size > 1:
+            chi_axis[1:] = np.cumsum(0.5 * (integrand[1:] + integrand[:-1]) * np.diff(area_axis))
+        chi_axis = chi_axis + 2.0 * np.sqrt(g * area_axis[0] / width_axis[0])
+        cache = {
+            'A': np.ascontiguousarray(area_axis, dtype=float),
+            'chi': np.ascontiguousarray(chi_axis, dtype=float),
+            'A0': float(area_axis[0]),
+            'Amax': float(area_axis[-1]),
+            'w0': float(width_axis[0]),
+            'chi_max': float(chi_axis[-1]),
+            'kmax': float(integrand[-1]),
+        }
+        self._general_chi_cache = cache
+        self._general_chi_cache_signature = sig
+        return cache
+
+    def get_general_chi_by_area(self, area, g, tinyA=1e-12, tinyT=1e-08):
+        A = float(max(area, tinyA))
+        cache = self._ensure_general_chi_cache(g, tinyA=tinyA, tinyT=tinyT)
+        if cache is None:
+            width = max(float(self.get_width_by_area(A)), tinyT)
+            return float(2.0 * np.sqrt(g * A / width))
+        if A <= cache['A0']:
+            return float(2.0 * np.sqrt(g * A / max(cache['w0'], tinyT)))
+        if A >= cache['Amax']:
+            return float(cache['chi_max'] + cache['kmax'] * (A - cache['Amax']))
+        return float(np.interp(A, cache['A'], cache['chi']))
+
+    def get_char_triplet_by_area(self, area, g, tinyA=1e-12, tinyT=1e-08):
+        A = float(max(area, tinyA))
+        width = max(float(self.get_width_by_area(A)), tinyT)
+        depth = max(float(self.get_depth_by_area(A)), 0.0)
+        width_chi = float(2.0 * np.sqrt(g * A / width))
+        general_chi = float(self.get_general_chi_by_area(A, g, tinyA=tinyA, tinyT=tinyT))
+        depth_ref_chi = float(2.0 * np.sqrt(g * depth))
+        return (width_chi, general_chi, depth_ref_chi)
+
+    def ensure_stage_target_bundle_cache(self, g, tinyA=1e-12, tinyT=1e-08):
+        sig = (float(g), float(tinyA), float(tinyT))
+        if self._stage_target_cache is not None and self._stage_target_cache_signature == sig:
+            return
+        levels = np.asarray(self._level_axis, dtype=float)
+        areas = np.asarray(self._area_l, dtype=float)
+        if levels.size == 0:
+            self._stage_target_cache = None
+            self._stage_target_cache_signature = sig
+            return
+        widths = np.zeros_like(levels)
+        general_chi = np.zeros_like(levels)
+        depths = np.zeros_like(levels)
+        for i, area in enumerate(areas):
+            if area <= 0.0:
+                continue
+            widths[i] = max(float(self.get_width_by_area(area)), tinyT)
+            depths[i] = max(float(self.get_depth_by_area(area)), 0.0)
+            general_chi[i] = self.get_general_chi_by_area(area, g, tinyA=tinyA, tinyT=tinyT)
+        self._stage_target_cache = {
+            'level': np.ascontiguousarray(levels, dtype=float),
+            'area': np.ascontiguousarray(areas, dtype=float),
+            'width': np.ascontiguousarray(widths, dtype=float),
+            'general_chi': np.ascontiguousarray(general_chi, dtype=float),
+            'depth': np.ascontiguousarray(depths, dtype=float),
+        }
+        self._stage_target_cache_signature = sig
+
+    def get_stage_target_bundle_by_level(self, level, g, tinyA=1e-12, tinyT=1e-08):
+        self.ensure_stage_target_bundle_cache(g, tinyA=tinyA, tinyT=tinyT)
+        if self._stage_target_cache is None:
+            return (0.0, 0.0, 0.0, 0.0)
+        cache = self._stage_target_cache
+        area = float(np.interp(level, cache['level'], cache['area']))
+        if area <= 0.0:
+            return (0.0, 0.0, 0.0, 0.0)
+        width = float(np.interp(level, cache['level'], cache['width']))
+        width = max(width, tinyT)
+        general_chi = float(np.interp(level, cache['level'], cache['general_chi']))
+        depth = float(np.interp(level, cache['level'], cache['depth']))
+        return (area, width, general_chi, depth)
 
     def get_bed_level(self):
         return self._bed_level
@@ -437,6 +536,7 @@ class River(Process):
         self.bc_use_order2_extrap_stage = bool(sim_data.get('bc_use_order2_extrap_stage', False))
         self.bc_stage_on_face = False
         self.bc_use_general_chi = False
+        self.use_stage_target_level_cache = bool(sim_data.get('use_stage_target_level_cache', False))
         self.refined_section_table = bool(sim_data.get('refined_section_table', True))
         self.section_table_dz = float(sim_data.get('section_table_dz', 0.02))
         if self.section_table_dz <= 0.0:
@@ -773,6 +873,19 @@ class River(Process):
         setattr(self, f'boundary_face_area_{side_txt}', area_val)
         setattr(self, f'boundary_face_discharge_{side_txt}', None if discharge is None else float(discharge))
         setattr(self, f'boundary_face_width_{side_txt}', None if width_val is None else float(width_val))
+
+    def _prebuild_stage_boundary_target_tables(self):
+        if not bool(getattr(self, 'use_stage_target_level_cache', False)):
+            return
+        seen = set()
+        for sec_name in (self.cell_sections[0], self.cell_sections[-1]):
+            if sec_name in seen:
+                continue
+            seen.add(sec_name)
+            tbl = self.cross_section_table.tables.get(sec_name)
+            if tbl is None or not hasattr(tbl, 'ensure_stage_target_bundle_cache'):
+                continue
+            tbl.ensure_stage_target_bundle_cache(self.g, tinyA=1.0e-12, tinyT=1.0e-08)
 
     def _sync_boundary_face_state_from_ghost(self, side):
         side_txt = 'left' if str(side).lower().startswith('l') else 'right'
@@ -1512,6 +1625,7 @@ class River(Process):
     def Init_cell_proprity(self, fine):
         n = np.unique(self.n)
         self.Create_cross_section_table(n, num=self.section_table_num)
+        self._prebuild_stage_boundary_target_tables()
         for i in range(self.cell_num + 2):
             section_name = self.cell_sections[i]
             section_bed = self._get_section_table_bed_level(section_name)
@@ -3296,7 +3410,9 @@ class River(Process):
         inner_sec = self.cell_sections[ctx['inner_idx']]
         ghost_sec = target['sec_b']
         inner_triplet = self._stage_boundary_char_triplet(inner_sec, ctx['Ai'])
-        target_triplet = self._stage_boundary_char_triplet(ghost_sec, target['Ab'])
+        target_triplet = target.get('prebuilt_triplet')
+        if target_triplet is None:
+            target_triplet = self._stage_boundary_char_triplet(ghost_sec, target['Ab'])
         second_triplet = None
         if ctx.get('use_o2', False):
             second_triplet = self._stage_boundary_char_triplet(self.cell_sections[ctx['second_idx']], ctx['A2'])
@@ -3399,22 +3515,41 @@ class River(Process):
     def _prepare_stage_boundary_target_state(self, ctx, tinyA, tinyT, g):
         ghost_idx = ctx['ghost_idx']
         sec_b = self.cell_sections[ghost_idx]
-        Ab = float(self.cross_section_table.get_area_by_level(sec_b, ctx['level']))
+        tbl = self.cross_section_table.tables.get(sec_b)
+        prebuilt_triplet = None
+        if bool(getattr(self, 'use_stage_target_level_cache', False)) and tbl is not None and hasattr(tbl, 'get_stage_target_bundle_by_level'):
+            Ab, Tb, general_chi, depth = tbl.get_stage_target_bundle_by_level(
+                float(ctx['level']),
+                g,
+                tinyA=tinyA,
+                tinyT=tinyT,
+            )
+            Ab = float(Ab)
+            if Ab > 0.0:
+                Tb = max(float(Tb), tinyT)
+                prebuilt_triplet = {
+                    'width': float(2.0 * np.sqrt(g * Ab / Tb)),
+                    'general': float(general_chi),
+                    'depth_ref': float(2.0 * np.sqrt(g * max(float(depth), 0.0))),
+                }
+        else:
+            Ab = float(self.cross_section_table.get_area_by_level(sec_b, ctx['level']))
         target = {
             'sec_b': sec_b,
             'Ab': Ab,
         }
         if Ab <= 0.0:
             return target
-        Tb = float(self.cross_section_table.get_width_by_area(sec_b, Ab))
-        Tb = max(Tb, tinyT)
+        if prebuilt_triplet is None:
+            Tb = float(self.cross_section_table.get_width_by_area(sec_b, Ab))
+            Tb = max(Tb, tinyT)
         cb = (g * Ab / Tb) ** 0.5
-        chi_b = self._char_potential(sec_b, Ab)
         target.update({
             'Tb': Tb,
             'cb': cb,
-            'chi_b': chi_b,
         })
+        if prebuilt_triplet is not None:
+            target['prebuilt_triplet'] = prebuilt_triplet
         return target
 
     def _compute_stage_boundary_characteristic_velocity(self, ctx, chi_b):

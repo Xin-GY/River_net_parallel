@@ -125,6 +125,9 @@ cdef class CrossSectionTableCython:
     cdef public object _width_a_wet
     cdef object _chi_area_axis
     cdef object _chi_axis
+    cdef object _stage_width_l
+    cdef object _stage_depth_l
+    cdef object _stage_general_chi_l
 
     cdef double[:] _depth_axis_mv
     cdef double[:] _area_d_mv
@@ -142,6 +145,9 @@ cdef class CrossSectionTableCython:
     cdef double[:] _width_a_wet_mv
     cdef double[:] _chi_area_axis_mv
     cdef double[:] _chi_axis_mv
+    cdef double[:] _stage_width_l_mv
+    cdef double[:] _stage_depth_l_mv
+    cdef double[:] _stage_general_chi_l_mv
 
     cdef double _bed_level
     cdef double _top_level
@@ -156,6 +162,10 @@ cdef class CrossSectionTableCython:
     cdef double _chi_w0
     cdef double _chi_max
     cdef double _chi_kmax
+    cdef bint _stage_target_cache_ready
+    cdef double _stage_target_cache_g
+    cdef double _stage_target_cache_tinyA
+    cdef double _stage_target_cache_tinyT
 
     def __init__(self, depths, levels, areas, widths, wetted_perimeters, hydraulic_radii, presses, DEBs):
         cdef cnp.ndarray[cnp.float64_t, ndim=1] depths_arr
@@ -216,6 +226,9 @@ cdef class CrossSectionTableCython:
         self._width_a_wet_mv = self._width_a_wet
         self._chi_area_axis = None
         self._chi_axis = None
+        self._stage_width_l = None
+        self._stage_depth_l = None
+        self._stage_general_chi_l = None
         self._chi_cache_ready = False
         self._chi_cache_g = -1.0
         self._chi_cache_tinyA = -1.0
@@ -225,6 +238,13 @@ cdef class CrossSectionTableCython:
         self._chi_w0 = 0.0
         self._chi_max = 0.0
         self._chi_kmax = 0.0
+        self._stage_width_l_mv = self._area_l_mv
+        self._stage_depth_l_mv = self._area_l_mv
+        self._stage_general_chi_l_mv = self._area_l_mv
+        self._stage_target_cache_ready = False
+        self._stage_target_cache_g = -1.0
+        self._stage_target_cache_tinyA = -1.0
+        self._stage_target_cache_tinyT = -1.0
 
         self._bed_level = float(self._level_axis_mv[0]) if self._level_axis_mv.shape[0] else 0.0
         self._top_level = float(self._level_axis_mv[self._level_axis_mv.shape[0] - 1]) if self._level_axis_mv.shape[0] else 0.0
@@ -396,6 +416,64 @@ cdef class CrossSectionTableCython:
         self._chi_max = float(self._chi_axis_mv[self._chi_axis_mv.shape[0] - 1])
         self._chi_kmax = float(integrand[n - 1])
 
+    cdef void _ensure_stage_target_cache(self, double g, double tinyA, double tinyT):
+        cdef cnp.ndarray width_axis
+        cdef cnp.ndarray depth_axis
+        cdef cnp.ndarray general_chi_axis
+        cdef Py_ssize_t i, n
+        cdef double area
+        cdef double width
+        cdef double depth
+
+        if (
+            self._stage_target_cache_ready
+            and self._stage_target_cache_g == g
+            and self._stage_target_cache_tinyA == tinyA
+            and self._stage_target_cache_tinyT == tinyT
+        ):
+            return
+
+        n = self._level_axis_mv.shape[0]
+        if n == 0:
+            self._stage_target_cache_ready = False
+            self._stage_width_l = None
+            self._stage_depth_l = None
+            self._stage_general_chi_l = None
+            return
+
+        width_axis = np.empty(n, dtype=np.float64)
+        depth_axis = np.empty(n, dtype=np.float64)
+        general_chi_axis = np.empty(n, dtype=np.float64)
+
+        self._ensure_general_chi_cache(g, tinyA, tinyT)
+        for i in range(n):
+            area = float(self._area_l_mv[i])
+            if area <= 0.0:
+                width_axis[i] = 0.0
+                depth_axis[i] = 0.0
+                general_chi_axis[i] = 0.0
+                continue
+            width = float(self.get_width_by_area(area))
+            if width < tinyT:
+                width = tinyT
+            depth = float(self.get_depth_by_area(area))
+            if depth < 0.0:
+                depth = 0.0
+            width_axis[i] = width
+            depth_axis[i] = depth
+            general_chi_axis[i] = self.get_general_chi_by_area(area, g, tinyA=tinyA, tinyT=tinyT)
+
+        self._stage_width_l = np.ascontiguousarray(width_axis, dtype=np.float64)
+        self._stage_depth_l = np.ascontiguousarray(depth_axis, dtype=np.float64)
+        self._stage_general_chi_l = np.ascontiguousarray(general_chi_axis, dtype=np.float64)
+        self._stage_width_l_mv = self._stage_width_l
+        self._stage_depth_l_mv = self._stage_depth_l
+        self._stage_general_chi_l_mv = self._stage_general_chi_l
+        self._stage_target_cache_ready = True
+        self._stage_target_cache_g = g
+        self._stage_target_cache_tinyA = tinyA
+        self._stage_target_cache_tinyT = tinyT
+
     cpdef double get_general_chi_by_area(self, double area, double g, double tinyA=1e-12, double tinyT=1e-08):
         cdef double A
         cdef double width
@@ -411,6 +489,9 @@ cdef class CrossSectionTableCython:
         if A >= self._chi_Amax:
             return self._chi_max + self._chi_kmax * (A - self._chi_Amax)
         return _interp_sorted(A, self._chi_area_axis_mv, self._chi_axis_mv)
+
+    cpdef ensure_stage_target_bundle_cache(self, double g, double tinyA=1e-12, double tinyT=1e-08):
+        self._ensure_stage_target_cache(g, tinyA, tinyT)
 
     cpdef tuple get_char_triplet_by_area(self, double area, double g, double tinyA=1e-12, double tinyT=1e-08):
         cdef double A
@@ -430,6 +511,23 @@ cdef class CrossSectionTableCython:
         general_chi = self.get_general_chi_by_area(A, g, tinyA=tinyA, tinyT=tinyT)
         depth_ref_chi = 2.0 * sqrt(g * depth)
         return (width_chi, general_chi, depth_ref_chi)
+
+    cpdef tuple get_stage_target_bundle_by_level(self, double level, double g, double tinyA=1e-12, double tinyT=1e-08):
+        cdef double area
+        cdef double width
+        cdef double general_chi
+        cdef double depth
+
+        self._ensure_stage_target_cache(g, tinyA, tinyT)
+        area = _interp_sorted(level, self._level_axis_mv, self._area_l_mv)
+        if area <= 0.0:
+            return (0.0, 0.0, 0.0, 0.0)
+        width = _interp_sorted(level, self._level_axis_mv, self._stage_width_l_mv)
+        if width < tinyT:
+            width = tinyT
+        general_chi = _interp_sorted(level, self._level_axis_mv, self._stage_general_chi_l_mv)
+        depth = _interp_sorted(level, self._level_axis_mv, self._stage_depth_l_mv)
+        return (area, width, general_chi, depth)
 
     cpdef double get_bed_level(self):
         return self._bed_level
@@ -663,6 +761,7 @@ cpdef object compute_stage_boundary_mainline_fast(
     cdef double inner_general
     cdef double target_width
     cdef double target_general
+    cdef tuple target_bundle
     cdef double second_width = 0.0
     cdef double second_general = 0.0
     cdef double ub_width
@@ -682,10 +781,11 @@ cpdef object compute_stage_boundary_mainline_fast(
     if fabs(ui) >= ci:
         return None
 
-    Ab = float(target_tbl.get_area_by_level(level))
+    target_bundle = target_tbl.get_stage_target_bundle_by_level(level, g, tinyA=tinyA, tinyT=tinyT)
+    Ab = float(target_bundle[0])
     if Ab <= 0.0:
         return None
-    Tb = float(target_tbl.get_width_by_area(Ab))
+    Tb = float(target_bundle[1])
     if Tb < tinyT:
         Tb = tinyT
 
@@ -703,9 +803,8 @@ cpdef object compute_stage_boundary_mainline_fast(
     triplet = inner_tbl.get_char_triplet_by_area(Ai, g, tinyA=tinyA, tinyT=tinyT)
     inner_width = float(triplet[0])
     inner_general = float(triplet[1])
-    triplet = target_tbl.get_char_triplet_by_area(Ab, g, tinyA=tinyA, tinyT=tinyT)
-    target_width = float(triplet[0])
-    target_general = float(triplet[1])
+    target_width = 2.0 * sqrt(g * Ab / Tb)
+    target_general = float(target_bundle[2])
 
     if use_o2:
         if second_tbl is None:
