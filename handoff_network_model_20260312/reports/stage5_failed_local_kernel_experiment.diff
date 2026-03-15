@@ -1,0 +1,109 @@
+diff --git a/handoff_network_model_20260312/river_for_net.py b/handoff_network_model_20260312/river_for_net.py
+index 9683e69..40f96d8 100644
+--- a/handoff_network_model_20260312/river_for_net.py
++++ b/handoff_network_model_20260312/river_for_net.py
+@@ -837,6 +837,10 @@ class River(Process):
+         self._section_name_to_id = {}
+         self._section_table_refs_by_id = []
+         self._section_id_by_cell = np.zeros(self.cell_num + 2, dtype=np.int32)
++        self._section_s_limits_by_id = np.zeros(0, dtype=float)
++        self._section_bed_levels_by_id = np.zeros(0, dtype=float)
++        self._cell_s_limits = np.zeros(self.cell_num + 2, dtype=float)
++        self._cell_bed_levels = np.zeros(self.cell_num + 2, dtype=float)
+         self._cell_section_tables = ()
+         self._general_hr_left_tables = ()
+         self._general_hr_right_tables = ()
+@@ -908,10 +912,32 @@ class River(Process):
+             self.cross_section_table.tables.get(name)
+             for name in section_names
+         ]
++        self._section_s_limits_by_id = np.asarray(
++            [self._get_section_s_limit(name) for name in section_names],
++            dtype=float,
++        )
++        self._section_bed_levels_by_id = np.asarray(
++            [
++                float(tbl.get_bed_level()) if tbl is not None else self._get_section_table_bed_level(name)
++                for name, tbl in zip(section_names, self._section_table_refs_by_id)
++            ],
++            dtype=float,
++        )
+         if len(self._section_id_by_cell) != len(self.cell_sections):
+             self._section_id_by_cell = np.zeros(len(self.cell_sections), dtype=np.int32)
++        if len(self._cell_s_limits) != len(self.cell_sections):
++            self._cell_s_limits = np.zeros(len(self.cell_sections), dtype=float)
++        if len(self._cell_bed_levels) != len(self.cell_sections):
++            self._cell_bed_levels = np.zeros(len(self.cell_sections), dtype=float)
+         for idx, name in enumerate(self.cell_sections):
+-            self._section_id_by_cell[idx] = int(self._section_name_to_id.get(name, -1))
++            sec_id = int(self._section_name_to_id.get(name, -1))
++            self._section_id_by_cell[idx] = sec_id
++            if sec_id >= 0:
++                self._cell_s_limits[idx] = float(self._section_s_limits_by_id[sec_id])
++                self._cell_bed_levels[idx] = float(self._section_bed_levels_by_id[sec_id])
++            else:
++                self._cell_s_limits[idx] = float(self._get_section_s_limit(name))
++                self._cell_bed_levels[idx] = float(self._get_section_table_bed_level(name))
+         self._cell_section_tables = tuple(
+             self.cross_section_table.tables.get(name)
+             for name in self.cell_sections
+@@ -994,6 +1020,8 @@ class River(Process):
+             return float(np.min(ys))
+ 
+     def _get_cell_s_limit(self, idx):
++        if 0 <= idx < len(self._cell_s_limits):
++            return float(self._cell_s_limits[idx])
+         return self._get_section_s_limit(self.cell_sections[idx])
+ 
+     def _get_face_s_limit(self, i):
+@@ -1077,6 +1105,7 @@ class River(Process):
+         if self.FRTIMP:
+             for i in range(1, self.cell_num + 1):
+                 tbl = self._get_cell_table_ref(i)
++                s_limit = self._get_cell_s_limit(i)
+                 prev_s = float(self.S[i])
+                 prev_depth = float(self.water_depth[i])
+                 depth_i = tbl.get_depth_by_area(max(self.S[i], 0.0))
+@@ -1105,9 +1134,10 @@ class River(Process):
+         elif self.friction_model == 'chezy' and self.chezy_friction_c > 0.0:
+             c2 = self.chezy_friction_c * self.chezy_friction_c
+             for i in range(1, self.cell_num + 1):
+-                if self.S[i] > self._get_cell_s_limit(i):
++                s_limit = self._get_cell_s_limit(i)
++                if self.S[i] > s_limit:
+                     tbl = self._get_cell_table_ref(i)
+-                    area_i = max(float(self.S[i]), self._get_cell_s_limit(i))
++                    area_i = max(float(self.S[i]), s_limit)
+                     radius_i = tbl.get_hydraulic_radius_by_area(area_i)
+                     radius_i = max(float(radius_i), self.water_depth_limit)
+                     coef = self.DT * self.g * np.abs(self.Q[i]) / (c2 * area_i * radius_i + self.EPSILON)
+@@ -1133,7 +1163,8 @@ class River(Process):
+         for i in range(1, self.cell_num + 1):
+             prev_s = float(self.S[i])
+             prev_depth = float(self.water_depth[i])
+-            depth_i = self.cross_section_table.get_depth_by_area(self.cell_sections[i], max(self.S[i], 0.0))
++            tbl = self._get_cell_table_ref(i)
++            depth_i = tbl.get_depth_by_area(max(self.S[i], 0.0))
+             if self._is_cell_dry(i, area=self.S[i], depth=depth_i):
+                 self._apply_conservative_dry_guard(i, prev_s=prev_s, prev_depth=prev_depth)
+ 
+@@ -3408,7 +3439,7 @@ class River(Process):
+         # State-refresh owner: derive depth/level/U/C/Fr and final dry flags from S/Q.
+         for i in range(0, self.cell_num + 2):
+             self._refresh_cell_state(i)
+-            self.QIN[i] = 0
++        self.QIN[:self.cell_num + 2] = 0.0
+ 
+     def Update_boundry_condition(self, implic=False):
+         if not implic:
+@@ -3426,7 +3457,9 @@ class River(Process):
+         """State-refresh owner for a single cell after S/Q have been settled."""
+         sec = self.cell_sections[idx]
+         tbl = self._get_cell_table_ref(idx)
+-        section_bed = float(tbl.get_bed_level()) if tbl is not None else self._get_section_table_bed_level(sec)
++        section_bed = float(self._cell_bed_levels[idx]) if 0 <= idx < len(self._cell_bed_levels) else (
++            float(tbl.get_bed_level()) if tbl is not None else self._get_section_table_bed_level(sec)
++        )
+         prev_s = float(self.S[idx])
+         prev_depth = float(self.water_depth[idx])
+         S = float(max(self.S[idx], 0.0))

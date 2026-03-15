@@ -97,3 +97,31 @@
   - there is no evidence that the current default exact path is carrying residual experimental overhead in the stage-4 target functions
   - the remaining exact work should move to new local-kernel optimization, not cleanup of prior node-solve experiments
 - Continue: yes
+
+## Stage 5
+
+- Tried an exact-only local-kernel cleanup focused on the river body hot path:
+  - precomputed per-cell `s_limit` / `bed_level` caches
+  - one-shot `QIN` zeroing in `Update_cell_proprity2()`
+  - a few section-name/table lookups replaced with prebound refs in hot loops
+- Protected the failed experiment as `reports/stage5_failed_local_kernel_experiment.diff` before reverting it from the default exact path.
+- Exact validation:
+  - 10-minute exact strict compare: passed
+  - 40h exact strict compare: passed
+- Measured 40h exact result for the experiment:
+  - wall: `262.34158 s`
+  - model/evolve: `254.96488738059998 s`
+  - step_count: `29969`
+- Compared with the previous clean exact rerun in `reports/benchmark_matrix.md`:
+  - wall improved from `268.230295 s` to `262.34158 s`
+  - model/evolve improved from `260.7422785758972 s` to `254.96488738059998 s`
+- But the experiment still does not satisfy exact acceptance:
+  - it remains far slower than the accepted exact baseline (`147.10 s` wall / `139.86 s` evolve)
+  - therefore it cannot be committed as a default exact change
+- Local-kernel before/after profiling was saved to:
+  - `reports/local_kernel_profile_before_after.md`
+  - `reports/local_kernel_profile_before_after.json`
+- Conclusion:
+  - exact local cleanup produced only a modest gain versus the clean rerun and does not close the gap to the accepted exact baseline
+  - the code experiment was reverted from the default exact path; only the reports/tooling remain
+- Continue: yes

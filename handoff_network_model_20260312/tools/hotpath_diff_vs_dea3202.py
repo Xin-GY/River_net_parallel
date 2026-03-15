@@ -273,7 +273,11 @@ def build_rows(current_payload, ref_payload, names):
     return rows
 
 
-def write_compare_report(par_current, par_ref, ser_current, ser_ref, report_md: Path, report_json: Path):
+def _default_title_from_prefix(prefix: str):
+    return prefix.replace("_", " ").title()
+
+
+def write_compare_report(par_current, par_ref, ser_current, ser_ref, report_md: Path, report_json: Path, title: str):
     code_summary = build_code_diff_summary()
     boundary_rows = build_rows(par_current, par_ref, ["boundary_updater"])
     kernel_rows = build_rows(
@@ -331,7 +335,7 @@ def write_compare_report(par_current, par_ref, ser_current, ser_ref, report_md: 
     report_json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     lines = [
-        "# Hotpath Diff vs dea3202",
+        f"# {title}",
         "",
         "## Run Summary",
         "",
@@ -368,13 +372,17 @@ def write_compare_report(par_current, par_ref, ser_current, ser_ref, report_md: 
 def compare_mode(args):
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
-    par_current = run_target("current_exact", EXACT_WORKTREE, args.sim_end_time, "parallel")
-    par_reference = run_target("dea3202_ref", REF_WORKTREE, args.sim_end_time, "parallel")
-    ser_current = run_target("current_exact", EXACT_WORKTREE, args.sim_end_time, "serial")
-    ser_reference = run_target("dea3202_ref", REF_WORKTREE, args.sim_end_time, "serial")
-    report_md = REPORT_ROOT / "hotpath_diff_vs_dea3202.md"
-    report_json = REPORT_ROOT / "hotpath_diff_vs_dea3202.json"
-    write_compare_report(par_current, par_reference, ser_current, ser_reference, report_md, report_json)
+    current_root = Path(args.current_root).resolve()
+    reference_root = Path(args.reference_root).resolve()
+    report_prefix = args.report_prefix
+    report_title = args.report_title or _default_title_from_prefix(report_prefix)
+    par_current = run_target("current_exact", current_root, args.sim_end_time, "parallel")
+    par_reference = run_target("dea3202_ref", reference_root, args.sim_end_time, "parallel")
+    ser_current = run_target("current_exact", current_root, args.sim_end_time, "serial")
+    ser_reference = run_target("dea3202_ref", reference_root, args.sim_end_time, "serial")
+    report_md = REPORT_ROOT / f"{report_prefix}.md"
+    report_json = REPORT_ROOT / f"{report_prefix}.json"
+    write_compare_report(par_current, par_reference, ser_current, ser_reference, report_md, report_json, report_title)
     print(str(report_md))
 
 
@@ -391,6 +399,10 @@ def main():
 
     p_compare = sub.add_parser("compare")
     p_compare.add_argument("--sim-end-time", default="2024-01-01 00:10:00")
+    p_compare.add_argument("--current-root", default=str(EXACT_WORKTREE))
+    p_compare.add_argument("--reference-root", default=str(REF_WORKTREE))
+    p_compare.add_argument("--report-prefix", default="hotpath_diff_vs_dea3202")
+    p_compare.add_argument("--report-title", default=None)
 
     args = parser.parse_args()
     if args.cmd == "run-once":

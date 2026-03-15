@@ -1,0 +1,250 @@
+{
+  "parallel_current": {
+    "label": "current_exact",
+    "mode": "parallel",
+    "project_root": "/tmp/overnight_exact_baseline_clean/handoff_network_model_20260312",
+    "wall_time_s": 4.9345409870147705,
+    "model_time_s": 2.08,
+    "step_count": 181,
+    "process_files": 1,
+    "metrics": {
+      "boundary_updater": {
+        "calls": 181,
+        "time_s": 1.4172446510056034,
+        "per_call_ms": 7.830080944782339
+      },
+      "Caculate_face_U_C": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      },
+      "Caculate_Roe_matrix": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      },
+      "Caculate_Roe_Flux_2": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      },
+      "Assemble_Flux_2": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      },
+      "Update_cell_proprity2": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      }
+    },
+    "stdout_log": "/tmp/overnight_exact_baseline_clean/handoff_network_model_20260312/reports/hotpath_runs/current_exact_parallel/stdout.log"
+  },
+  "parallel_reference": {
+    "label": "dea3202_ref",
+    "mode": "parallel",
+    "project_root": "/tmp/overnight_exact_stage5_ref/handoff_network_model_20260312",
+    "wall_time_s": 5.013783693313599,
+    "model_time_s": 2.1,
+    "step_count": 181,
+    "process_files": 1,
+    "metrics": {
+      "boundary_updater": {
+        "calls": 181,
+        "time_s": 1.4268550124252215,
+        "per_call_ms": 7.883176864227743
+      },
+      "Caculate_face_U_C": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      },
+      "Caculate_Roe_matrix": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      },
+      "Caculate_Roe_Flux_2": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      },
+      "Assemble_Flux_2": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      },
+      "Update_cell_proprity2": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      }
+    },
+    "stdout_log": "/tmp/overnight_exact_baseline_clean/handoff_network_model_20260312/reports/hotpath_runs/dea3202_ref_parallel/stdout.log"
+  },
+  "serial_current": {
+    "label": "current_exact",
+    "mode": "serial",
+    "project_root": "/tmp/overnight_exact_baseline_clean/handoff_network_model_20260312",
+    "wall_time_s": 7.76419472694397,
+    "model_time_s": 4.94,
+    "step_count": 181,
+    "process_files": 1,
+    "metrics": {
+      "boundary_updater": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      },
+      "Caculate_face_U_C": {
+        "calls": 2534,
+        "time_s": 0.07164088665740564,
+        "per_call_ms": 0.028271857402291097
+      },
+      "Caculate_Roe_matrix": {
+        "calls": 2534,
+        "time_s": 0.12941063527250662,
+        "per_call_ms": 0.05106970610596157
+      },
+      "Caculate_Roe_Flux_2": {
+        "calls": 2534,
+        "time_s": 0.8153472740086727,
+        "per_call_ms": 0.32176293370507997
+      },
+      "Assemble_Flux_2": {
+        "calls": 2534,
+        "time_s": 0.4199207314522937,
+        "per_call_ms": 0.16571457436949238
+      },
+      "Update_cell_proprity2": {
+        "calls": 2534,
+        "time_s": 0.5376214134739712,
+        "per_call_ms": 0.21216314659588445
+      }
+    },
+    "stdout_log": "/tmp/overnight_exact_baseline_clean/handoff_network_model_20260312/reports/hotpath_runs/current_exact_serial/stdout.log"
+  },
+  "serial_reference": {
+    "label": "dea3202_ref",
+    "mode": "serial",
+    "project_root": "/tmp/overnight_exact_stage5_ref/handoff_network_model_20260312",
+    "wall_time_s": 7.71610689163208,
+    "model_time_s": 4.9,
+    "step_count": 181,
+    "process_files": 1,
+    "metrics": {
+      "boundary_updater": {
+        "calls": 0,
+        "time_s": 0.0,
+        "per_call_ms": 0.0
+      },
+      "Caculate_face_U_C": {
+        "calls": 2534,
+        "time_s": 0.07337869983166456,
+        "per_call_ms": 0.028957655813600852
+      },
+      "Caculate_Roe_matrix": {
+        "calls": 2534,
+        "time_s": 0.12792768311919644,
+        "per_call_ms": 0.0504844842617192
+      },
+      "Caculate_Roe_Flux_2": {
+        "calls": 2534,
+        "time_s": 0.8102249914081767,
+        "per_call_ms": 0.3197415120000697
+      },
+      "Assemble_Flux_2": {
+        "calls": 2534,
+        "time_s": 0.4118005864438601,
+        "per_call_ms": 0.1625100972548777
+      },
+      "Update_cell_proprity2": {
+        "calls": 2534,
+        "time_s": 0.530737234512344,
+        "per_call_ms": 0.20944642245948855
+      }
+    },
+    "stdout_log": "/tmp/overnight_exact_baseline_clean/handoff_network_model_20260312/reports/hotpath_runs/dea3202_ref_serial/stdout.log"
+  },
+  "boundary_rows": [
+    {
+      "function": "boundary_updater",
+      "current_calls": 181,
+      "ref_calls": 181,
+      "current_time_s": "1.417245",
+      "ref_time_s": "1.426855",
+      "delta_time_s": "-0.009610",
+      "current_per_call_ms": "7.830081",
+      "ref_per_call_ms": "7.883177",
+      "delta_per_call_ms": "-0.053096"
+    }
+  ],
+  "kernel_rows": [
+    {
+      "function": "Caculate_face_U_C",
+      "current_calls": 2534,
+      "ref_calls": 2534,
+      "current_time_s": "0.071641",
+      "ref_time_s": "0.073379",
+      "delta_time_s": "-0.001738",
+      "current_per_call_ms": "0.028272",
+      "ref_per_call_ms": "0.028958",
+      "delta_per_call_ms": "-0.000686"
+    },
+    {
+      "function": "Caculate_Roe_matrix",
+      "current_calls": 2534,
+      "ref_calls": 2534,
+      "current_time_s": "0.129411",
+      "ref_time_s": "0.127928",
+      "delta_time_s": "0.001483",
+      "current_per_call_ms": "0.051070",
+      "ref_per_call_ms": "0.050484",
+      "delta_per_call_ms": "0.000585"
+    },
+    {
+      "function": "Caculate_Roe_Flux_2",
+      "current_calls": 2534,
+      "ref_calls": 2534,
+      "current_time_s": "0.815347",
+      "ref_time_s": "0.810225",
+      "delta_time_s": "0.005122",
+      "current_per_call_ms": "0.321763",
+      "ref_per_call_ms": "0.319742",
+      "delta_per_call_ms": "0.002021"
+    },
+    {
+      "function": "Assemble_Flux_2",
+      "current_calls": 2534,
+      "ref_calls": 2534,
+      "current_time_s": "0.419921",
+      "ref_time_s": "0.411801",
+      "delta_time_s": "0.008120",
+      "current_per_call_ms": "0.165715",
+      "ref_per_call_ms": "0.162510",
+      "delta_per_call_ms": "0.003204"
+    },
+    {
+      "function": "Update_cell_proprity2",
+      "current_calls": 2534,
+      "ref_calls": 2534,
+      "current_time_s": "0.537621",
+      "ref_time_s": "0.530737",
+      "delta_time_s": "0.006884",
+      "current_per_call_ms": "0.212163",
+      "ref_per_call_ms": "0.209446",
+      "delta_per_call_ms": "0.002717"
+    }
+  ],
+  "code_diff_summary": {
+    "parallel_river_pool_identical": true,
+    "touched_targets": [],
+    "summary_lines": [
+      "Current exact branch adds run-summary and dt-limiter profiling scaffolding around evolve/CFL bookkeeping.",
+      "Current exact branch annotates river boundary roles during topology classification.",
+      "No diff hunk lands inside the listed hot river kernels or the default parallel boundary updater path.",
+      "parallel_river_pool.py is unchanged relative to dea3202."
+    ]
+  }
+}
