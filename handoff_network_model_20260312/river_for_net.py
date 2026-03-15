@@ -864,6 +864,12 @@ class River(Process):
         self.boundary_face_width_right = None
         self.boundary_face_level_left = None
         self.boundary_face_level_right = None
+        self.save_dt_profile = False
+        self.left_boundary_role = None
+        self.right_boundary_role = None
+        self.left_boundary_node = None
+        self.right_boundary_node = None
+        self.last_dt_limiter_info = None
         self.perf_timing_enabled = False
         self._perf_section_times = {
             'boundary_updater': _new_timing_bucket(),
@@ -3184,6 +3190,58 @@ class River(Process):
             # 时间推进按“本步实际使用时间步”累计，而非下一步预测时间步
             self.current_sim_time += used_dt
 
+    def _dt_limiter_boundary_context(self, idx):
+        if idx <= 1:
+            return 'left', self.left_boundary_role, self.left_boundary_node
+        if idx >= self.cell_num:
+            return 'right', self.right_boundary_role, self.right_boundary_node
+        return 'interior', None, None
+
+    def _classify_dt_limiter_category(self, idx, depth, area, friction_abs):
+        depth = float(depth)
+        area = float(area)
+        is_dry = bool(self._is_cell_dry(idx, area=area, depth=depth))
+        near_dry = bool(
+            (area <= max(self._get_cell_s_limit(idx) * 40.0, 1.0e-8))
+            or (depth <= max(self.water_depth_limit * 20.0, 5.0e-4))
+        )
+        side, boundary_role, boundary_node = self._dt_limiter_boundary_context(idx)
+        if is_dry or near_dry:
+            return {
+                'category': 'dry_wet',
+                'side': side,
+                'boundary_role': boundary_role,
+                'boundary_node': boundary_node,
+                'is_dry': is_dry,
+                'near_dry': near_dry,
+            }
+        if boundary_role == 'internal_node':
+            return {
+                'category': 'internal_node',
+                'side': side,
+                'boundary_role': boundary_role,
+                'boundary_node': boundary_node,
+                'is_dry': is_dry,
+                'near_dry': near_dry,
+            }
+        if friction_abs > 1.0e-10:
+            return {
+                'category': 'friction_source',
+                'side': side,
+                'boundary_role': boundary_role,
+                'boundary_node': boundary_node,
+                'is_dry': is_dry,
+                'near_dry': near_dry,
+            }
+        return {
+            'category': 'roe_wave',
+            'side': side,
+            'boundary_role': boundary_role,
+            'boundary_node': boundary_node,
+            'is_dry': is_dry,
+            'near_dry': near_dry,
+        }
+
     def Caculate_CFL_time(self):
         self._update_cfl_dt(used_dt=self.DT, advance_time=True)
 
@@ -3211,11 +3269,44 @@ class River(Process):
         CNODE = np.clip(CNODE, 0.001, None)
         COU = CNODE / L_slice
         self.DTI[i0:i1] = self.CFL / COU
-        dt_min = self.DTI[i0:i1].min()
+        local_dti = self.DTI[i0:i1]
+        limiter_offset = int(np.argmin(local_dti))
+        limiter_idx = i0 + limiter_offset
+        dt_min = local_dti[limiter_offset]
         self.DT = min(DT_limit, dt_min)
         if self.DT < self.min_dt:
             self.DT = self.min_dt
         DT = np.minimum(self.DT, self.DT_old * self.DT_increase_factor)
+        depth = float(self.water_depth[limiter_idx])
+        area = float(self.S[limiter_idx])
+        friction_abs = float(abs(self.friction_source[limiter_idx, 1])) if limiter_idx < self.friction_source.shape[0] else 0.0
+        cls = self._classify_dt_limiter_category(limiter_idx, depth, area, friction_abs)
+        growth_cap = float(self.DT_old * self.DT_increase_factor)
+        if float(DT) <= self.min_dt + 1.0e-12 and dt_min < self.min_dt:
+            cap_kind = 'min_dt'
+        elif float(DT) < dt_min - 1.0e-12 and float(DT) <= growth_cap + 1.0e-12:
+            cap_kind = 'growth_cap'
+        elif float(DT) >= self.Max_time_step - 1.0e-12 and dt_min >= self.Max_time_step:
+            cap_kind = 'max_time_step'
+        else:
+            cap_kind = 'cfl_raw'
+        self.last_dt_limiter_info = {
+            'river_name': getattr(self, 'name', self.model_name),
+            'cell_index': int(limiter_idx),
+            'raw_dt': float(dt_min),
+            'returned_dt': float(DT),
+            'dt_old': float(self.DT_old),
+            'growth_cap': growth_cap,
+            'max_time_step': float(self.Max_time_step),
+            'cap_kind': cap_kind,
+            'depth': depth,
+            'area': area,
+            'u': float(self.U[limiter_idx]),
+            'c': float(self.C[limiter_idx]),
+            'char_speed': float(CNODE[limiter_offset]),
+            'friction_abs': friction_abs,
+            **cls,
+        }
         return DT
 
     def _reset_output_snapshot_buffer(self):

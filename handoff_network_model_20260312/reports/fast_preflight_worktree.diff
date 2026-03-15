@@ -1,0 +1,476 @@
+diff --git a/handoff_network_model_20260312/Islam.py b/handoff_network_model_20260312/Islam.py
+index 3f9303b..865f02f 100644
+--- a/handoff_network_model_20260312/Islam.py
++++ b/handoff_network_model_20260312/Islam.py
+@@ -634,6 +634,27 @@ def configure_net_options(net_obj, export_png=False):
+     net_obj.fast_node_q_tol = float(
+         env.get('ISLAM_FAST_NODE_Q_TOL', str(net_obj.fast_node_q_tol if not fast_mode else 5.0e-3))
+     )
++    net_obj.fast_adaptive_enabled = env.get(
++        'ISLAM_FAST_ADAPTIVE',
++        '1' if fast_mode else '0',
++    ) == '1'
++    net_obj.fast_adaptive_require_internal_limiter = env.get(
++        'ISLAM_FAST_ADAPTIVE_REQUIRE_INTERNAL_LIMITER',
++        '1',
++    ) == '1'
++    net_obj.fast_adaptive_disable_near_dry = env.get(
++        'ISLAM_FAST_ADAPTIVE_DISABLE_NEAR_DRY',
++        '1',
++    ) == '1'
++    net_obj.fast_adaptive_min_streak = int(
++        env.get('ISLAM_FAST_ADAPTIVE_MIN_STREAK', str(net_obj.fast_adaptive_min_streak))
++    )
++    net_obj.fast_adaptive_max_level_delta = float(
++        env.get('ISLAM_FAST_ADAPTIVE_LEVEL_DELTA', str(net_obj.fast_adaptive_max_level_delta))
++    )
++    net_obj.fast_adaptive_residual_factor = float(
++        env.get('ISLAM_FAST_ADAPTIVE_RESIDUAL_FACTOR', str(net_obj.fast_adaptive_residual_factor))
++    )
+     net_obj.fast_cfl_scale = float(env.get('ISLAM_FAST_CFL_SCALE', str(net_obj.fast_cfl_scale)))
+     fast_dt_env = env.get('ISLAM_FAST_DT_INCREASE_FACTOR', '').strip()
+     net_obj.fast_dt_increase_factor = float(fast_dt_env) if fast_dt_env else None
+diff --git a/handoff_network_model_20260312/Rivernet.py b/handoff_network_model_20260312/Rivernet.py
+index 3e10853..a4e3a66 100644
+--- a/handoff_network_model_20260312/Rivernet.py
++++ b/handoff_network_model_20260312/Rivernet.py
+@@ -156,8 +156,21 @@ class Rivernet():
+         self.fast_node_q_tol = 5.0e-3
+         self.fast_cfl_scale = 1.0
+         self.fast_dt_increase_factor = None
++        self.fast_adaptive_enabled = False
++        self.fast_adaptive_require_internal_limiter = True
++        self.fast_adaptive_disable_near_dry = True
++        self.fast_adaptive_min_streak = 2
++        self.fast_adaptive_max_level_delta = 0.03
++        self.fast_adaptive_residual_factor = 2.0
++        self.fast_adaptive_last_decision = {}
++        self._fast_adaptive_step_enabled = False
++        self._fast_adaptive_state = {'last_node': None, 'streak': 0}
++        self.fast_adaptive_total_steps = 0
++        self.fast_adaptive_enabled_steps = 0
++        self.fast_adaptive_reason_counts = {}
+         self.save_internal_node_history = True
+         self.save_run_summary = False
++        self.last_global_dt_limiter = None
+         self._internal_node_solver_cache = {}
+         self._perf_sections = {}
+         self._perf_local_sections = {}
+@@ -394,9 +407,77 @@ class Rivernet():
+             and (not self.internal_node_use_face_flux_residual)
+         )
+ 
++    def _record_fast_adaptive_decision(self, enabled, reason, limiter_info=None, node_name=None):
++        self.fast_adaptive_total_steps += 1
++        if enabled:
++            self.fast_adaptive_enabled_steps += 1
++        self.fast_adaptive_reason_counts[reason] = int(self.fast_adaptive_reason_counts.get(reason, 0)) + 1
++        self.fast_adaptive_last_decision = {
++            'enabled': bool(enabled),
++            'reason': str(reason),
++            'limiter_info': dict(limiter_info or {}),
++            'node_name': node_name,
++        }
++        self._fast_adaptive_step_enabled = bool(enabled)
++
++    def _update_fast_mode_step_gate(self):
++        mode = str(getattr(self, 'fast_node_solver_mode', 'off')).strip().lower()
++        if not (bool(self.fast_mode_enabled) and mode in {'response_root', 'response_corrector'} and self._internal_response_solver_supported()):
++            self._fast_adaptive_step_enabled = False
++            return False
++        if not self.fast_adaptive_enabled:
++            self._fast_adaptive_step_enabled = True
++            return True
++        info = dict(self.last_global_dt_limiter or {})
++        node_name = info.get('boundary_node')
++        if self.fast_adaptive_require_internal_limiter and info.get('category') != 'internal_node':
++            self._record_fast_adaptive_decision(False, 'non_internal_limiter', limiter_info=info, node_name=node_name)
++            return False
++        if node_name not in set(getattr(self, 'internal_nodes', [])):
++            self._record_fast_adaptive_decision(False, 'missing_internal_node', limiter_info=info, node_name=node_name)
++            return False
++        state = self._fast_adaptive_state
++        if state.get('last_node') == node_name:
++            state['streak'] = int(state.get('streak', 0)) + 1
++        else:
++            state['last_node'] = node_name
++            state['streak'] = 1
++        if self.fast_adaptive_disable_near_dry and (info.get('near_dry') or info.get('is_dry')):
++            self._record_fast_adaptive_decision(False, 'near_dry_limiter', limiter_info=info, node_name=node_name)
++            return False
++        if int(state.get('streak', 0)) < int(self.fast_adaptive_min_streak):
++            self._record_fast_adaptive_decision(False, 'streak_too_short', limiter_info=info, node_name=node_name)
++            return False
++        cache = self._internal_node_solver_cache.get(node_name)
++        if not cache:
++            self._record_fast_adaptive_decision(False, 'missing_history', limiter_info=info, node_name=node_name)
++            return False
++        last_level = cache.get('last_level')
++        prev_level = cache.get('prev_level')
++        if last_level is None or prev_level is None or (not np.isfinite(last_level)) or (not np.isfinite(prev_level)):
++            self._record_fast_adaptive_decision(False, 'missing_level_history', limiter_info=info, node_name=node_name)
++            return False
++        if abs(float(last_level) - float(prev_level)) > float(self.fast_adaptive_max_level_delta):
++            self._record_fast_adaptive_decision(False, 'level_delta_too_large', limiter_info=info, node_name=node_name)
++            return False
++        last_residual = cache.get('last_residual')
++        residual_limit = float(max(getattr(self, 'fast_node_q_tol', 5.0e-3), self.JPWSPC_Q_limit)) * float(self.fast_adaptive_residual_factor)
++        if last_residual is None or (not np.isfinite(last_residual)):
++            self._record_fast_adaptive_decision(False, 'missing_residual_history', limiter_info=info, node_name=node_name)
++            return False
++        if abs(float(last_residual)) > residual_limit:
++            self._record_fast_adaptive_decision(False, 'residual_too_large', limiter_info=info, node_name=node_name)
++            return False
++        self._record_fast_adaptive_decision(True, 'stable_internal_limiter', limiter_info=info, node_name=node_name)
++        return True
++
+     def _fast_internal_solver_active(self):
+         mode = str(getattr(self, 'fast_node_solver_mode', 'off')).strip().lower()
+-        return bool(self.fast_mode_enabled) and mode in {'response_root', 'response_corrector'} and self._internal_response_solver_supported()
++        if not (bool(self.fast_mode_enabled) and mode in {'response_root', 'response_corrector'} and self._internal_response_solver_supported()):
++            return False
++        if not self.fast_adaptive_enabled:
++            return True
++        return bool(self._fast_adaptive_step_enabled)
+ 
+     def _internal_solver_iteration_limit(self):
+         if self._fast_internal_solver_active():
+@@ -571,6 +652,7 @@ class Rivernet():
+ 
+         # 兼容旧属性：external_nodes = external_in ∪ external_out
+         self.external_nodes = self.external_in_nodes + self.external_out_nodes
++        self._annotate_river_boundary_roles()
+ 
+         if self.verbos:
+             print('内部节点 (internal):', self.internal_nodes)
+@@ -579,6 +661,33 @@ class Rivernet():
+             if self.isolated_nodes:
+                 print('孤立节点 (degree=0):', self.isolated_nodes)
+ 
++    def _annotate_river_boundary_roles(self):
++        internal = set(getattr(self, 'internal_nodes', []))
++        external_in = set(getattr(self, 'external_in_nodes', []))
++        external_out = set(getattr(self, 'external_out_nodes', []))
++        for u, v, data in self._river_edges:
++            river = data['river']
++            if u in internal:
++                left_role = 'internal_node'
++            elif u in external_out:
++                left_role = 'external_out'
++            elif u in external_in:
++                left_role = 'external_in'
++            else:
++                left_role = 'other'
++            if v in internal:
++                right_role = 'internal_node'
++            elif v in external_in:
++                right_role = 'external_in'
++            elif v in external_out:
++                right_role = 'external_out'
++            else:
++                right_role = 'other'
++            river.left_boundary_role = left_role
++            river.right_boundary_role = right_role
++            river.left_boundary_node = u
++            river.right_boundary_node = v
++
+     # 分别遍历内部和外部节点
+     def node_flow_direction(self):
+         if not self.G.is_directed():
+@@ -894,6 +1003,11 @@ class Rivernet():
+             'fast_mode_enabled': bool(self.fast_mode_enabled),
+             'fast_mode_name': str(self.fast_mode_name),
+             'fast_node_solver_mode': str(self.fast_node_solver_mode),
++            'fast_adaptive_enabled': bool(self.fast_adaptive_enabled),
++            'fast_adaptive_enabled_steps': int(self.fast_adaptive_enabled_steps),
++            'fast_adaptive_total_steps': int(self.fast_adaptive_total_steps),
++            'fast_adaptive_reason_counts': self.fast_adaptive_reason_counts,
++            'fast_adaptive_last_decision': self.fast_adaptive_last_decision,
+             'current_sim_time': float(self.current_sim_time),
+             'total_sim_time': float(self.total_sim_time),
+             'step_count': int(self.step_count),
+@@ -1177,15 +1291,21 @@ class Rivernet():
+     def Caculate_global_CFL(self):
+         dt_list = []
+         dt_items = []
++        limiter_infos = []
+ 
+         # 计算每条河道的CFL时间步长
+         for _, _, data in self._river_edges:
+-            dti = data['river'].Caculate_CFL_time_for_river_net()
++            river = data['river']
++            dti = river.Caculate_CFL_time_for_river_net()
+             dt_list.append(dti)
+             dt_items.append((data.get('name'), dti))
++            limiter_infos.append(getattr(river, 'last_dt_limiter_info', None))
+ 
+         self.cfl_allowed_dt = min(dt_list) # 计算全局最小时间步长
+         self._record_cfl_history(dt_items)
++        if dt_list:
++            idx = int(np.argmin(np.asarray(dt_list, dtype=float)))
++            self.last_global_dt_limiter = limiter_infos[idx] if idx < len(limiter_infos) else None
+ 
+         if self.verbos:
+             print(f'全局最小CFL时间步长: {self.cfl_allowed_dt:.4f} 秒')
+@@ -1944,6 +2064,7 @@ class Rivernet():
+         if self.verbos: print('\n更新内部边界条件...')
+         if not self.internal_nodes:
+             return
++        self._update_fast_mode_step_gate()
+         if self._fast_internal_solver_active():
+             node_levels = self._initial_internal_node_levels(extrapolate=True)
+             self._solve_internal_nodes_fast_serial(node_levels)
+@@ -3493,6 +3614,7 @@ class Rivernet():
+         return snapshots
+ 
+     def _update_boundary_conditions_parallel(self, pool):
++        self._update_fast_mode_step_gate()
+         if self._fast_internal_solver_active():
+             external_ops = self._build_parallel_external_boundary_ops()
+             if not self.internal_nodes:
+diff --git a/handoff_network_model_20260312/river_for_net.py b/handoff_network_model_20260312/river_for_net.py
+index a5b505b..bd8826b 100644
+--- a/handoff_network_model_20260312/river_for_net.py
++++ b/handoff_network_model_20260312/river_for_net.py
+@@ -864,6 +864,11 @@ class River(Process):
+         self.boundary_face_width_right = None
+         self.boundary_face_level_left = None
+         self.boundary_face_level_right = None
++        self.left_boundary_role = None
++        self.right_boundary_role = None
++        self.left_boundary_node = None
++        self.right_boundary_node = None
++        self.last_dt_limiter_info = None
+         self.perf_timing_enabled = False
+         self._perf_section_times = {
+             'boundary_updater': _new_timing_bucket(),
+@@ -3184,6 +3189,58 @@ class River(Process):
+             # 时间推进按“本步实际使用时间步”累计，而非下一步预测时间步
+             self.current_sim_time += used_dt
+ 
++    def _dt_limiter_boundary_context(self, idx):
++        if idx <= 1:
++            return 'left', self.left_boundary_role, self.left_boundary_node
++        if idx >= self.cell_num:
++            return 'right', self.right_boundary_role, self.right_boundary_node
++        return 'interior', None, None
++
++    def _classify_dt_limiter_category(self, idx, depth, area, friction_abs):
++        depth = float(depth)
++        area = float(area)
++        is_dry = bool(self._is_cell_dry(idx, area=area, depth=depth))
++        near_dry = bool(
++            (area <= max(self._get_cell_s_limit(idx) * 40.0, 1.0e-8))
++            or (depth <= max(self.water_depth_limit * 20.0, 5.0e-4))
++        )
++        side, boundary_role, boundary_node = self._dt_limiter_boundary_context(idx)
++        if is_dry or near_dry:
++            return {
++                'category': 'dry_wet',
++                'side': side,
++                'boundary_role': boundary_role,
++                'boundary_node': boundary_node,
++                'is_dry': is_dry,
++                'near_dry': near_dry,
++            }
++        if boundary_role == 'internal_node':
++            return {
++                'category': 'internal_node',
++                'side': side,
++                'boundary_role': boundary_role,
++                'boundary_node': boundary_node,
++                'is_dry': is_dry,
++                'near_dry': near_dry,
++            }
++        if friction_abs > 1.0e-10:
++            return {
++                'category': 'friction_source',
++                'side': side,
++                'boundary_role': boundary_role,
++                'boundary_node': boundary_node,
++                'is_dry': is_dry,
++                'near_dry': near_dry,
++            }
++        return {
++            'category': 'roe_wave',
++            'side': side,
++            'boundary_role': boundary_role,
++            'boundary_node': boundary_node,
++            'is_dry': is_dry,
++            'near_dry': near_dry,
++        }
++
+     def Caculate_CFL_time(self):
+         self._update_cfl_dt(used_dt=self.DT, advance_time=True)
+ 
+@@ -3211,11 +3268,44 @@ class River(Process):
+         CNODE = np.clip(CNODE, 0.001, None)
+         COU = CNODE / L_slice
+         self.DTI[i0:i1] = self.CFL / COU
+-        dt_min = self.DTI[i0:i1].min()
++        local_dti = self.DTI[i0:i1]
++        limiter_offset = int(np.argmin(local_dti))
++        limiter_idx = i0 + limiter_offset
++        dt_min = local_dti[limiter_offset]
+         self.DT = min(DT_limit, dt_min)
+         if self.DT < self.min_dt:
+             self.DT = self.min_dt
+         DT = np.minimum(self.DT, self.DT_old * self.DT_increase_factor)
++        depth = float(self.water_depth[limiter_idx])
++        area = float(self.S[limiter_idx])
++        friction_abs = float(abs(self.friction_source[limiter_idx, 1])) if limiter_idx < self.friction_source.shape[0] else 0.0
++        cls = self._classify_dt_limiter_category(limiter_idx, depth, area, friction_abs)
++        growth_cap = float(self.DT_old * self.DT_increase_factor)
++        if float(DT) <= self.min_dt + 1.0e-12 and dt_min < self.min_dt:
++            cap_kind = 'min_dt'
++        elif float(DT) < dt_min - 1.0e-12 and float(DT) <= growth_cap + 1.0e-12:
++            cap_kind = 'growth_cap'
++        elif float(DT) >= self.Max_time_step - 1.0e-12 and dt_min >= self.Max_time_step:
++            cap_kind = 'max_time_step'
++        else:
++            cap_kind = 'cfl_raw'
++        self.last_dt_limiter_info = {
++            'river_name': getattr(self, 'name', self.model_name),
++            'cell_index': int(limiter_idx),
++            'raw_dt': float(dt_min),
++            'returned_dt': float(DT),
++            'dt_old': float(self.DT_old),
++            'growth_cap': growth_cap,
++            'max_time_step': float(self.Max_time_step),
++            'cap_kind': cap_kind,
++            'depth': depth,
++            'area': area,
++            'u': float(self.U[limiter_idx]),
++            'c': float(self.C[limiter_idx]),
++            'char_speed': float(CNODE[limiter_offset]),
++            'friction_abs': friction_abs,
++            **cls,
++        }
+         return DT
+ 
+     def _reset_output_snapshot_buffer(self):
+diff --git a/handoff_network_model_20260312/tools/evaluate_fast_mode.py b/handoff_network_model_20260312/tools/evaluate_fast_mode.py
+index a003bfd..a86c65a 100644
+--- a/handoff_network_model_20260312/tools/evaluate_fast_mode.py
++++ b/handoff_network_model_20260312/tools/evaluate_fast_mode.py
+@@ -66,6 +66,15 @@ def load_run_summary(result_dir):
+     return json.loads(path.read_text(encoding="utf-8"))
+ 
+ 
++def load_optional_summary(path):
++    if path is None:
++        return None
++    summary_path = Path(path)
++    if not summary_path.exists():
++        return None
++    return json.loads(summary_path.read_text(encoding="utf-8"))
++
++
+ def detect_flow_sign(ds):
+     q_blocks = [
+         np.asarray(ds["Q"].isel(space=0).to_numpy(), dtype=float),
+@@ -167,23 +176,37 @@ def compare_internal_node_history(baseline_dir, candidate_dir):
+             "available": False,
+             "reason": "no_common_numeric_columns",
+         }
+-    column_metrics = {
+-        col: numeric_metrics(base_df[col].to_numpy(), cand_df[col].to_numpy())
+-        for col in common_cols
+-    }
++    overlap_rows = int(min(len(base_df), len(cand_df)))
++    if overlap_rows <= 0:
++        return {
++            "available": False,
++            "reason": "empty_overlap",
++            "rows_baseline": int(len(base_df)),
++            "rows_candidate": int(len(cand_df)),
++        }
++    column_metrics = {}
++    for col in common_cols:
++        base_vals = base_df[col].to_numpy()[:overlap_rows]
++        cand_vals = cand_df[col].to_numpy()[:overlap_rows]
++        metrics = numeric_metrics(base_vals, cand_vals)
++        metrics["rows_compared"] = overlap_rows
++        metrics["rows_baseline"] = int(len(base_df))
++        metrics["rows_candidate"] = int(len(cand_df))
++        column_metrics[col] = metrics
+     return {
+         "available": True,
+         "rows_baseline": int(len(base_df)),
+         "rows_candidate": int(len(cand_df)),
++        "rows_compared": overlap_rows,
+         "max_abs": float(max(rec["max_abs"] for rec in column_metrics.values())),
+         "mean_abs": float(np.mean([rec["mean_abs"] for rec in column_metrics.values()])),
+         "columns": column_metrics,
+     }
+ 
+ 
+-def compare_volume(baseline_dir, candidate_dir):
+-    base = load_run_summary(baseline_dir)
+-    cand = load_run_summary(candidate_dir)
++def compare_volume(baseline_dir, candidate_dir, baseline_summary_override=None, candidate_summary_override=None):
++    base = baseline_summary_override if baseline_summary_override is not None else load_run_summary(baseline_dir)
++    cand = candidate_summary_override if candidate_summary_override is not None else load_run_summary(candidate_dir)
+     if base is None or cand is None:
+         return {
+             "available": False,
+@@ -204,6 +227,8 @@ def compare_volume(baseline_dir, candidate_dir):
+         }
+     return {
+         "available": True,
++        "baseline_summary_source": "override" if baseline_summary_override is not None else str(Path(baseline_dir) / "run_summary.json"),
++        "candidate_summary_source": "override" if candidate_summary_override is not None else str(Path(candidate_dir) / "run_summary.json"),
+         "baseline_network_relative_volume_change": float(base["network_relative_volume_change"]),
+         "candidate_network_relative_volume_change": float(cand["network_relative_volume_change"]),
+         "network_relative_volume_change_delta": float(
+@@ -266,18 +291,32 @@ def main():
+     parser.add_argument("--real-dir", default=str(ROOT / "result" / "Islam_real_data"))
+     parser.add_argument("--baseline-time-file", default=None)
+     parser.add_argument("--candidate-time-file", default=None)
++    parser.add_argument("--baseline-summary-proxy", default=None)
++    parser.add_argument("--candidate-summary-proxy", default=None)
++    parser.add_argument("--baseline-wall-s", type=float, default=None)
++    parser.add_argument("--candidate-wall-s", type=float, default=None)
++    parser.add_argument("--baseline-model-time-s", type=float, default=None)
++    parser.add_argument("--candidate-model-time-s", type=float, default=None)
+     parser.add_argument("--out-json", default=None)
+     parser.add_argument("--out-md", default=None)
+     args = parser.parse_args()
+ 
+     baseline_dir = Path(args.baseline_dir)
+     candidate_dir = Path(args.candidate_dir)
+-    baseline_summary = load_run_summary(baseline_dir)
+-    candidate_summary = load_run_summary(candidate_dir)
++    baseline_summary = load_optional_summary(args.baseline_summary_proxy) or load_run_summary(baseline_dir)
++    candidate_summary = load_optional_summary(args.candidate_summary_proxy) or load_run_summary(candidate_dir)
+     baseline_wall = parse_time_file(args.baseline_time_file)
+     candidate_wall = parse_time_file(args.candidate_time_file)
+-    baseline_model_time = None if baseline_summary is None else float(baseline_summary.get("calculation_time", math.nan))
+-    candidate_model_time = None if candidate_summary is None else float(candidate_summary.get("calculation_time", math.nan))
++    if baseline_wall is None and args.baseline_wall_s is not None:
++        baseline_wall = {"real": float(args.baseline_wall_s)}
++    if candidate_wall is None and args.candidate_wall_s is not None:
++        candidate_wall = {"real": float(args.candidate_wall_s)}
++    baseline_model_time = args.baseline_model_time_s
++    candidate_model_time = args.candidate_model_time_s
++    if baseline_model_time is None and baseline_summary is not None:
++        baseline_model_time = float(baseline_summary.get("calculation_time", math.nan))
++    if candidate_model_time is None and candidate_summary is not None:
++        candidate_model_time = float(candidate_summary.get("calculation_time", math.nan))
+ 
+     report = {
+         "baseline_dir": str(baseline_dir.resolve()),
+@@ -297,7 +336,12 @@ def main():
+         },
+         "nse": compare_nse(args.real_dir, baseline_dir, candidate_dir),
+         "control_points": compare_control_points(baseline_dir, candidate_dir),
+-        "volume": compare_volume(baseline_dir, candidate_dir),
++        "volume": compare_volume(
++            baseline_dir,
++            candidate_dir,
++            baseline_summary_override=baseline_summary,
++            candidate_summary_override=candidate_summary,
++        ),
+         "internal_node_history": compare_internal_node_history(baseline_dir, candidate_dir),
+     }
+ 

@@ -66,6 +66,15 @@ def load_run_summary(result_dir):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_optional_summary(path):
+    if path is None:
+        return None
+    summary_path = Path(path)
+    if not summary_path.exists():
+        return None
+    return json.loads(summary_path.read_text(encoding="utf-8"))
+
+
 def detect_flow_sign(ds):
     q_blocks = [
         np.asarray(ds["Q"].isel(space=0).to_numpy(), dtype=float),
@@ -167,23 +176,37 @@ def compare_internal_node_history(baseline_dir, candidate_dir):
             "available": False,
             "reason": "no_common_numeric_columns",
         }
-    column_metrics = {
-        col: numeric_metrics(base_df[col].to_numpy(), cand_df[col].to_numpy())
-        for col in common_cols
-    }
+    overlap_rows = int(min(len(base_df), len(cand_df)))
+    if overlap_rows <= 0:
+        return {
+            "available": False,
+            "reason": "empty_overlap",
+            "rows_baseline": int(len(base_df)),
+            "rows_candidate": int(len(cand_df)),
+        }
+    column_metrics = {}
+    for col in common_cols:
+        base_vals = base_df[col].to_numpy()[:overlap_rows]
+        cand_vals = cand_df[col].to_numpy()[:overlap_rows]
+        metrics = numeric_metrics(base_vals, cand_vals)
+        metrics["rows_compared"] = overlap_rows
+        metrics["rows_baseline"] = int(len(base_df))
+        metrics["rows_candidate"] = int(len(cand_df))
+        column_metrics[col] = metrics
     return {
         "available": True,
         "rows_baseline": int(len(base_df)),
         "rows_candidate": int(len(cand_df)),
+        "rows_compared": overlap_rows,
         "max_abs": float(max(rec["max_abs"] for rec in column_metrics.values())),
         "mean_abs": float(np.mean([rec["mean_abs"] for rec in column_metrics.values()])),
         "columns": column_metrics,
     }
 
 
-def compare_volume(baseline_dir, candidate_dir):
-    base = load_run_summary(baseline_dir)
-    cand = load_run_summary(candidate_dir)
+def compare_volume(baseline_dir, candidate_dir, baseline_summary_override=None, candidate_summary_override=None):
+    base = baseline_summary_override if baseline_summary_override is not None else load_run_summary(baseline_dir)
+    cand = candidate_summary_override if candidate_summary_override is not None else load_run_summary(candidate_dir)
     if base is None or cand is None:
         return {
             "available": False,
@@ -204,6 +227,8 @@ def compare_volume(baseline_dir, candidate_dir):
         }
     return {
         "available": True,
+        "baseline_summary_source": "override" if baseline_summary_override is not None else str(Path(baseline_dir) / "run_summary.json"),
+        "candidate_summary_source": "override" if candidate_summary_override is not None else str(Path(candidate_dir) / "run_summary.json"),
         "baseline_network_relative_volume_change": float(base["network_relative_volume_change"]),
         "candidate_network_relative_volume_change": float(cand["network_relative_volume_change"]),
         "network_relative_volume_change_delta": float(
@@ -266,18 +291,32 @@ def main():
     parser.add_argument("--real-dir", default=str(ROOT / "result" / "Islam_real_data"))
     parser.add_argument("--baseline-time-file", default=None)
     parser.add_argument("--candidate-time-file", default=None)
+    parser.add_argument("--baseline-summary-proxy", default=None)
+    parser.add_argument("--candidate-summary-proxy", default=None)
+    parser.add_argument("--baseline-wall-s", type=float, default=None)
+    parser.add_argument("--candidate-wall-s", type=float, default=None)
+    parser.add_argument("--baseline-model-time-s", type=float, default=None)
+    parser.add_argument("--candidate-model-time-s", type=float, default=None)
     parser.add_argument("--out-json", default=None)
     parser.add_argument("--out-md", default=None)
     args = parser.parse_args()
 
     baseline_dir = Path(args.baseline_dir)
     candidate_dir = Path(args.candidate_dir)
-    baseline_summary = load_run_summary(baseline_dir)
-    candidate_summary = load_run_summary(candidate_dir)
+    baseline_summary = load_optional_summary(args.baseline_summary_proxy) or load_run_summary(baseline_dir)
+    candidate_summary = load_optional_summary(args.candidate_summary_proxy) or load_run_summary(candidate_dir)
     baseline_wall = parse_time_file(args.baseline_time_file)
     candidate_wall = parse_time_file(args.candidate_time_file)
-    baseline_model_time = None if baseline_summary is None else float(baseline_summary.get("calculation_time", math.nan))
-    candidate_model_time = None if candidate_summary is None else float(candidate_summary.get("calculation_time", math.nan))
+    if baseline_wall is None and args.baseline_wall_s is not None:
+        baseline_wall = {"real": float(args.baseline_wall_s)}
+    if candidate_wall is None and args.candidate_wall_s is not None:
+        candidate_wall = {"real": float(args.candidate_wall_s)}
+    baseline_model_time = args.baseline_model_time_s
+    candidate_model_time = args.candidate_model_time_s
+    if baseline_model_time is None and baseline_summary is not None:
+        baseline_model_time = float(baseline_summary.get("calculation_time", math.nan))
+    if candidate_model_time is None and candidate_summary is not None:
+        candidate_model_time = float(candidate_summary.get("calculation_time", math.nan))
 
     report = {
         "baseline_dir": str(baseline_dir.resolve()),
@@ -297,7 +336,12 @@ def main():
         },
         "nse": compare_nse(args.real_dir, baseline_dir, candidate_dir),
         "control_points": compare_control_points(baseline_dir, candidate_dir),
-        "volume": compare_volume(baseline_dir, candidate_dir),
+        "volume": compare_volume(
+            baseline_dir,
+            candidate_dir,
+            baseline_summary_override=baseline_summary,
+            candidate_summary_override=candidate_summary,
+        ),
         "internal_node_history": compare_internal_node_history(baseline_dir, candidate_dir),
     }
 

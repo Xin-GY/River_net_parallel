@@ -156,8 +156,30 @@ class Rivernet():
         self.fast_node_q_tol = 5.0e-3
         self.fast_cfl_scale = 1.0
         self.fast_dt_increase_factor = None
+        self.fast_node_refresh_every = 1
+        self.fast_node_refresh_mode = 'off'
+        self.fast_node_refresh_warmup_steps = 2
+        self.fast_node_refresh_full_steps = 0
+        self.fast_node_refresh_skip_steps = 0
+        self._fast_last_full_node_refresh_step = 0
+        self._fast_last_node_refresh_decision = 'off'
+        self.fast_adaptive_enabled = False
+        self.fast_adaptive_require_internal_limiter = True
+        self.fast_adaptive_disable_near_dry = True
+        self.fast_adaptive_min_streak = 2
+        self.fast_adaptive_max_level_delta = 0.03
+        self.fast_adaptive_residual_factor = 2.0
+        self.fast_adaptive_last_decision = {}
+        self._fast_adaptive_step_enabled = False
+        self._fast_adaptive_state = {'last_node': None, 'streak': 0}
+        self.fast_adaptive_total_steps = 0
+        self.fast_adaptive_enabled_steps = 0
+        self.fast_adaptive_reason_counts = {}
         self.save_internal_node_history = True
         self.save_run_summary = False
+        self.save_dt_profile = False
+        self.dt_profile_records = []
+        self.last_global_dt_limiter = None
         self._internal_node_solver_cache = {}
         self._perf_sections = {}
         self._perf_local_sections = {}
@@ -394,9 +416,112 @@ class Rivernet():
             and (not self.internal_node_use_face_flux_residual)
         )
 
+    def _record_fast_adaptive_decision(self, enabled, reason, limiter_info=None, node_name=None):
+        self.fast_adaptive_total_steps += 1
+        if enabled:
+            self.fast_adaptive_enabled_steps += 1
+        self.fast_adaptive_reason_counts[reason] = int(self.fast_adaptive_reason_counts.get(reason, 0)) + 1
+        self.fast_adaptive_last_decision = {
+            'enabled': bool(enabled),
+            'reason': str(reason),
+            'limiter_info': dict(limiter_info or {}),
+            'node_name': node_name,
+        }
+        self._fast_adaptive_step_enabled = bool(enabled)
+
+    def _update_fast_mode_step_gate(self):
+        mode = str(getattr(self, 'fast_node_solver_mode', 'off')).strip().lower()
+        if not (bool(self.fast_mode_enabled) and mode in {'response_root', 'response_corrector'} and self._internal_response_solver_supported()):
+            self._fast_adaptive_step_enabled = False
+            return False
+        if not self.fast_adaptive_enabled:
+            self._fast_adaptive_step_enabled = True
+            return True
+        info = dict(self.last_global_dt_limiter or {})
+        node_name = info.get('boundary_node')
+        if self.fast_adaptive_require_internal_limiter and info.get('category') != 'internal_node':
+            self._record_fast_adaptive_decision(False, 'non_internal_limiter', limiter_info=info, node_name=node_name)
+            return False
+        if node_name not in set(getattr(self, 'internal_nodes', [])):
+            self._record_fast_adaptive_decision(False, 'missing_internal_node', limiter_info=info, node_name=node_name)
+            return False
+        state = self._fast_adaptive_state
+        if state.get('last_node') == node_name:
+            state['streak'] = int(state.get('streak', 0)) + 1
+        else:
+            state['last_node'] = node_name
+            state['streak'] = 1
+        if self.fast_adaptive_disable_near_dry and (info.get('near_dry') or info.get('is_dry')):
+            self._record_fast_adaptive_decision(False, 'near_dry_limiter', limiter_info=info, node_name=node_name)
+            return False
+        if int(state.get('streak', 0)) < int(self.fast_adaptive_min_streak):
+            self._record_fast_adaptive_decision(False, 'streak_too_short', limiter_info=info, node_name=node_name)
+            return False
+        cache = self._internal_node_solver_cache.get(node_name)
+        if not cache:
+            self._record_fast_adaptive_decision(False, 'missing_history', limiter_info=info, node_name=node_name)
+            return False
+        last_level = cache.get('last_level')
+        prev_level = cache.get('prev_level')
+        if last_level is None or prev_level is None or (not np.isfinite(last_level)) or (not np.isfinite(prev_level)):
+            self._record_fast_adaptive_decision(False, 'missing_level_history', limiter_info=info, node_name=node_name)
+            return False
+        if abs(float(last_level) - float(prev_level)) > float(self.fast_adaptive_max_level_delta):
+            self._record_fast_adaptive_decision(False, 'level_delta_too_large', limiter_info=info, node_name=node_name)
+            return False
+        last_residual = cache.get('last_residual')
+        residual_limit = float(max(getattr(self, 'fast_node_q_tol', 5.0e-3), self.JPWSPC_Q_limit)) * float(self.fast_adaptive_residual_factor)
+        if last_residual is None or (not np.isfinite(last_residual)):
+            self._record_fast_adaptive_decision(False, 'missing_residual_history', limiter_info=info, node_name=node_name)
+            return False
+        if abs(float(last_residual)) > residual_limit:
+            self._record_fast_adaptive_decision(False, 'residual_too_large', limiter_info=info, node_name=node_name)
+            return False
+        self._record_fast_adaptive_decision(True, 'stable_internal_limiter', limiter_info=info, node_name=node_name)
+        return True
+
     def _fast_internal_solver_active(self):
         mode = str(getattr(self, 'fast_node_solver_mode', 'off')).strip().lower()
-        return bool(self.fast_mode_enabled) and mode in {'response_root', 'response_corrector'} and self._internal_response_solver_supported()
+        if not (bool(self.fast_mode_enabled) and mode in {'response_root', 'response_corrector'} and self._internal_response_solver_supported()):
+            return False
+        if not self.fast_adaptive_enabled:
+            return True
+        return bool(self._fast_adaptive_step_enabled)
+
+    def _fast_node_refresh_enabled(self):
+        if not self._fast_internal_solver_active():
+            return False
+        refresh_mode = str(getattr(self, 'fast_node_refresh_mode', 'off')).strip().lower()
+        refresh_every = max(1, int(getattr(self, 'fast_node_refresh_every', 1)))
+        return refresh_every > 1 and refresh_mode in {'hold', 'predict'}
+
+    def _fast_node_refresh_use_predictor(self):
+        return str(getattr(self, 'fast_node_refresh_mode', 'off')).strip().lower() == 'predict'
+
+    def _fast_node_refresh_should_run_full_solve(self):
+        if not self._fast_node_refresh_enabled():
+            return True
+        warmup_steps = max(0, int(getattr(self, 'fast_node_refresh_warmup_steps', 0)))
+        if int(self.step_count) <= warmup_steps:
+            return True
+        if len(self._internal_node_level_cache) < len(self.internal_nodes):
+            return True
+        refresh_every = max(1, int(getattr(self, 'fast_node_refresh_every', 1)))
+        last_full = int(getattr(self, '_fast_last_full_node_refresh_step', 0))
+        return (int(self.step_count) - last_full) >= refresh_every
+
+    def _record_fast_node_refresh_decision(self, full_solve):
+        if not self._fast_internal_solver_active():
+            self._fast_last_node_refresh_decision = 'off'
+            return
+        if full_solve:
+            self.fast_node_refresh_full_steps += 1
+            self._fast_last_full_node_refresh_step = int(self.step_count)
+            self._fast_last_node_refresh_decision = 'full'
+            return
+        self.fast_node_refresh_skip_steps += 1
+        refresh_mode = str(getattr(self, 'fast_node_refresh_mode', 'off')).strip().lower()
+        self._fast_last_node_refresh_decision = refresh_mode if refresh_mode in {'hold', 'predict'} else 'skip'
 
     def _internal_solver_iteration_limit(self):
         if self._fast_internal_solver_active():
@@ -415,6 +540,14 @@ class Rivernet():
 
     def _internal_node_history_enabled(self):
         return bool(self.save_outputs and self.internal_nodes and self.save_internal_node_history)
+
+    def _fast_node_refresh_levels(self, use_node_aggregates=False, aggregates=None, snapshots=None):
+        return self._initial_internal_node_levels(
+            use_node_aggregates=use_node_aggregates,
+            aggregates=aggregates,
+            snapshots=snapshots,
+            extrapolate=self._fast_node_refresh_use_predictor(),
+        )
 
     def _internal_node_branch_specs(self, node_name):
         cache = self._internal_node_branch_specs_cache
@@ -571,6 +704,7 @@ class Rivernet():
 
         # 兼容旧属性：external_nodes = external_in ∪ external_out
         self.external_nodes = self.external_in_nodes + self.external_out_nodes
+        self._annotate_river_boundary_roles()
 
         if self.verbos:
             print('内部节点 (internal):', self.internal_nodes)
@@ -578,6 +712,33 @@ class Rivernet():
             print('外部出点 (external_out):', self.external_out_nodes)
             if self.isolated_nodes:
                 print('孤立节点 (degree=0):', self.isolated_nodes)
+
+    def _annotate_river_boundary_roles(self):
+        internal = set(getattr(self, 'internal_nodes', []))
+        external_in = set(getattr(self, 'external_in_nodes', []))
+        external_out = set(getattr(self, 'external_out_nodes', []))
+        for u, v, data in self._river_edges:
+            river = data['river']
+            if u in internal:
+                left_role = 'internal_node'
+            elif u in external_out:
+                left_role = 'external_out'
+            elif u in external_in:
+                left_role = 'external_in'
+            else:
+                left_role = 'other'
+            if v in internal:
+                right_role = 'internal_node'
+            elif v in external_in:
+                right_role = 'external_in'
+            elif v in external_out:
+                right_role = 'external_out'
+            else:
+                right_role = 'other'
+            river.left_boundary_role = left_role
+            river.right_boundary_role = right_role
+            river.left_boundary_node = u
+            river.right_boundary_node = v
 
     # 分别遍历内部和外部节点
     def node_flow_direction(self):
@@ -894,6 +1055,17 @@ class Rivernet():
             'fast_mode_enabled': bool(self.fast_mode_enabled),
             'fast_mode_name': str(self.fast_mode_name),
             'fast_node_solver_mode': str(self.fast_node_solver_mode),
+            'fast_node_refresh_every': int(self.fast_node_refresh_every),
+            'fast_node_refresh_mode': str(self.fast_node_refresh_mode),
+            'fast_node_refresh_warmup_steps': int(self.fast_node_refresh_warmup_steps),
+            'fast_node_refresh_full_steps': int(self.fast_node_refresh_full_steps),
+            'fast_node_refresh_skip_steps': int(self.fast_node_refresh_skip_steps),
+            'fast_node_refresh_last_decision': str(self._fast_last_node_refresh_decision),
+            'fast_adaptive_enabled': bool(self.fast_adaptive_enabled),
+            'fast_adaptive_enabled_steps': int(self.fast_adaptive_enabled_steps),
+            'fast_adaptive_total_steps': int(self.fast_adaptive_total_steps),
+            'fast_adaptive_reason_counts': self.fast_adaptive_reason_counts,
+            'fast_adaptive_last_decision': self.fast_adaptive_last_decision,
             'current_sim_time': float(self.current_sim_time),
             'total_sim_time': float(self.total_sim_time),
             'step_count': int(self.step_count),
@@ -910,6 +1082,45 @@ class Rivernet():
         out_path = os.path.join(out_dir, 'run_summary.json')
         with open(out_path, 'w', encoding='utf-8') as f:
             json.dump(summary, f, ensure_ascii=False, indent=2)
+
+    def _record_dt_profile(self, used_dt, next_dt, schedule_reason):
+        if not self.save_dt_profile:
+            return
+        info = self.last_global_dt_limiter or {}
+        rec = {
+            'step': int(self.step_count),
+            'time_s': float(self.current_sim_time),
+            'used_dt_s': float(used_dt),
+            'next_dt_s': float(next_dt),
+            'schedule_reason': str(schedule_reason),
+            'global_cfl_dt_s': float(self.cfl_allowed_dt),
+            'river_name': info.get('river_name'),
+            'cell_index': info.get('cell_index'),
+            'raw_dt_s': info.get('raw_dt'),
+            'returned_dt_s': info.get('returned_dt'),
+            'cap_kind': info.get('cap_kind'),
+            'category': info.get('category'),
+            'side': info.get('side'),
+            'boundary_role': info.get('boundary_role'),
+            'boundary_node': info.get('boundary_node'),
+            'is_dry': info.get('is_dry'),
+            'near_dry': info.get('near_dry'),
+            'depth': info.get('depth'),
+            'area': info.get('area'),
+            'u': info.get('u'),
+            'c': info.get('c'),
+            'char_speed': info.get('char_speed'),
+            'friction_abs': info.get('friction_abs'),
+        }
+        self.dt_profile_records.append(rec)
+
+    def Save_dt_profile(self):
+        if not (self.save_dt_profile and self.dt_profile_records):
+            return
+        out_path = os.path.join(self.model_data['output_path'], 'dt_profile.csv')
+        pd.DataFrame(self.dt_profile_records).to_csv(out_path, index=False)
+        if self.verbos:
+            print(f'[OK] dt 画像已保存 -> {out_path}')
 
     def _record_cfl_history(self, dt_items):
         if not self.save_cfl_history:
@@ -1177,15 +1388,22 @@ class Rivernet():
     def Caculate_global_CFL(self):
         dt_list = []
         dt_items = []
+        limiter_infos = []
 
         # 计算每条河道的CFL时间步长
         for _, _, data in self._river_edges:
-            dti = data['river'].Caculate_CFL_time_for_river_net()
+            river = data['river']
+            river.save_dt_profile = bool(self.save_dt_profile)
+            dti = river.Caculate_CFL_time_for_river_net()
             dt_list.append(dti)
             dt_items.append((data.get('name'), dti))
+            limiter_infos.append(getattr(river, 'last_dt_limiter_info', None))
 
         self.cfl_allowed_dt = min(dt_list) # 计算全局最小时间步长
         self._record_cfl_history(dt_items)
+        if dt_list:
+            idx = int(np.argmin(np.asarray(dt_list, dtype=float)))
+            self.last_global_dt_limiter = limiter_infos[idx] if idx < len(limiter_infos) else None
 
         if self.verbos:
             print(f'全局最小CFL时间步长: {self.cfl_allowed_dt:.4f} 秒')
@@ -1944,9 +2162,19 @@ class Rivernet():
         if self.verbos: print('\n更新内部边界条件...')
         if not self.internal_nodes:
             return
+        self._update_fast_mode_step_gate()
         if self._fast_internal_solver_active():
-            node_levels = self._initial_internal_node_levels(extrapolate=True)
-            self._solve_internal_nodes_fast_serial(node_levels)
+            if self._fast_node_refresh_should_run_full_solve():
+                self._record_fast_node_refresh_decision(True)
+                node_levels = self._initial_internal_node_levels(extrapolate=True)
+                self._solve_internal_nodes_fast_serial(node_levels)
+                return
+            node_levels = self._fast_node_refresh_levels()
+            self._apply_internal_node_levels(node_levels)
+            self._internal_node_level_cache.update(node_levels)
+            for n in self.internal_nodes:
+                self._update_internal_node_solver_cache(n, node_levels[n])
+            self._record_fast_node_refresh_decision(False)
             return
         if self._legacy_internal_exact_default_active():
             node_levels = self._initial_internal_node_levels()
@@ -3071,6 +3299,29 @@ class Rivernet():
             print(f'FAST_MODE 内部边界校正达到上限 {correction_limit} 次，max|Qnet|={max_abs_q:.4e}')
         return snapshots
 
+    def _apply_internal_node_levels_parallel_fast(self, pool, node_levels, snapshots, snapshot_mode):
+        t0 = time.perf_counter() if self.save_perf_report else 0.0
+        apply_ops = self._build_parallel_internal_level_ops(node_levels, snapshots)
+        if self.save_perf_report:
+            self._perf_add_internal_orchestration_time('apply_prepare', time.perf_counter() - t0)
+        final_snapshot_mode = 'full' if self._internal_node_history_enabled() else snapshot_mode
+        payload = pool.call_batch_and_interface_snapshots(
+            apply_ops,
+            snapshot_mode=final_snapshot_mode,
+            collect_perf=self.save_perf_report,
+        )
+        if self.save_perf_report:
+            snapshots = payload['snapshots']
+            self._perf_record_internal_roundtrip(payload.get('meta', {}), final_snapshot=True)
+            for perf in payload.get('perf', {}).values():
+                self._merge_stage_boundary_perf(perf.get('stage_boundary', {}))
+        else:
+            snapshots = payload
+        self._internal_node_level_cache.update(node_levels)
+        for n in self.internal_nodes:
+            self._update_internal_node_solver_cache(n, node_levels[n])
+        return snapshots
+
     def _select_parallel_internal_backend(self, pool, use_node_aggregates):
         requested = str(getattr(self, 'internal_exact_backend', 'legacy_parallel')).strip().lower()
         if (
@@ -3493,6 +3744,7 @@ class Rivernet():
         return snapshots
 
     def _update_boundary_conditions_parallel(self, pool):
+        self._update_fast_mode_step_gate()
         if self._fast_internal_solver_active():
             external_ops = self._build_parallel_external_boundary_ops()
             if not self.internal_nodes:
@@ -3547,13 +3799,27 @@ class Rivernet():
                 snapshots=snapshots,
                 extrapolate=True,
             )
-            return self._solve_internal_nodes_fast_parallel(
-                pool,
-                node_levels,
+            if self._fast_node_refresh_should_run_full_solve():
+                self._record_fast_node_refresh_decision(True)
+                return self._solve_internal_nodes_fast_parallel(
+                    pool,
+                    node_levels,
+                    use_node_aggregates=use_node_aggregates,
+                    snapshot_mode=snapshot_mode,
+                    aggregates=aggregates,
+                    snapshots=snapshots,
+                )
+            node_levels = self._fast_node_refresh_levels(
                 use_node_aggregates=use_node_aggregates,
-                snapshot_mode=snapshot_mode,
                 aggregates=aggregates,
                 snapshots=snapshots,
+            )
+            self._record_fast_node_refresh_decision(False)
+            return self._apply_internal_node_levels_parallel_fast(
+                pool,
+                node_levels,
+                snapshots=snapshots,
+                snapshot_mode=snapshot_mode,
             )
 
         if self._legacy_internal_exact_default_active():
@@ -3715,6 +3981,7 @@ class Rivernet():
         self.caculation_start_time = time.time()
 
         while self.current_sim_time < self.total_sim_time:
+            used_dt = float(self.DT)
             self.Set_global_time_step(self.DT)
 
             self.current_sim_time += self.DT
@@ -3782,13 +4049,17 @@ class Rivernet():
             if finish_flag:
                 break
 
+            schedule_reason = 'cfl_cap'
             if self.current_sim_time + self.cfl_allowed_dt > self.total_sim_time + 1e-5:
                 self.DT = self.total_sim_time - self.current_sim_time
+                schedule_reason = 'end_time_cap'
             elif self.sub_step_time + self.cfl_allowed_dt > yield_step + 1e-5:
                 self.DT = yield_step - self.sub_step_time
                 yield_flag = True
+                schedule_reason = 'yield_step_cap'
             else:
                 self.DT = self.cfl_allowed_dt
+            self._record_dt_profile(used_dt=used_dt, next_dt=self.DT, schedule_reason=schedule_reason)
 
         self.caculation_time = time.time() - self.caculation_start_time
         print(f'计算结束，保存结果...\n共计算 {self.step_count} 步，总耗时: {self.caculation_time:.2f} 秒')
@@ -3796,6 +4067,7 @@ class Rivernet():
             self.Resample_and_Save_result_net()
             self.Save_internal_node_history()
             self.Save_cfl_history()
+        self.Save_dt_profile()
         self.Save_run_summary()
         self.Save_perf_report()
 
@@ -3807,6 +4079,7 @@ class Rivernet():
         self.caculation_start_time = time.time()
 
         while self.current_sim_time < self.total_sim_time:
+            used_dt = float(self.DT)
             pool.call_all('set_next_dt', args=(self.DT,))
 
             self.current_sim_time += self.DT
@@ -3852,13 +4125,17 @@ class Rivernet():
             if finish_flag:
                 break
 
+            schedule_reason = 'cfl_cap'
             if self.current_sim_time + self.cfl_allowed_dt > self.total_sim_time + 1e-5:
                 self.DT = self.total_sim_time - self.current_sim_time
+                schedule_reason = 'end_time_cap'
             elif self.sub_step_time + self.cfl_allowed_dt > yield_step + 1e-5:
                 self.DT = yield_step - self.sub_step_time
                 yield_flag = True
+                schedule_reason = 'yield_step_cap'
             else:
                 self.DT = self.cfl_allowed_dt
+            self._record_dt_profile(used_dt=used_dt, next_dt=self.DT, schedule_reason=schedule_reason)
 
         self.caculation_time = time.time() - self.caculation_start_time
         print(f'计算结束，保存结果...\n共计算 {self.step_count} 步，总耗时: {self.caculation_time:.2f} 秒')
@@ -3867,6 +4144,7 @@ class Rivernet():
             self.Save_internal_node_history()
             self.Save_cfl_history()
         self._sync_parallel_rivers_to_main(pool)
+        self.Save_dt_profile()
         self.Save_run_summary()
         self.Save_perf_report()
 
@@ -3877,6 +4155,7 @@ class Rivernet():
         self.sub_step_start_time = time.time()  # 子步开始时间
         self.caculation_start_time = time.time()  # 计算开始时间
         while self.current_sim_time < self.total_sim_time:
+            used_dt = float(self.DT)
             # 同步时间
             self.Set_global_time_step(self.DT)
 
@@ -3991,16 +4270,20 @@ class Rivernet():
 
             # 统计全局最小时间步长，处理时间逻辑
             # 保证最后一个时刻为总时间的最后一个时间
+            schedule_reason = 'cfl_cap'
             if self.current_sim_time + self.cfl_allowed_dt > self.total_sim_time + 1e-5:
                 self.DT = self.total_sim_time - self.current_sim_time # 基于总时间计算时间步长
+                schedule_reason = 'end_time_cap'
                 # finish_flag = True
 
             elif self.sub_step_time + self.cfl_allowed_dt > yield_step + 1e-5:
                 self.DT = yield_step - self.sub_step_time # 基于子步时间计算时间步长
                 yield_flag = True  # 标记需要回报子步
+                schedule_reason = 'yield_step_cap'
 
             else:
                 self.DT = self.cfl_allowed_dt # 基于全局最小CFL时间步长计算时间步长
+            self._record_dt_profile(used_dt=used_dt, next_dt=self.DT, schedule_reason=schedule_reason)
 
         # 计算结束，保存结果
         self.caculation_time = time.time() - self.caculation_start_time  # 计算总耗时
@@ -4009,6 +4292,7 @@ class Rivernet():
             self.Resample_and_Save_result_net()
             self.Save_internal_node_history()
             self.Save_cfl_history()
+        self.Save_dt_profile()
         self.Save_run_summary()
         self.Save_perf_report()
 

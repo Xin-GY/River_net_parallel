@@ -634,9 +634,40 @@ def configure_net_options(net_obj, export_png=False):
     net_obj.fast_node_q_tol = float(
         env.get('ISLAM_FAST_NODE_Q_TOL', str(net_obj.fast_node_q_tol if not fast_mode else 5.0e-3))
     )
+    net_obj.fast_adaptive_enabled = env.get(
+        'ISLAM_FAST_ADAPTIVE',
+        '1' if fast_mode else '0',
+    ) == '1'
+    net_obj.fast_adaptive_require_internal_limiter = env.get(
+        'ISLAM_FAST_ADAPTIVE_REQUIRE_INTERNAL_LIMITER',
+        '1',
+    ) == '1'
+    net_obj.fast_adaptive_disable_near_dry = env.get(
+        'ISLAM_FAST_ADAPTIVE_DISABLE_NEAR_DRY',
+        '1',
+    ) == '1'
+    net_obj.fast_adaptive_min_streak = int(
+        env.get('ISLAM_FAST_ADAPTIVE_MIN_STREAK', str(net_obj.fast_adaptive_min_streak))
+    )
+    net_obj.fast_adaptive_max_level_delta = float(
+        env.get('ISLAM_FAST_ADAPTIVE_LEVEL_DELTA', str(net_obj.fast_adaptive_max_level_delta))
+    )
+    net_obj.fast_adaptive_residual_factor = float(
+        env.get('ISLAM_FAST_ADAPTIVE_RESIDUAL_FACTOR', str(net_obj.fast_adaptive_residual_factor))
+    )
     net_obj.fast_cfl_scale = float(env.get('ISLAM_FAST_CFL_SCALE', str(net_obj.fast_cfl_scale)))
     fast_dt_env = env.get('ISLAM_FAST_DT_INCREASE_FACTOR', '').strip()
     net_obj.fast_dt_increase_factor = float(fast_dt_env) if fast_dt_env else None
+    net_obj.fast_node_refresh_every = int(
+        env.get('ISLAM_FAST_NODE_REFRESH_EVERY', str(net_obj.fast_node_refresh_every))
+    )
+    net_obj.fast_node_refresh_mode = env.get(
+        'ISLAM_FAST_NODE_REFRESH_MODE',
+        str(net_obj.fast_node_refresh_mode),
+    ).strip().lower()
+    net_obj.fast_node_refresh_warmup_steps = int(
+        env.get('ISLAM_FAST_NODE_REFRESH_WARMUP_STEPS', str(net_obj.fast_node_refresh_warmup_steps))
+    )
     net_obj.save_internal_node_history = env.get(
         'ISLAM_SAVE_INTERNAL_NODE_HISTORY',
         env.get('ISLAM_FAST_SAVE_NODE_HISTORY', '0' if fast_mode else '1'),
@@ -645,6 +676,7 @@ def configure_net_options(net_obj, export_png=False):
         'ISLAM_SAVE_RUN_SUMMARY',
         '1' if fast_mode else '0',
     ) == '1'
+    net_obj.save_dt_profile = env.get('ISLAM_SAVE_DT_PROFILE', '0') == '1'
     save_interval_env = os.environ.get('ISLAM_SAVE_INTERVAL', '').strip()
     net_obj.output_save_interval = float(save_interval_env) if save_interval_env else None
     net_obj.save_cfl_history = os.environ.get('ISLAM_SAVE_CFL_HISTORY', '0') == '1'

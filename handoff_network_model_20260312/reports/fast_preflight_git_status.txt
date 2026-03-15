@@ -1,0 +1,18 @@
+## fast-mode-30s
+ M handoff_network_model_20260312/Islam.py
+ M handoff_network_model_20260312/Rivernet.py
+ M handoff_network_model_20260312/river_for_net.py
+ M handoff_network_model_20260312/tools/evaluate_fast_mode.py
+?? handoff_network_model_20260312/bound
+?? handoff_network_model_20260312/reports/fast_eval_adaptive_10m.json
+?? handoff_network_model_20260312/reports/fast_eval_adaptive_10m.md
+?? handoff_network_model_20260312/reports/fast_eval_adaptive_cfl125_vs_accepted40h.json
+?? handoff_network_model_20260312/reports/fast_eval_adaptive_cfl125_vs_accepted40h.md
+?? handoff_network_model_20260312/reports/fast_eval_vs_accepted40h.json
+?? handoff_network_model_20260312/reports/fast_eval_vs_accepted40h.md
+?? handoff_network_model_20260312/reports/fast_preflight_git_status.txt
+?? handoff_network_model_20260312/reports/fast_preflight_index.diff
+?? handoff_network_model_20260312/reports/fast_preflight_worktree.diff
+?? handoff_network_model_20260312/reports/fastmode_adaptive_design.md
+?? handoff_network_model_20260312/reports/fastmode_adaptive_matrix.md
+?? handoff_network_model_20260312/reports/overnight_progress_log.md
