@@ -125,3 +125,37 @@
   - exact local cleanup produced only a modest gain versus the clean rerun and does not close the gap to the accepted exact baseline
   - the code experiment was reverted from the default exact path; only the reports/tooling remain
 - Continue: yes
+
+## Stage 6
+
+- Restored the isolated FAST infrastructure onto `fast-mode-30s` without reintroducing failed exact-only experiments.
+- Re-verified that the FAST line does not pollute the default exact path:
+  - `fast_line_exact_10m_check`: strict compare passed again, `allclose=true`
+- Added an adaptive FAST gate driven by the current global dt limiter source and recent node history.
+- Ran 40-hour adaptive FAST without extra CFL scaling:
+  - wall: `242.30 s`
+  - model/evolve: `235.27873492240906 s`
+  - steps: `29989`
+  - enabled steps: `29987 / 29989`
+  - result: too slow, and control-point `Q` max abs stayed above `1e-2`
+- Ran 40-hour adaptive FAST with `ISLAM_FAST_CFL_SCALE=1.25` and `ISLAM_FAST_DT_INCREASE_FACTOR=1.1`:
+  - wall: `193.09 s`
+  - model/evolve: `186.73348426818848 s`
+  - steps: `23895`
+  - enabled steps: `23893 / 23895`
+  - relative to the previous FAST best (`fast_40h_iter5_cfl125`), both speed and error improved slightly
+- Updated benchmark matrix with:
+  - `fast_40h_adaptive`
+  - `fast_40h_adaptive_cfl125`
+- Continue: yes
+
+## Stage 7
+
+- Final overnight conclusion:
+  - the `30 s` target is still dominated primarily by total step count / dt-limiter structure, not by fast-path admission or small orchestration fixes
+  - the current adaptive FAST gate mostly behaves like "always on after warm-up", so it does not materially change the long-run limiter landscape
+  - exact-only local-kernel cleanup did not recover enough ground to challenge the accepted exact baseline
+- Produced handoff reports:
+  - `reports/final_overnight_recommendation.md`
+  - `reports/overnight_hand_off.md`
+- Continue: no
