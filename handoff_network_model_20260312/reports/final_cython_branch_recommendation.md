@@ -12,6 +12,7 @@
   - `4a8bcee` `chore: map node iteration chain for cython exact branch`
   - `425c89e` `chore: add evolve-only serial baseline and hotspot reports`
   - `87bd76d` `feat: add exact cython nodechain and roe kernels (+2.63x 40h evolve)`
+  - `32248fd` `docs: record single-process cython exact benchmarks and validation (+2.63x 40h evolve)`
 
 ## Current Status
 
