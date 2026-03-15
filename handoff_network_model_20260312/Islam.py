@@ -596,8 +596,6 @@ def apply_initial_discharge_guess(net_obj, guess):
         river.Q_old[:] = q0
 
 
-
-net = Rivernet(top, model_data)
 warmup_hours = float(os.environ.get('ISLAM_WARMUP_HOURS', '0.0'))
 output_rivers_env = os.environ.get('ISLAM_OUTPUT_RIVERS', '').strip()
 output_rivers = {s.strip() for s in output_rivers_env.split(',') if s.strip()} if output_rivers_env else None
@@ -847,14 +845,20 @@ def copy_warmup_state(src_net, dst_net):
     if os.environ.get('ISLAM_COPY_WARMUP_NODE_CACHE', '0') == '1':
         dst_net._internal_node_level_cache = dict(src_net._internal_node_level_cache)
 
+def build_net(export_png=True):
+    net = Rivernet(top, model_data)
+    configure_net_options(net, export_png=export_png)
+    if output_rivers is not None:
+        net.output_river_names = output_rivers
+    apply_boundaries(net, mode='main')
+    initialize_rivers(net)
+    return net
 
-configure_net_options(net, export_png=True)
-if output_rivers is not None:
-    net.output_river_names = output_rivers
-apply_boundaries(net, mode='main')
-initialize_rivers(net)
 
-if warmup_hours > 0.0:
+def maybe_run_warmup(net):
+    if warmup_hours <= 0.0:
+        return None
+
     warmup_mode = os.environ.get('ISLAM_WARMUP_MODE', 'constant').strip().lower()
     warmup_save_output = os.environ.get('ISLAM_WARMUP_SAVE_OUTPUT', '0') == '1'
     warm_model_data = dict(model_data)
@@ -883,20 +887,63 @@ if warmup_hours > 0.0:
         pass
 
     copy_warmup_state(net_warm, net)
+    return net_warm
 
-for t in net.Evolve(1800):
-    net.print_evolve_info()
 
-# 记录固定水位边界“超临界外推”触发次数，便于判断某端是否长期失去边界控制
-debug_rows = []
-for _, _, data in net.G.edges(data=True):
-    r = data['river']
-    debug_rows.append({
-        'river': data.get('name'),
-        'supercritical_in_count': int(getattr(r, 'debug_supercritical_in_count', 0)),
-        'supercritical_out_count': int(getattr(r, 'debug_supercritical_out_count', 0)),
-    })
-pd.DataFrame(debug_rows).sort_values('river').to_csv(
-    os.path.join(output_path, 'boundary_supercritical_counts.csv'),
-    index=False
-)
+def write_boundary_supercritical_counts(net):
+    debug_rows = []
+    for _, _, data in net.G.edges(data=True):
+        r = data['river']
+        debug_rows.append({
+            'river': data.get('name'),
+            'supercritical_in_count': int(getattr(r, 'debug_supercritical_in_count', 0)),
+            'supercritical_out_count': int(getattr(r, 'debug_supercritical_out_count', 0)),
+        })
+    pd.DataFrame(debug_rows).sort_values('river').to_csv(
+        os.path.join(output_path, 'boundary_supercritical_counts.csv'),
+        index=False
+    )
+
+
+def run_main_case(net, yield_step=1800, print_progress=True):
+    for _ in net.Evolve(yield_step):
+        if print_progress:
+            net.print_evolve_info()
+    write_boundary_supercritical_counts(net)
+    return net
+
+
+def prepare_net_for_evolve(net, yield_step=1800):
+    if net.Fine_flag:
+        net.Fine_cell_property_net()
+
+    net.Init_water_surface_net()
+
+    for _, _, data in net._river_edges:
+        data['river'].Implic_flag = bool(net.use_implicit_branch_update)
+
+    net.Init_cell_property_net()
+    net.Save_basic_data_net()
+    net._configure_output_save_schedule(yield_step)
+    net.Caculate_global_CFL()
+    net.DT = net.cfl_allowed_dt
+    return net
+
+
+def run_prepared_evolve(net, yield_step=1800, print_progress=False):
+    for _ in net._evolve_base(yield_step):
+        if print_progress:
+            net.print_evolve_info()
+    write_boundary_supercritical_counts(net)
+    return net
+
+
+def main():
+    net = build_net(export_png=True)
+    maybe_run_warmup(net)
+    run_main_case(net, yield_step=1800, print_progress=True)
+    return net
+
+
+if __name__ == '__main__':
+    main()
