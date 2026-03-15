@@ -39,6 +39,10 @@ from parallel_river_pool import (
     SNAP_LEFT,
     SNAP_RIGHT,
 )
+try:
+    from cython_node_iteration import run_internal_node_iteration_exact as cython_run_internal_node_iteration_exact
+except Exception:
+    cython_run_internal_node_iteration_exact = None
 
 class Rivernet():
     def __init__(self, Topology, model_data, verbos=True):
@@ -139,6 +143,8 @@ class Rivernet():
         self.save_cfl_history = False
         self.cfl_history = []
         self.output_save_interval = None
+        self.use_cython_nodechain = False
+        self._cython_nodechain_plan = None
 
     def _refresh_river_cache(self):
         # Topology is fixed after construction in the current workflow. Cache
@@ -157,6 +163,7 @@ class Rivernet():
         }
         self._river_method_cache = {}
         self._parallel_internal_node_specs_cache = None
+        self._cython_nodechain_plan = None
 
     def _all_river_names(self):
         return [data.get('name') for _, _, data in self._river_edges]
@@ -187,6 +194,74 @@ class Rivernet():
         if method == 'fork' and os.name != 'posix':
             return 'spawn'
         return method
+
+    def _cython_nodechain_supported(self):
+        if cython_run_internal_node_iteration_exact is None:
+            return False
+        if not bool(getattr(self, 'use_cython_nodechain', False)):
+            return False
+        if bool(getattr(self, 'use_parallel_workers', False)):
+            return False
+        if bool(getattr(self, 'internal_use_coupled_newton', False)):
+            return False
+        if bool(getattr(self, 'internal_use_numeric_jacobian', False)):
+            return False
+        if bool(getattr(self, 'internal_sync_branch_end_Q', False)):
+            return False
+        if bool(getattr(self, 'internal_node_use_face_flux_residual', False)):
+            return False
+        if bool(getattr(self, 'verbos', False)):
+            return False
+        return True
+
+    def _build_cython_nodechain_plan(self):
+        need_attrs = ('internal_nodes', 'external_in_nodes', 'external_out_nodes')
+        if not all(hasattr(self, a) for a in need_attrs):
+            self.classfy_nodes()
+        node_names = tuple(self.internal_nodes)
+        node_offsets = np.zeros(len(node_names) + 1, dtype=np.int32)
+        branch_rivers = []
+        branch_side_codes = []
+        for i, node_name in enumerate(node_names):
+            node_offsets[i] = len(branch_rivers)
+            for river_obj, _ in self._in_branches_by_node[node_name]:
+                branch_rivers.append(river_obj)
+                branch_side_codes.append(1)  # node on branch right end -> outbound closure
+            for river_obj, _ in self._out_branches_by_node[node_name]:
+                branch_rivers.append(river_obj)
+                branch_side_codes.append(0)  # node on branch left end -> inbound closure
+        node_offsets[len(node_names)] = len(branch_rivers)
+        self._cython_nodechain_plan = {
+            'node_names': node_names,
+            'node_offsets': node_offsets,
+            'branch_rivers': tuple(branch_rivers),
+            'branch_side_codes': np.asarray(branch_side_codes, dtype=np.int8),
+        }
+        return self._cython_nodechain_plan
+
+    def _get_cython_nodechain_plan(self):
+        plan = self._cython_nodechain_plan
+        if plan is None:
+            return self._build_cython_nodechain_plan()
+        if len(plan['node_names']) != len(getattr(self, 'internal_nodes', ())):
+            return self._build_cython_nodechain_plan()
+        return plan
+
+    def _try_update_internal_boundary_conditions_cython(self):
+        if not self._cython_nodechain_supported():
+            return False
+        if not self.internal_nodes:
+            return True
+        plan = self._get_cython_nodechain_plan()
+        return bool(
+            cython_run_internal_node_iteration_exact(
+                self,
+                plan['node_names'],
+                plan['node_offsets'],
+                plan['branch_rivers'],
+                plan['branch_side_codes'],
+            )
+        )
 
     # 创建河网
     def Create_Rivernet(self):
@@ -808,6 +883,8 @@ class Rivernet():
     def Update_internal_boundary_conditions(self):
         if self.verbos: print('\n更新内部边界条件...')
         if not self.internal_nodes:
+            return
+        if self._try_update_internal_boundary_conditions_cython():
             return
 
         # 预测步：优先采用上一时刻收敛水位，缺失时回退到真实格平均水位

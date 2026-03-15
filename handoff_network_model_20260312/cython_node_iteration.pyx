@@ -1,0 +1,256 @@
+# cython: language_level=3
+# cython: boundscheck=False
+# cython: wraparound=False
+# cython: initializedcheck=False
+# cython: cdivision=True
+
+import numpy as np
+cimport numpy as cnp
+from libc.math cimport fabs, isnan, sqrt
+
+
+cdef inline double _maxd(double a, double b) noexcept:
+    return a if a >= b else b
+
+
+cpdef bint run_internal_node_iteration_exact(
+    object net,
+    object node_names,
+    cnp.ndarray[cnp.int32_t, ndim=1] node_offsets_arr,
+    object branch_rivers,
+    cnp.ndarray[cnp.int8_t, ndim=1] branch_side_codes_arr,
+):
+    cdef Py_ssize_t n_nodes = len(node_names)
+    cdef Py_ssize_t i, k, start, end
+    cdef object node_name
+    cdef object river
+    cdef double z0, pure_q, dR_dZ, dz, max_abs_dz, max_abs_q
+    cdef double ac, A, B, Qv, width, u_loc, c_loc, Fr
+    cdef double g = float(net.g)
+    cdef double alpha = float(net.alpha)
+    cdef double relax = float(net.relax)
+    cdef double q_limit = float(net.JPWSPC_Q_limit)
+    cdef double epsA = 1.0e-12
+    cdef double epsT = 1.0e-08
+    cdef double dlevel_clip = 0.5
+    cdef bint use_fix_level_bc_v2 = bool(net.use_fix_level_bc_v2)
+    cdef bint use_stabilizers = bool(net.internal_bc_use_stabilizers)
+    cdef bint respect_supercritical = bool(net.internal_bc_respect_supercritical)
+    cdef bint stage_on_face = bool(net.internal_bc_stage_on_face)
+    cdef bint use_paper_ac = bool(net.internal_use_paper_ac)
+    cdef bint use_ac_v2 = bool(net.internal_use_ac_v2)
+    cdef bint use_face_discharge = bool(net.internal_node_use_face_discharge)
+    cdef bint prefer_boundary_face_q = bool(net.internal_node_prefer_boundary_face_discharge)
+    cdef bint use_boundary_face_ac = bool(net.internal_node_use_boundary_face_ac)
+    cdef object level_cache = net._internal_node_level_cache
+    cdef bint converged = False
+    cdef object face_q
+    cdef object face_a
+    cdef object face_b
+    cdef Py_ssize_t ghost_idx, cell_idx
+    cdef int side_code
+    cdef int max_iteration = int(net.max_iteration)
+
+    if n_nodes == 0:
+        return True
+
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] levels = np.empty(n_nodes, dtype=np.float64)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] residuals = np.empty(n_nodes, dtype=np.float64)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] new_levels = np.empty(n_nodes, dtype=np.float64)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] acs = np.empty(n_nodes, dtype=np.float64)
+
+    cdef cnp.int32_t[:] node_offsets = node_offsets_arr
+    cdef cnp.int8_t[:] branch_side_codes = branch_side_codes_arr
+
+    # Predictor: exactly the same precedence as the Python path.
+    for i in range(n_nodes):
+        node_name = node_names[i]
+        if bool(net.internal_level_predict_from_last) and node_name in level_cache:
+            z0 = float(level_cache[node_name])
+        else:
+            z0 = float(net.Caculate_node_average_level_at_real_cell(node_name))
+            if isnan(z0):
+                z0 = float(net.Caculate_node_average_level_at_ghost_cell(node_name))
+            if isnan(z0):
+                z0 = 0.0
+        levels[i] = _maxd(0.0, z0)
+
+    for _ in range(max_iteration):
+        # Apply all node levels in the same order as the Python serial path:
+        # per-node, incoming branches first, then outgoing branches.
+        for i in range(n_nodes):
+            start = node_offsets[i]
+            end = node_offsets[i + 1]
+            for k in range(start, end):
+                river = branch_rivers[k]
+                side_code = <int>branch_side_codes[k]
+                if side_code == 1:
+                    if use_fix_level_bc_v2:
+                        river.OutBound_Fix_level_V2(float(levels[i]))
+                    else:
+                        river.OutBound_Fix_level_V3(
+                            float(levels[i]),
+                            use_stabilizers=use_stabilizers,
+                            respect_supercritical=respect_supercritical,
+                            stage_on_face=stage_on_face,
+                        )
+                else:
+                    if use_fix_level_bc_v2:
+                        river.InBound_Fix_level_V2(float(levels[i]))
+                    else:
+                        river.InBound_Fix_level_V3(
+                            float(levels[i]),
+                            use_stabilizers=use_stabilizers,
+                            respect_supercritical=respect_supercritical,
+                            stage_on_face=stage_on_face,
+                        )
+
+        max_abs_q = 0.0
+        max_abs_dz = 0.0
+
+        for i in range(n_nodes):
+            pure_q = 0.0
+            ac = 0.0
+            start = node_offsets[i]
+            end = node_offsets[i + 1]
+
+            for k in range(start, end):
+                river = branch_rivers[k]
+                side_code = <int>branch_side_codes[k]
+
+                if side_code == 1:
+                    ghost_idx = int(river.cell_num) + 1
+                    cell_idx = int(river.cell_num)
+                    face_q = getattr(river, 'boundary_face_discharge_right', None)
+                    if prefer_boundary_face_q and face_q is not None:
+                        pure_q += float(face_q)
+                    elif use_face_discharge:
+                        pure_q += 0.5 * (float(river.Q[ghost_idx]) + float(river.Q[cell_idx]))
+                    else:
+                        pure_q += float(river.Q[ghost_idx])
+
+                    if use_paper_ac:
+                        face_a = getattr(river, 'boundary_face_area_right', None)
+                        face_b = getattr(river, 'boundary_face_width_right', None)
+                        if use_boundary_face_ac and face_a is not None and face_b is not None and face_q is not None:
+                            A = _maxd(float(face_a), epsA)
+                            B = _maxd(float(face_b), epsA)
+                            Qv = float(face_q)
+                        else:
+                            A = _maxd(float(river.S[ghost_idx]), epsA)
+                            B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[ghost_idx], A)), epsA)
+                            Qv = float(river.Q[ghost_idx])
+                        ac += sqrt(g * A * B) - Qv * B / A
+                    elif use_ac_v2:
+                        A = _maxd(float(river.S[cell_idx]), epsA)
+                        B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[cell_idx], A)), epsT)
+                        Qv = float(river.Q[cell_idx])
+                        u_loc = Qv / A
+                        c_loc = sqrt(g * A / B)
+                        Fr = fabs(u_loc) / _maxd(c_loc, epsA)
+                        if not (Fr >= 1.0 and Qv > 0.0):
+                            ac += B * (c_loc - u_loc)
+                    else:
+                        A = _maxd(float(river.S[ghost_idx]), epsA)
+                        B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[ghost_idx], A)), epsA)
+                        Qv = float(river.Q[ghost_idx])
+                        ac += sqrt(g * A * B) - Qv * B / A
+
+                else:
+                    ghost_idx = 0
+                    cell_idx = 1
+                    face_q = getattr(river, 'boundary_face_discharge_left', None)
+                    if prefer_boundary_face_q and face_q is not None:
+                        pure_q -= float(face_q)
+                    elif use_face_discharge:
+                        pure_q -= 0.5 * (float(river.Q[ghost_idx]) + float(river.Q[cell_idx]))
+                    else:
+                        pure_q -= float(river.Q[ghost_idx])
+
+                    if use_paper_ac:
+                        face_a = getattr(river, 'boundary_face_area_left', None)
+                        face_b = getattr(river, 'boundary_face_width_left', None)
+                        if use_boundary_face_ac and face_a is not None and face_b is not None and face_q is not None:
+                            A = _maxd(float(face_a), epsA)
+                            B = _maxd(float(face_b), epsA)
+                            Qv = float(face_q)
+                        else:
+                            A = _maxd(float(river.S[ghost_idx]), epsA)
+                            B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[ghost_idx], A)), epsA)
+                            Qv = float(river.Q[ghost_idx])
+                        ac += sqrt(g * A * B) + Qv * B / A
+                    elif use_ac_v2:
+                        A = _maxd(float(river.S[cell_idx]), epsA)
+                        B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[cell_idx], A)), epsT)
+                        Qv = float(river.Q[cell_idx])
+                        u_loc = Qv / A
+                        c_loc = sqrt(g * A / B)
+                        Fr = fabs(u_loc) / _maxd(c_loc, epsA)
+                        if not (Fr >= 1.0 and (-Qv) > 0.0):
+                            ac += B * (c_loc + u_loc)
+                    else:
+                        A = _maxd(float(river.S[ghost_idx]), epsA)
+                        B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[ghost_idx], A)), epsA)
+                        Qv = float(river.Q[ghost_idx])
+                        ac += sqrt(g * A * B) + Qv * B / A
+
+            residuals[i] = pure_q
+            acs[i] = alpha * ac
+            if fabs(pure_q) > max_abs_q:
+                max_abs_q = fabs(pure_q)
+
+        for i in range(n_nodes):
+            dR_dZ = -acs[i]
+            if fabs(dR_dZ) < 1.0e-10:
+                dz = 0.0
+            else:
+                dz = -residuals[i] / dR_dZ
+            if not use_paper_ac:
+                if dz > dlevel_clip:
+                    dz = dlevel_clip
+                elif dz < -dlevel_clip:
+                    dz = -dlevel_clip
+            dz = relax * dz
+            new_levels[i] = _maxd(0.0, levels[i] + dz)
+            if fabs(dz) > max_abs_dz:
+                max_abs_dz = fabs(dz)
+
+        for i in range(n_nodes):
+            levels[i] = new_levels[i]
+
+        if max_abs_dz < 1.0e-4 and max_abs_q < q_limit:
+            converged = True
+            break
+
+    # Final synchronized apply to match the Python path.
+    for i in range(n_nodes):
+        start = node_offsets[i]
+        end = node_offsets[i + 1]
+        for k in range(start, end):
+            river = branch_rivers[k]
+            side_code = <int>branch_side_codes[k]
+            if side_code == 1:
+                if use_fix_level_bc_v2:
+                    river.OutBound_Fix_level_V2(float(levels[i]))
+                else:
+                    river.OutBound_Fix_level_V3(
+                        float(levels[i]),
+                        use_stabilizers=use_stabilizers,
+                        respect_supercritical=respect_supercritical,
+                        stage_on_face=stage_on_face,
+                    )
+            else:
+                if use_fix_level_bc_v2:
+                    river.InBound_Fix_level_V2(float(levels[i]))
+                else:
+                    river.InBound_Fix_level_V3(
+                        float(levels[i]),
+                        use_stabilizers=use_stabilizers,
+                        respect_supercritical=respect_supercritical,
+                        stage_on_face=stage_on_face,
+                    )
+
+    for i in range(n_nodes):
+        level_cache[node_names[i]] = float(levels[i])
+
+    return True
