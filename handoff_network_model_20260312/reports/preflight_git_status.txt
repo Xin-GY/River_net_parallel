@@ -1,0 +1,10 @@
+## fast-mode-30s
+?? handoff_network_model_20260312/bound
+?? handoff_network_model_20260312/reports/dt_profile_exact_40h.md
+?? handoff_network_model_20260312/reports/fast_eval_adaptive_10m.json
+?? handoff_network_model_20260312/reports/fast_eval_adaptive_10m.md
+?? handoff_network_model_20260312/reports/fast_eval_adaptive_cfl125_vs_accepted40h.json
+?? handoff_network_model_20260312/reports/fast_eval_adaptive_cfl125_vs_accepted40h.md
+?? handoff_network_model_20260312/reports/fast_eval_root_iter2_cfl20_dt135_refresh2hold_vs_accepted40h.json
+?? handoff_network_model_20260312/reports/fast_eval_root_iter2_cfl20_dt135_refresh2hold_vs_accepted40h.md
+?? handoff_network_model_20260312/reports/sweep_runs/
