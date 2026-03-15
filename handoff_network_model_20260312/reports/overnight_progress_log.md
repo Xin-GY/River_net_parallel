@@ -76,3 +76,24 @@
   - FAST model time per step: `0.00722 s`
   - this points more strongly to total step count as the dominant barrier to a `30 s` target than to per-step Python overhead alone
 - Continue: yes
+
+## Stage 4
+
+- Added `tools/hotpath_diff_vs_dea3202.py` to compare the current exact line against a clean `dea3202` reference worktree on the same 10-minute case.
+- Used wrapper-based timing on the default exact parallel path to measure `boundary_updater`.
+- Used a serial isolation run to measure per-call costs of:
+  - `Caculate_face_U_C`
+  - `Caculate_Roe_matrix`
+  - `Caculate_Roe_Flux_2`
+  - `Assemble_Flux_2`
+  - `Update_cell_proprity2`
+- Wrote the result to `reports/hotpath_diff_vs_dea3202.md`.
+- Key findings:
+  - current exact vs raw `dea3202` is effectively flat within timing noise on the target hot functions
+  - `boundary_updater` is not slower than `dea3202`
+  - `parallel_river_pool.py` is unchanged relative to `dea3202`
+  - no diff hunk lands inside the listed hot river kernels or the default parallel boundary-updater path
+- Conclusion:
+  - there is no evidence that the current default exact path is carrying residual experimental overhead in the stage-4 target functions
+  - the remaining exact work should move to new local-kernel optimization, not cleanup of prior node-solve experiments
+- Continue: yes
