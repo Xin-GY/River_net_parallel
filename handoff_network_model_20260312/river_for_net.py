@@ -33,6 +33,14 @@ except Exception:
     cython_compute_general_hr_flux_batch = None
     cython_compute_general_hr_flux_interface = None
     cython_compute_stage_boundary_mainline_fast = None
+try:
+    from cython_river_kernels import (
+        fill_general_hr_flux_exact as cython_fill_general_hr_flux_exact,
+        update_cell_properties_exact as cython_update_cell_properties_exact,
+    )
+except Exception:
+    cython_fill_general_hr_flux_exact = None
+    cython_update_cell_properties_exact = None
 
 
 def _freeze_section_data(section_data):
@@ -435,7 +443,12 @@ class CrossSectionTableManagerV2:
     def __init__(self):
         self.tables = {}
         self._table_class = CrossSectionTable
-        if os.environ.get('ISLAM_USE_CYTHON_TABLE', '0') == '1' and CrossSectionTableCython is not None:
+        use_cython_table = (
+            os.environ.get('ISLAM_USE_CYTHON_TABLE', '0') == '1'
+            or os.environ.get('ISLAM_USE_CYTHON_ROE_FLUX', '0') == '1'
+            or os.environ.get('ISLAM_USE_CYTHON_UPDATE_CELL', '0') == '1'
+        )
+        if use_cython_table and CrossSectionTableCython is not None:
             self._table_class = CrossSectionTableCython
 
     def add_table(self, name, depths, level, areas, width, wetted_perimeter, hydraulic_radius, press, DEB):
@@ -832,9 +845,14 @@ class River(Process):
         self._section_table_refs_by_id = []
         self._section_id_by_cell = np.zeros(self.cell_num + 2, dtype=np.int32)
         self._cell_section_tables = ()
+        self._cell_s_limit_arr = np.zeros(self.cell_num + 2, dtype=float)
+        self._cell_bed_level_arr = np.zeros(self.cell_num + 2, dtype=float)
+        self._cython_cell_state_ready = False
         self._general_hr_left_tables = ()
         self._general_hr_right_tables = ()
         self._general_hr_cython_batch_ready = False
+        self.use_cython_roe_flux = os.environ.get('ISLAM_USE_CYTHON_ROE_FLUX', '0') == '1'
+        self.use_cython_update_cell = os.environ.get('ISLAM_USE_CYTHON_UPDATE_CELL', '0') == '1'
         self._general_hr_flux_mass_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_flux_momentum_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_press_left_hr_buf = np.zeros(self.cell_num + 1, dtype=float)
@@ -910,9 +928,27 @@ class River(Process):
             self.cross_section_table.tables.get(name)
             for name in self.cell_sections
         )
+        if len(self._cell_s_limit_arr) != len(self.cell_sections):
+            self._cell_s_limit_arr = np.zeros(len(self.cell_sections), dtype=float)
+        if len(self._cell_bed_level_arr) != len(self.cell_sections):
+            self._cell_bed_level_arr = np.zeros(len(self.cell_sections), dtype=float)
+        for idx, name in enumerate(self.cell_sections):
+            self._cell_s_limit_arr[idx] = float(self._get_section_s_limit(name))
+            tbl = self._cell_section_tables[idx]
+            if tbl is not None:
+                self._cell_bed_level_arr[idx] = float(tbl.get_bed_level())
+            else:
+                self._cell_bed_level_arr[idx] = float(self._get_section_table_bed_level(name))
+        self._cython_cell_state_ready = bool(
+            CrossSectionTableCython is not None
+            and self._cell_section_tables
+            and all(isinstance(tbl, CrossSectionTableCython) for tbl in self._cell_section_tables)
+        )
         self._general_hr_left_tables = self._cell_section_tables[:-1]
         self._general_hr_right_tables = self._cell_section_tables[1:]
         self._general_hr_cython_batch_ready = bool(
+            bool(getattr(self, 'use_cython_roe_flux', False))
+            and
             CrossSectionTableCython is not None
             and self._general_hr_left_tables
             and all(
@@ -2662,6 +2698,9 @@ class River(Process):
         self.Flux_Friction_left.fill(0.0)
         self.Flux_Friction_right.fill(0.0)
         self.cell_press_source.fill(0.0)
+        if self._general_hr_cython_batch_ready and cython_fill_general_hr_flux_exact is not None:
+            if cython_fill_general_hr_flux_exact(self):
+                return
         if self._general_hr_cython_batch_ready and cython_compute_general_hr_flux_batch is not None:
             np.maximum(self.water_depth[:self.cell_num + 1], 0.0, out=self._general_hr_h_left_buf)
             np.maximum(self.water_depth[1:self.cell_num + 2], 0.0, out=self._general_hr_h_right_buf)
@@ -3314,6 +3353,9 @@ class River(Process):
 
     def Update_cell_proprity2(self):
         # State-refresh owner: derive depth/level/U/C/Fr and final dry flags from S/Q.
+        if bool(getattr(self, 'use_cython_update_cell', False)) and cython_update_cell_properties_exact is not None:
+            if cython_update_cell_properties_exact(self):
+                return
         for i in range(0, self.cell_num + 2):
             self._refresh_cell_state(i)
             self.QIN[i] = 0
