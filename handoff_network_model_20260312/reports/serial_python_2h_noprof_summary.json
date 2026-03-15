@@ -1,0 +1,11 @@
+{
+  "case_name": "serial_python_2h_noprof",
+  "cwd": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312",
+  "output_dir": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/result/serial_python_2h_noprof",
+  "summary_json": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/reports/serial_python_2h_noprof_summary.json",
+  "profile_out": null,
+  "model_time_seconds": 35.70008850097656,
+  "evolve_wall_time_seconds": 35.925078094995115,
+  "step_count": 1482,
+  "warmup_used": false
+}

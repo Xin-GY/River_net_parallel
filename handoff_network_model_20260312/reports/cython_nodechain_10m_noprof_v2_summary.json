@@ -1,0 +1,11 @@
+{
+  "case_name": "cython_nodechain_10m_noprof_v2",
+  "cwd": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312",
+  "output_dir": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/result/cython_nodechain_10m_noprof_v2",
+  "summary_json": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/reports/cython_nodechain_10m_noprof_v2_summary.json",
+  "profile_out": null,
+  "model_time_seconds": 4.591877222061157,
+  "evolve_wall_time_seconds": 4.665235680993646,
+  "step_count": 181,
+  "warmup_used": false
+}

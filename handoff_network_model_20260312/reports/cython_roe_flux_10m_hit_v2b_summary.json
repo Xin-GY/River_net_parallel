@@ -1,0 +1,11 @@
+{
+  "case_name": "cython_roe_flux_10m_hit_v2b",
+  "cwd": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312",
+  "output_dir": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/result/cython_roe_flux_10m_hit_v2b",
+  "summary_json": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/reports/cython_roe_flux_10m_hit_v2b_summary.json",
+  "profile_out": null,
+  "model_time_seconds": 1.6356768608093262,
+  "evolve_wall_time_seconds": 1.7107745269895531,
+  "step_count": 181,
+  "warmup_used": false
+}

@@ -1,0 +1,11 @@
+{
+  "case_name": "cython_nodechain_roe_40h_exact",
+  "cwd": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312",
+  "output_dir": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/result/cython_nodechain_roe_40h_exact",
+  "summary_json": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/reports/cython_nodechain_roe_40h_exact_summary.json",
+  "profile_out": null,
+  "model_time_seconds": 213.93377208709717,
+  "evolve_wall_time_seconds": 217.55951103102416,
+  "step_count": 29783,
+  "warmup_used": false
+}

@@ -1,0 +1,4166 @@
+{
+  "profile": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/reports/serial_python_2h_loop_only.prof",
+  "project_root": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312",
+  "top": [
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Islam.py",
+      "lineno": 933,
+      "funcname": "run_prepared_evolve",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.8171000000000002e-05,
+      "cumtime": 81.598755771
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 1830,
+      "funcname": "_evolve_base",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 0.091021297,
+      "cumtime": 81.596919455
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 593,
+      "funcname": "Update_boundary_conditions",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.004062425000000001,
+      "cumtime": 48.245624047
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 808,
+      "funcname": "Update_internal_boundary_conditions",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.22726400300000002,
+      "cumtime": 45.519832395
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 708,
+      "funcname": "_apply_internal_node_levels",
+      "primitive_calls": 16801,
+      "total_calls": 16801,
+      "tottime": 0.06968619000000001,
+      "cumtime": 43.308049099
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 1103,
+      "funcname": "Apply_node_target_level_V4",
+      "primitive_calls": 100806,
+      "total_calls": 100806,
+      "tottime": 0.893472574,
+      "cumtime": 43.238362909
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 344,
+      "funcname": "call_river_function_by_name",
+      "primitive_calls": 8892,
+      "total_calls": 8892,
+      "tottime": 0.11280398800000001,
+      "cumtime": 32.53225648
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 4350,
+      "funcname": "OutBound_Fix_level_V3",
+      "primitive_calls": 219895,
+      "total_calls": 219895,
+      "tottime": 1.0538376230000002,
+      "cumtime": 27.768763377000003
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3638,
+      "funcname": "_resolve_stage_boundary_chi_bundle",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 1.112621678,
+      "cumtime": 19.181040617
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3333,
+      "funcname": "_refresh_cell_state",
+      "primitive_calls": 823598,
+      "total_calls": 823598,
+      "tottime": 5.095491238,
+      "cumtime": 17.014078749
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 4298,
+      "funcname": "InBound_Fix_level_V3",
+      "primitive_calls": 117607,
+      "total_calls": 117607,
+      "tottime": 0.5728269420000001,
+      "cumtime": 14.723172905
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 501,
+      "funcname": "Caculate_Roe_flux_net",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.0014845510000000002,
+      "cumtime": 13.599460674000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2713,
+      "funcname": "Caculate_Roe_Flux_2",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.023604644,
+      "cumtime": 13.577339289000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3510,
+      "funcname": "_stage_boundary_char_triplet",
+      "primitive_calls": 1012506,
+      "total_calls": 1012506,
+      "tottime": 1.207605564,
+      "cumtime": 12.575814367000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 361,
+      "funcname": "get_char_triplet_by_area",
+      "primitive_calls": 1012506,
+      "total_calls": 1012506,
+      "tottime": 2.507644967,
+      "cumtime": 11.068882602
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2657,
+      "funcname": "_caculate_roe_flux_general_hr",
+      "primitive_calls": 14820,
+      "total_calls": 14820,
+      "tottime": 0.412413697,
+      "cumtime": 10.193452962
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2586,
+      "funcname": "_compute_general_hr_interface_flux",
+      "primitive_calls": 321594,
+      "total_calls": 321594,
+      "tottime": 0.239837819,
+      "cumtime": 10.118059864000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 567,
+      "funcname": "Update_cell_property_net",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.001567073,
+      "cumtime": 9.904928728
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3315,
+      "funcname": "Update_cell_proprity2",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.198006861,
+      "cumtime": 9.886540047
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2480,
+      "funcname": "_compute_general_hr_interface_flux_fast_python",
+      "primitive_calls": 321594,
+      "total_calls": 321594,
+      "tottime": 3.7628323470000002,
+      "cumtime": 9.845356468
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 266,
+      "funcname": "get_width_by_area",
+      "primitive_calls": 3487796,
+      "total_calls": 3487796,
+      "tottime": 2.829954216,
+      "cumtime": 9.188323693000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3881,
+      "funcname": "_commit_stage_boundary_state",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.522074167,
+      "cumtime": 8.530686548
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3705,
+      "funcname": "_prepare_stage_boundary_context",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 1.7581215650000002,
+      "cumtime": 7.80128596
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 505,
+      "funcname": "Assemble_flux_net",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.0014610600000000001,
+      "cumtime": 6.823722055
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2822,
+      "funcname": "Assemble_Flux_2",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.034122868,
+      "cumtime": 6.804679158000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 349,
+      "funcname": "get_general_chi_by_area",
+      "primitive_calls": 1766636,
+      "total_calls": 1766636,
+      "tottime": 2.083692949,
+      "cumtime": 6.079481852000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy._core._multiarray_umath.interp>",
+      "primitive_calls": 12160758,
+      "total_calls": 12160758,
+      "tottime": 5.500931906,
+      "cumtime": 5.500931906
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 258,
+      "funcname": "get_depth_by_area",
+      "primitive_calls": 1880958,
+      "total_calls": 1880958,
+      "tottime": 1.267301904,
+      "cumtime": 4.696351389
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1069,
+      "funcname": "_apply_explicit_friction_substep",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 1.3260004360000002,
+      "cumtime": 4.396322318
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3498,
+      "funcname": "_char_potential",
+      "primitive_calls": 754130,
+      "total_calls": 754130,
+      "tottime": 0.43432824000000003,
+      "cumtime": 4.232110893000001
+    }
+  ],
+  "all_rows": [
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Islam.py",
+      "lineno": 933,
+      "funcname": "run_prepared_evolve",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.8171000000000002e-05,
+      "cumtime": 81.598755771
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 1830,
+      "funcname": "_evolve_base",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 0.091021297,
+      "cumtime": 81.596919455
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 593,
+      "funcname": "Update_boundary_conditions",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.004062425000000001,
+      "cumtime": 48.245624047
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 808,
+      "funcname": "Update_internal_boundary_conditions",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.22726400300000002,
+      "cumtime": 45.519832395
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 708,
+      "funcname": "_apply_internal_node_levels",
+      "primitive_calls": 16801,
+      "total_calls": 16801,
+      "tottime": 0.06968619000000001,
+      "cumtime": 43.308049099
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 1103,
+      "funcname": "Apply_node_target_level_V4",
+      "primitive_calls": 100806,
+      "total_calls": 100806,
+      "tottime": 0.893472574,
+      "cumtime": 43.238362909
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 344,
+      "funcname": "call_river_function_by_name",
+      "primitive_calls": 8892,
+      "total_calls": 8892,
+      "tottime": 0.11280398800000001,
+      "cumtime": 32.53225648
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 4350,
+      "funcname": "OutBound_Fix_level_V3",
+      "primitive_calls": 219895,
+      "total_calls": 219895,
+      "tottime": 1.0538376230000002,
+      "cumtime": 27.768763377000003
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3638,
+      "funcname": "_resolve_stage_boundary_chi_bundle",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 1.112621678,
+      "cumtime": 19.181040617
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3333,
+      "funcname": "_refresh_cell_state",
+      "primitive_calls": 823598,
+      "total_calls": 823598,
+      "tottime": 5.095491238,
+      "cumtime": 17.014078749
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 4298,
+      "funcname": "InBound_Fix_level_V3",
+      "primitive_calls": 117607,
+      "total_calls": 117607,
+      "tottime": 0.5728269420000001,
+      "cumtime": 14.723172905
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 501,
+      "funcname": "Caculate_Roe_flux_net",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.0014845510000000002,
+      "cumtime": 13.599460674000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2713,
+      "funcname": "Caculate_Roe_Flux_2",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.023604644,
+      "cumtime": 13.577339289000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3510,
+      "funcname": "_stage_boundary_char_triplet",
+      "primitive_calls": 1012506,
+      "total_calls": 1012506,
+      "tottime": 1.207605564,
+      "cumtime": 12.575814367000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 361,
+      "funcname": "get_char_triplet_by_area",
+      "primitive_calls": 1012506,
+      "total_calls": 1012506,
+      "tottime": 2.507644967,
+      "cumtime": 11.068882602
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2657,
+      "funcname": "_caculate_roe_flux_general_hr",
+      "primitive_calls": 14820,
+      "total_calls": 14820,
+      "tottime": 0.412413697,
+      "cumtime": 10.193452962
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2586,
+      "funcname": "_compute_general_hr_interface_flux",
+      "primitive_calls": 321594,
+      "total_calls": 321594,
+      "tottime": 0.239837819,
+      "cumtime": 10.118059864000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 567,
+      "funcname": "Update_cell_property_net",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.001567073,
+      "cumtime": 9.904928728
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3315,
+      "funcname": "Update_cell_proprity2",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.198006861,
+      "cumtime": 9.886540047
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2480,
+      "funcname": "_compute_general_hr_interface_flux_fast_python",
+      "primitive_calls": 321594,
+      "total_calls": 321594,
+      "tottime": 3.7628323470000002,
+      "cumtime": 9.845356468
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 266,
+      "funcname": "get_width_by_area",
+      "primitive_calls": 3487796,
+      "total_calls": 3487796,
+      "tottime": 2.829954216,
+      "cumtime": 9.188323693000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3881,
+      "funcname": "_commit_stage_boundary_state",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.522074167,
+      "cumtime": 8.530686548
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3705,
+      "funcname": "_prepare_stage_boundary_context",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 1.7581215650000002,
+      "cumtime": 7.80128596
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 505,
+      "funcname": "Assemble_flux_net",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.0014610600000000001,
+      "cumtime": 6.823722055
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2822,
+      "funcname": "Assemble_Flux_2",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.034122868,
+      "cumtime": 6.804679158000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 349,
+      "funcname": "get_general_chi_by_area",
+      "primitive_calls": 1766636,
+      "total_calls": 1766636,
+      "tottime": 2.083692949,
+      "cumtime": 6.079481852000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy._core._multiarray_umath.interp>",
+      "primitive_calls": 12160758,
+      "total_calls": 12160758,
+      "tottime": 5.500931906,
+      "cumtime": 5.500931906
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 258,
+      "funcname": "get_depth_by_area",
+      "primitive_calls": 1880958,
+      "total_calls": 1880958,
+      "tottime": 1.267301904,
+      "cumtime": 4.696351389
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1069,
+      "funcname": "_apply_explicit_friction_substep",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 1.3260004360000002,
+      "cumtime": 4.396322318
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3498,
+      "funcname": "_char_potential",
+      "primitive_calls": 754130,
+      "total_calls": 754130,
+      "tottime": 0.43432824000000003,
+      "cumtime": 4.232110893000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3482,
+      "funcname": "_char_potential_from_general_cache",
+      "primitive_calls": 754130,
+      "total_calls": 754130,
+      "tottime": 0.728584647,
+      "cumtime": 3.7448416250000003
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2638,
+      "funcname": "_caculate_roe_flux_rectangular_hr",
+      "primitive_calls": 5928,
+      "total_calls": 5928,
+      "tottime": 0.219115112,
+      "cumtime": 3.360281683
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 309,
+      "funcname": "get_press_by_area",
+      "primitive_calls": 1466786,
+      "total_calls": 1466786,
+      "tottime": 0.845924972,
+      "cumtime": 3.343840784
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3601,
+      "funcname": "_evaluate_stage_boundary_chi_guard",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 1.267810077,
+      "cumtime": 3.2691581540000003
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 483,
+      "funcname": "get_width_by_area",
+      "primitive_calls": 991758,
+      "total_calls": 991758,
+      "tottime": 0.47965151100000003,
+      "cumtime": 3.222921839
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2243,
+      "funcname": "_compute_rectangular_hr_interface_flux",
+      "primitive_calls": 143754,
+      "total_calls": 143754,
+      "tottime": 0.36478072500000003,
+      "cumtime": 3.122569978
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.max>",
+      "primitive_calls": 26469587,
+      "total_calls": 26469587,
+      "tottime": 3.006551926,
+      "cumtime": 3.006590531
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1134,
+      "funcname": "_resolve_width_for_state",
+      "primitive_calls": 823598,
+      "total_calls": 823598,
+      "tottime": 0.518611775,
+      "cumtime": 2.982059405
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3744,
+      "funcname": "_prepare_stage_boundary_target_state",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.726804342,
+      "cumtime": 2.9557801390000003
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 628,
+      "funcname": "Update_external_boundary_conditions_V2",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.038058315,
+      "cumtime": 2.721729227
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3526,
+      "funcname": "_compute_stage_boundary_characteristic_velocity_with_explicit_chi",
+      "primitive_calls": 1012506,
+      "total_calls": 1012506,
+      "tottime": 0.907161753,
+      "cumtime": 2.5883368090000003
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 291,
+      "funcname": "get_hydraulic_radius_by_area",
+      "primitive_calls": 823598,
+      "total_calls": 823598,
+      "tottime": 0.833626842,
+      "cumtime": 2.2218271140000003
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3572,
+      "funcname": "_select_stage_boundary_chi_from_triplet",
+      "primitive_calls": 1012506,
+      "total_calls": 1012506,
+      "tottime": 1.7832579270000002,
+      "cumtime": 2.170818315
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1125,
+      "funcname": "_enforce_explicit_conservative_admissibility",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.422248422,
+      "cumtime": 2.057180299
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 283,
+      "funcname": "get_wetted_perimeter_by_area",
+      "primitive_calls": 823598,
+      "total_calls": 823598,
+      "tottime": 0.513911617,
+      "cumtime": 2.013707042
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 4040,
+      "funcname": "InBound_In_Q2",
+      "primitive_calls": 10374,
+      "total_calls": 10374,
+      "tottime": 0.26969165100000003,
+      "cumtime": 1.9364301060000002
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 1007,
+      "funcname": "Caculate_node_Ac_at_ghost_cell_JPWSPC",
+      "primitive_calls": 91914,
+      "total_calls": 91914,
+      "tottime": 0.60704857,
+      "cumtime": 1.6955394000000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2006,
+      "funcname": "_solve_rectangular_hr_roe_flux",
+      "primitive_calls": 143754,
+      "total_calls": 143754,
+      "tottime": 1.001038307,
+      "cumtime": 1.688000299
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 226,
+      "funcname": "get_area_by_depth",
+      "primitive_calls": 653562,
+      "total_calls": 653562,
+      "tottime": 0.405246235,
+      "cumtime": 1.646889958
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3784,
+      "funcname": "_compute_stage_boundary_characteristic_velocity",
+      "primitive_calls": 1012506,
+      "total_calls": 1012506,
+      "tottime": 1.4040279020000002,
+      "cumtime": 1.612557016
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1010,
+      "funcname": "_is_cell_dry",
+      "primitive_calls": 1712798,
+      "total_calls": 1712798,
+      "tottime": 0.646792366,
+      "cumtime": 1.392952167
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 493,
+      "funcname": "Caculate_Roe_matrix_net",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.000910828,
+      "cumtime": 1.314458707
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1835,
+      "funcname": "Caculate_Roe_matrix",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.8413965280000001,
+      "cumtime": 1.289014429
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 477,
+      "funcname": "get_depth_by_area",
+      "primitive_calls": 434226,
+      "total_calls": 434226,
+      "tottime": 0.185759954,
+      "cumtime": 1.2842702590000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 242,
+      "funcname": "get_level_by_area",
+      "primitive_calls": 486096,
+      "total_calls": 486096,
+      "tottime": 0.30011774,
+      "cumtime": 1.2400581350000002
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 250,
+      "funcname": "get_DEB_by_area",
+      "primitive_calls": 434226,
+      "total_calls": 434226,
+      "tottime": 0.31918542,
+      "cumtime": 1.131019368
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 459,
+      "funcname": "get_area_by_level",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.173587874,
+      "cumtime": 1.080471173
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 990,
+      "funcname": "_get_cell_s_limit",
+      "primitive_calls": 2498050,
+      "total_calls": 2498050,
+      "tottime": 0.755209875,
+      "cumtime": 1.0692997990000002
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3801,
+      "funcname": "_classify_stage_boundary_entry",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.638975296,
+      "cumtime": 1.063326063
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.getattr>",
+      "primitive_calls": 14055712,
+      "total_calls": 14055712,
+      "tottime": 0.955926342,
+      "cumtime": 0.956071439
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 934,
+      "funcname": "_set_boundary_face_state",
+      "primitive_calls": 347876,
+      "total_calls": 347876,
+      "tottime": 0.585460608,
+      "cumtime": 0.929155833
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 234,
+      "funcname": "get_area_by_level",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.22549011500000002,
+      "cumtime": 0.8861683300000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1454,
+      "funcname": "_roe_abs_with_fix",
+      "primitive_calls": 930082,
+      "total_calls": 930082,
+      "tottime": 0.603417725,
+      "cumtime": 0.8304048730000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy.asarray>",
+      "primitive_calls": 12172992,
+      "total_calls": 12173022,
+      "tottime": 0.81371656,
+      "cumtime": 0.8147224780000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 489,
+      "funcname": "Caculate_face_U_C_net",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.0018880980000000002,
+      "cumtime": 0.762660097
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1761,
+      "funcname": "Caculate_face_U_C",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.417421193,
+      "cumtime": 0.735555413
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.issubclass>",
+      "primitive_calls": 12161917,
+      "total_calls": 12161917,
+      "tottime": 0.6997565920000001,
+      "cumtime": 0.6997565920000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 317,
+      "funcname": "_ensure_general_chi_cache",
+      "primitive_calls": 1766636,
+      "total_calls": 1766636,
+      "tottime": 0.618588875,
+      "cumtime": 0.658645789
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 924,
+      "funcname": "_get_cell_table_ref",
+      "primitive_calls": 1257824,
+      "total_calls": 1257824,
+      "tottime": 0.49407184200000004,
+      "cumtime": 0.5905452250000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 436,
+      "funcname": "get_boundary_value",
+      "primitive_calls": 11856,
+      "total_calls": 11856,
+      "tottime": 0.013278498000000001,
+      "cumtime": 0.5228347170000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'get' of 'dict' objects>",
+      "primitive_calls": 6534359,
+      "total_calls": 6534359,
+      "tottime": 0.521875912,
+      "cumtime": 0.5218768530000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/persistent_interpolator.py",
+      "lineno": 123,
+      "funcname": "__call__",
+      "primitive_calls": 11856,
+      "total_calls": 11856,
+      "tottime": 0.040605421,
+      "cumtime": 0.48067578400000005
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Islam.py",
+      "lineno": 685,
+      "funcname": "<lambda>",
+      "primitive_calls": 10374,
+      "total_calls": 10374,
+      "tottime": 0.0049242470000000005,
+      "cumtime": 0.45281927000000005
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Islam.py",
+      "lineno": 524,
+      "funcname": "q_boundary_value",
+      "primitive_calls": 10374,
+      "total_calls": 10374,
+      "tottime": 0.017777824,
+      "cumtime": 0.447895023
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3419,
+      "funcname": "_moc_source_term",
+      "primitive_calls": 695752,
+      "total_calls": 695752,
+      "tottime": 0.32580743700000003,
+      "cumtime": 0.410979866
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1907,
+      "funcname": "_load_rectangular_interface_center_state",
+      "primitive_calls": 143754,
+      "total_calls": 143754,
+      "tottime": 0.373723313,
+      "cumtime": 0.399749958
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/persistent_interpolator.py",
+      "lineno": 93,
+      "funcname": "_interp_linear",
+      "primitive_calls": 11856,
+      "total_calls": 11856,
+      "tottime": 0.164281648,
+      "cumtime": 0.399556721
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1427,
+      "funcname": "_peek_interface_flux_for_diagnostics",
+      "primitive_calls": 10374,
+      "total_calls": 10374,
+      "tottime": 0.008109975,
+      "cumtime": 0.384627276
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 571,
+      "funcname": "Caculate_global_CFL",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.032137234,
+      "cumtime": 0.360905593
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1448,
+      "funcname": "_rectangular_pressure",
+      "primitive_calls": 862524,
+      "total_calls": 862524,
+      "tottime": 0.27418161,
+      "cumtime": 0.35555946400000005
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1904,
+      "funcname": "_rectangular_physical_flux",
+      "primitive_calls": 287508,
+      "total_calls": 287508,
+      "tottime": 0.133809133,
+      "cumtime": 0.329855565
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3809,
+      "funcname": "_apply_stage_boundary_stabilizers",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.307854185,
+      "cumtime": 0.326567223
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1050,
+      "funcname": "_apply_explicit_conservative_increment",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.305152776,
+      "cumtime": 0.31705367300000004
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 977,
+      "funcname": "_get_section_s_limit",
+      "primitive_calls": 2498050,
+      "total_calls": 2498050,
+      "tottime": 0.314089924,
+      "cumtime": 0.314089924
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2985,
+      "funcname": "Caculate_CFL_time_for_river_net",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.16909877,
+      "cumtime": 0.306906526
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3673,
+      "funcname": "_get_stage_boundary_layout",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.253027769,
+      "cumtime": 0.281304952
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'clip' of 'numpy.ndarray' objects>",
+      "primitive_calls": 113667,
+      "total_calls": 113667,
+      "tottime": 0.04384248,
+      "cumtime": 0.267485795
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy.array>",
+      "primitive_calls": 908547,
+      "total_calls": 908551,
+      "tottime": 0.264169876,
+      "cumtime": 0.264233965
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 1245,
+      "funcname": "_get_node_mass_residual_current_state",
+      "primitive_calls": 100806,
+      "total_calls": 100806,
+      "tottime": 0.038128616000000004,
+      "cumtime": 0.260696936
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.abs>",
+      "primitive_calls": 4433636,
+      "total_calls": 4433636,
+      "tottime": 0.258147408,
+      "cumtime": 0.258147408
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'update' of 'dict' objects>",
+      "primitive_calls": 1014700,
+      "total_calls": 1014700,
+      "tottime": 0.25162569300000004,
+      "cumtime": 0.251647501
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'reduce' of 'numpy.ufunc' objects>",
+      "primitive_calls": 293526,
+      "total_calls": 293526,
+      "tottime": 0.23310522300000003,
+      "cumtime": 0.23310522300000003
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 1205,
+      "funcname": "Get_node_clear_flow_at_ghost_cell_net",
+      "primitive_calls": 100806,
+      "total_calls": 100806,
+      "tottime": 0.183620461,
+      "cumtime": 0.22256832000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.setattr>",
+      "primitive_calls": 1393586,
+      "total_calls": 1393586,
+      "tottime": 0.212772923,
+      "cumtime": 0.212772923
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1947,
+      "funcname": "_apply_rectangular_interface_limiter",
+      "primitive_calls": 143754,
+      "total_calls": 143754,
+      "tottime": 0.140482666,
+      "cumtime": 0.20934152900000003
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.hasattr>",
+      "primitive_calls": 1779811,
+      "total_calls": 1779811,
+      "tottime": 0.207403422,
+      "cumtime": 0.20743407600000002
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1979,
+      "funcname": "_project_rectangular_hr_face_state",
+      "primitive_calls": 143754,
+      "total_calls": 143754,
+      "tottime": 0.139325896,
+      "cumtime": 0.181058248
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 538,
+      "funcname": "Save_internal_node_history",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 5.4621000000000004e-05,
+      "cumtime": 0.178638936
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'astype' of 'numpy.ndarray' objects>",
+      "primitive_calls": 38,
+      "total_calls": 38,
+      "tottime": 0.1511306,
+      "cumtime": 0.1511306
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'lower' of 'str' objects>",
+      "primitive_calls": 1781925,
+      "total_calls": 1781925,
+      "tottime": 0.149191035,
+      "cumtime": 0.149191035
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1382,
+      "funcname": "_should_use_left_inflow_wetting_fallback",
+      "primitive_calls": 10374,
+      "total_calls": 10374,
+      "tottime": 0.022352112,
+      "cumtime": 0.13638503500000002
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 497,
+      "funcname": "Caculate_Source_term_net",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.001087971,
+      "cumtime": 0.1354258
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 412,
+      "funcname": "get_bed_level",
+      "primitive_calls": 823598,
+      "total_calls": 823598,
+      "tottime": 0.12433131900000001,
+      "cumtime": 0.12433131900000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1800,
+      "funcname": "Caculate_source_term_2",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.12402795000000001,
+      "cumtime": 0.12402795000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'any' of 'numpy.generic' objects>",
+      "primitive_calls": 83002,
+      "total_calls": 83002,
+      "tottime": 0.041125196,
+      "cumtime": 0.110426826
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3889,
+      "funcname": "_update_stage_boundary_implicit_vector",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.07843113,
+      "cumtime": 0.103756813
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 963,
+      "funcname": "_sync_boundary_face_state_from_ghost",
+      "primitive_calls": 10374,
+      "total_calls": 10374,
+      "tottime": 0.019342839,
+      "cumtime": 0.102211914
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1348,
+      "funcname": "_get_left_inflow_wetting_params",
+      "primitive_calls": 10374,
+      "total_calls": 10374,
+      "tottime": 0.029031415,
+      "cumtime": 0.09989267
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.len>",
+      "primitive_calls": 1079223,
+      "total_calls": 1079787,
+      "tottime": 0.085213855,
+      "cumtime": 0.08771390400000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 1646,
+      "funcname": "Resample_and_Save_result_net",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 8.731e-06,
+      "cumtime": 0.08069165
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3121,
+      "funcname": "Check_Resample_and_Save_Output_result",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.4562000000000003e-05,
+      "cumtime": 0.080681652
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3108,
+      "funcname": "_finalize_buffered_output_result",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 6.6955e-05,
+      "cumtime": 0.08065709
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method math.isnan>",
+      "primitive_calls": 823598,
+      "total_calls": 823598,
+      "tottime": 0.07709407900000001,
+      "cumtime": 0.07709407900000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1541,
+      "funcname": "_compute_rectangular_tvd_sensor_core",
+      "primitive_calls": 143754,
+      "total_calls": 143754,
+      "tottime": 0.068858863,
+      "cumtime": 0.068858863
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'startswith' of 'str' objects>",
+      "primitive_calls": 360312,
+      "total_calls": 360312,
+      "tottime": 0.062865167,
+      "cumtime": 0.062865167
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.min>",
+      "primitive_calls": 366094,
+      "total_calls": 366094,
+      "tottime": 0.055500414000000005,
+      "cumtime": 0.055500414000000005
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Islam.py",
+      "lineno": 683,
+      "funcname": "<lambda>",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.0009433330000000001,
+      "cumtime": 0.053235977000000004
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'fill' of 'numpy.ndarray' objects>",
+      "primitive_calls": 145240,
+      "total_calls": 145240,
+      "tottime": 0.052548047,
+      "cumtime": 0.052548047
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Islam.py",
+      "lineno": 528,
+      "funcname": "level_boundary_value",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.001734059,
+      "cumtime": 0.052292644000000006
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3085,
+      "funcname": "_write_final_output_dataset",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.4246e-05,
+      "cumtime": 0.051034123
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3956,
+      "funcname": "_stage_boundary_fix_level_cython_fast",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.049942552,
+      "cumtime": 0.049942552
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3897,
+      "funcname": "_append_stage_boundary_record",
+      "primitive_calls": 337502,
+      "total_calls": 337502,
+      "tottime": 0.048947037000000006,
+      "cumtime": 0.048947037000000006
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'min' of 'numpy.ndarray' objects>",
+      "primitive_calls": 20749,
+      "total_calls": 20749,
+      "tottime": 0.008288533,
+      "cumtime": 0.045888487000000006
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 453,
+      "funcname": "get_area_by_depth",
+      "primitive_calls": 10374,
+      "total_calls": 10374,
+      "tottime": 0.006325555,
+      "cumtime": 0.043525256000000005
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 558,
+      "funcname": "Save_cfl_history",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 3.0931e-05,
+      "cumtime": 0.029120791000000004
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2093,
+      "funcname": "_apply_rectangular_flux_positivity_control",
+      "primitive_calls": 143754,
+      "total_calls": 143754,
+      "tottime": 0.028640108,
+      "cumtime": 0.028640108
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 517,
+      "funcname": "Save_step_result_net",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.013308261,
+      "cumtime": 0.025422309
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 1165,
+      "funcname": "_find_and_load",
+      "primitive_calls": 13,
+      "total_calls": 60,
+      "tottime": 0.000228576,
+      "cumtime": 0.023174616000000002
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 1120,
+      "funcname": "_find_and_load_unlocked",
+      "primitive_calls": 13,
+      "total_calls": 60,
+      "tottime": 0.00020760600000000002,
+      "cumtime": 0.022885567000000002
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 666,
+      "funcname": "_load_unlocked",
+      "primitive_calls": 8,
+      "total_calls": 54,
+      "tottime": 0.000157204,
+      "cumtime": 0.021648512
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 934,
+      "funcname": "exec_module",
+      "primitive_calls": 8,
+      "total_calls": 28,
+      "tottime": 5.5128000000000005e-05,
+      "cumtime": 0.021395464000000003
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 233,
+      "funcname": "_call_with_frames_removed",
+      "primitive_calls": 20,
+      "total_calls": 159,
+      "tottime": 7.1563e-05,
+      "cumtime": 0.021102622
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.exec>",
+      "primitive_calls": 8,
+      "total_calls": 28,
+      "tottime": 9.565800000000001e-05,
+      "cumtime": 0.020225437000000002
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3032,
+      "funcname": "_make_unique_time_dataset",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 4.9544000000000005e-05,
+      "cumtime": 0.018524918
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 546,
+      "funcname": "_record_cfl_history",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.012467946,
+      "cumtime": 0.015347316000000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 587,
+      "funcname": "Set_global_time_step",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.007162062,
+      "cumtime": 0.015249121000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy.empty>",
+      "primitive_calls": 41692,
+      "total_calls": 41692,
+      "tottime": 0.012963205,
+      "cumtime": 0.012963205
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'searchsorted' of 'numpy.ndarray' objects>",
+      "primitive_calls": 11860,
+      "total_calls": 11860,
+      "tottime": 0.012263033000000001,
+      "cumtime": 0.012263033000000001
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 1207,
+      "funcname": "_handle_fromlist",
+      "primitive_calls": 1661,
+      "total_calls": 1679,
+      "tottime": 0.000818689,
+      "cumtime": 0.012093348
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'copy' of 'numpy.ndarray' objects>",
+      "primitive_calls": 41529,
+      "total_calls": 41529,
+      "tottime": 0.011927306,
+      "cumtime": 0.011927306
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.__import__>",
+      "primitive_calls": 15,
+      "total_calls": 20,
+      "tottime": 4.555e-05,
+      "cumtime": 0.011312077
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1239,
+      "funcname": "exec_module",
+      "primitive_calls": 13,
+      "total_calls": 26,
+      "tottime": 3.6383e-05,
+      "cumtime": 0.009650395
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _imp.exec_dynamic>",
+      "primitive_calls": 13,
+      "total_calls": 26,
+      "tottime": 0.0038690430000000004,
+      "cumtime": 0.009615705
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'items' of 'dict' objects>",
+      "primitive_calls": 107608,
+      "total_calls": 107608,
+      "tottime": 0.009296957,
+      "cumtime": 0.009296957
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3170,
+      "funcname": "maybe_save_result_per_time_step",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.003478184,
+      "cumtime": 0.00882281
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 2978,
+      "funcname": "set_next_dt",
+      "primitive_calls": 20748,
+      "total_calls": 20748,
+      "tottime": 0.008087059,
+      "cumtime": 0.008087059
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy._core._multiarray_umath.count_nonzero>",
+      "primitive_calls": 82992,
+      "total_calls": 82992,
+      "tottime": 0.007930952,
+      "cumtime": 0.007930952
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'reshape' of 'numpy.ndarray' objects>",
+      "primitive_calls": 11888,
+      "total_calls": 11888,
+      "tottime": 0.007583108000000001,
+      "cumtime": 0.007583108000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'as_arrays' of 'numpy._core._multiarray_umath._array_converter' objects>",
+      "primitive_calls": 39564,
+      "total_calls": 39564,
+      "tottime": 0.006866626000000001,
+      "cumtime": 0.006866626000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.isinstance>",
+      "primitive_calls": 25857,
+      "total_calls": 25860,
+      "tottime": 0.0034005230000000003,
+      "cumtime": 0.006118719000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy.zeros>",
+      "primitive_calls": 20833,
+      "total_calls": 20833,
+      "tottime": 0.005702272,
+      "cumtime": 0.005702272
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'wrap' of 'numpy._core._multiarray_umath._array_converter' objects>",
+      "primitive_calls": 39564,
+      "total_calls": 39564,
+      "tottime": 0.005616958,
+      "cumtime": 0.005616958
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3159,
+      "funcname": "_should_save_current_state",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.00407225,
+      "cumtime": 0.005295599000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'append' of 'list' objects>",
+      "primitive_calls": 46119,
+      "total_calls": 46119,
+      "tottime": 0.005251179,
+      "cumtime": 0.005251179
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 566,
+      "funcname": "module_from_spec",
+      "primitive_calls": 54,
+      "total_calls": 54,
+      "tottime": 7.838200000000001e-05,
+      "cumtime": 0.004866011
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1231,
+      "funcname": "create_module",
+      "primitive_calls": 26,
+      "total_calls": 26,
+      "tottime": 5.0567000000000006e-05,
+      "cumtime": 0.004051436
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _imp.create_dynamic>",
+      "primitive_calls": 26,
+      "total_calls": 26,
+      "tottime": 0.003939209,
+      "cumtime": 0.0039712160000000005
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.next>",
+      "primitive_calls": 132,
+      "total_calls": 252,
+      "tottime": 6.7525e-05,
+      "cumtime": 0.0035911240000000002
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1007,
+      "funcname": "get_code",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 0.000164656,
+      "cumtime": 0.0034433750000000003
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 1054,
+      "funcname": "_find_spec",
+      "primitive_calls": 61,
+      "total_calls": 61,
+      "tottime": 0.000394738,
+      "cumtime": 0.0033948380000000003
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1499,
+      "funcname": "find_spec",
+      "primitive_calls": 61,
+      "total_calls": 61,
+      "tottime": 5.4846e-05,
+      "cumtime": 0.0026060610000000002
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1467,
+      "funcname": "_get_spec",
+      "primitive_calls": 61,
+      "total_calls": 61,
+      "tottime": 0.00016514900000000001,
+      "cumtime": 0.0025512150000000003
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3013,
+      "funcname": "_build_output_dataset_from_buffer",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.5591000000000003e-05,
+      "cumtime": 0.0024492710000000003
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1607,
+      "funcname": "find_spec",
+      "primitive_calls": 101,
+      "total_calls": 101,
+      "tottime": 0.0006029680000000001,
+      "cumtime": 0.002172769
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 727,
+      "funcname": "_compile_bytecode",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 5.7326000000000006e-05,
+      "cumtime": 0.002135212
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method marshal.loads>",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 0.002039457,
+      "cumtime": 0.002039457
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 1439,
+      "funcname": "_append_boundary_diagnostics",
+      "primitive_calls": 10374,
+      "total_calls": 10374,
+      "tottime": 0.0018257840000000002,
+      "cumtime": 0.0018257840000000002
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Islam.py",
+      "lineno": 893,
+      "funcname": "write_boundary_supercritical_counts",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 5.8175000000000005e-05,
+      "cumtime": 0.0018081450000000002
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy.asanyarray>",
+      "primitive_calls": 12104,
+      "total_calls": 12104,
+      "tottime": 0.0015051860000000002,
+      "cumtime": 0.0015051860000000002
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.__build_class__>",
+      "primitive_calls": 72,
+      "total_calls": 72,
+      "tottime": 0.00047217000000000005,
+      "cumtime": 0.001395741
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.any>",
+      "primitive_calls": 367,
+      "total_calls": 367,
+      "tottime": 0.00019812100000000002,
+      "cumtime": 0.001307914
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3010,
+      "funcname": "_saved_snapshot_count",
+      "primitive_calls": 1482,
+      "total_calls": 1482,
+      "tottime": 0.001027888,
+      "cumtime": 0.001223349
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 771,
+      "funcname": "get",
+      "primitive_calls": 131,
+      "total_calls": 131,
+      "tottime": 0.000152694,
+      "cumtime": 0.001220678
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 1192,
+      "funcname": "_gcd_import",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 7.413000000000001e-06,
+      "cumtime": 0.0011907360000000002
+    },
+    {
+      "filename": "<frozen abc>",
+      "lineno": 117,
+      "funcname": "__instancecheck__",
+      "primitive_calls": 448,
+      "total_calls": 448,
+      "tottime": 0.000119569,
+      "cumtime": 0.001186034
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _abc._abc_instancecheck>",
+      "primitive_calls": 448,
+      "total_calls": 448,
+      "tottime": 0.00030586100000000005,
+      "cumtime": 0.0010664650000000002
+    },
+    {
+      "filename": "<frozen abc>",
+      "lineno": 121,
+      "funcname": "__subclasscheck__",
+      "primitive_calls": 45,
+      "total_calls": 308,
+      "tottime": 5.4387000000000006e-05,
+      "cumtime": 0.000906716
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _abc._abc_subclasscheck>",
+      "primitive_calls": 45,
+      "total_calls": 308,
+      "tottime": 0.0007644310000000001,
+      "cumtime": 0.000894591
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 405,
+      "funcname": "parent",
+      "primitive_calls": 1847,
+      "total_calls": 1847,
+      "tottime": 0.0006435760000000001,
+      "cumtime": 0.000867427
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1127,
+      "funcname": "get_data",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 9.6959e-05,
+      "cumtime": 0.000755915
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 493,
+      "funcname": "_init_module_attrs",
+      "primitive_calls": 54,
+      "total_calls": 54,
+      "tottime": 0.000142599,
+      "cumtime": 0.0007078000000000001
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 126,
+      "funcname": "_path_join",
+      "primitive_calls": 433,
+      "total_calls": 433,
+      "tottime": 0.000284224,
+      "cumtime": 0.000619425
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 216,
+      "funcname": "_lock_unlock_module",
+      "primitive_calls": 139,
+      "total_calls": 139,
+      "tottime": 0.000113573,
+      "cumtime": 0.0005590710000000001
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 140,
+      "funcname": "_path_stat",
+      "primitive_calls": 203,
+      "total_calls": 203,
+      "tottime": 7.0653e-05,
+      "cumtime": 0.000557891
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.stat>",
+      "primitive_calls": 211,
+      "total_calls": 211,
+      "tottime": 0.0005408310000000001,
+      "cumtime": 0.0005563780000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.all>",
+      "primitive_calls": 253,
+      "total_calls": 253,
+      "tottime": 0.00012741600000000001,
+      "cumtime": 0.00041973700000000005
+    },
+    {
+      "filename": "<frozen abc>",
+      "lineno": 105,
+      "funcname": "__new__",
+      "primitive_calls": 22,
+      "total_calls": 22,
+      "tottime": 3.2321000000000004e-05,
+      "cumtime": 0.00041475400000000003
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 169,
+      "funcname": "__enter__",
+      "primitive_calls": 60,
+      "total_calls": 60,
+      "tottime": 5.1917000000000005e-05,
+      "cumtime": 0.000413286
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 437,
+      "funcname": "cache_from_source",
+      "primitive_calls": 56,
+      "total_calls": 56,
+      "tottime": 0.00015705300000000002,
+      "cumtime": 0.00039845200000000004
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method __new__ of type object at 0x55daa82b6060>",
+      "primitive_calls": 242,
+      "total_calls": 242,
+      "tottime": 0.00038900800000000004,
+      "cumtime": 0.00038900800000000004
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 392,
+      "funcname": "cached",
+      "primitive_calls": 82,
+      "total_calls": 82,
+      "tottime": 4.3621e-05,
+      "cumtime": 0.000381942
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 179,
+      "funcname": "_get_module_lock",
+      "primitive_calls": 199,
+      "total_calls": 199,
+      "tottime": 0.000238595,
+      "cumtime": 0.000369009
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'read' of '_io.BufferedReader' objects>",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 0.000353406,
+      "cumtime": 0.000353406
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 567,
+      "funcname": "_get_cached",
+      "primitive_calls": 54,
+      "total_calls": 54,
+      "tottime": 6.9745e-05,
+      "cumtime": 0.00033832100000000004
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method io.open>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 0.00031890300000000005,
+      "cumtime": 0.00032155700000000004
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 100,
+      "funcname": "acquire",
+      "primitive_calls": 199,
+      "total_calls": 199,
+      "tottime": 0.000281868,
+      "cumtime": 0.00032147400000000003
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3060,
+      "funcname": "_build_resample_axis",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 3.3327e-05,
+      "cumtime": 0.00029511
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.eval>",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "tottime": 0.000289776,
+      "cumtime": 0.000291554
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1602,
+      "funcname": "_get_spec",
+      "primitive_calls": 54,
+      "total_calls": 54,
+      "tottime": 8.130000000000001e-05,
+      "cumtime": 0.000276639
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'rpartition' of 'str' objects>",
+      "primitive_calls": 2090,
+      "total_calls": 2090,
+      "tottime": 0.00027658,
+      "cumtime": 0.00027658
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _posixsubprocess.fork_exec>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 0.00027554500000000003,
+      "cumtime": 0.00027554500000000003
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 128,
+      "funcname": "<listcomp>",
+      "primitive_calls": 433,
+      "total_calls": 433,
+      "tottime": 0.000215865,
+      "cumtime": 0.000272377
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method io.open_code>",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 0.00024560500000000003,
+      "cumtime": 0.00024560500000000003
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 778,
+      "funcname": "__contains__",
+      "primitive_calls": 97,
+      "total_calls": 97,
+      "tottime": 6.9751e-05,
+      "cumtime": 0.00022739500000000003
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 159,
+      "funcname": "_path_isfile",
+      "primitive_calls": 66,
+      "total_calls": 66,
+      "tottime": 3.3547e-05,
+      "cumtime": 0.000227361
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 125,
+      "funcname": "release",
+      "primitive_calls": 199,
+      "total_calls": 199,
+      "tottime": 0.000178552,
+      "cumtime": 0.00021471200000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'update' of 'set' objects>",
+      "primitive_calls": 84,
+      "total_calls": 84,
+      "tottime": 7.6347e-05,
+      "cumtime": 0.00020241800000000003
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 150,
+      "funcname": "_path_is_mode_type",
+      "primitive_calls": 70,
+      "total_calls": 70,
+      "tottime": 4.1103e-05,
+      "cumtime": 0.000199702
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'read' of '_io.TextIOWrapper' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 0.000194427,
+      "cumtime": 0.00019890400000000002
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 859,
+      "funcname": "__iter__",
+      "primitive_calls": 364,
+      "total_calls": 364,
+      "tottime": 0.00011652400000000001,
+      "cumtime": 0.000190964
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1424,
+      "funcname": "_path_importer_cache",
+      "primitive_calls": 111,
+      "total_calls": 111,
+      "tottime": 7.1075e-05,
+      "cumtime": 0.00017811000000000001
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 778,
+      "funcname": "spec_from_file_location",
+      "primitive_calls": 54,
+      "total_calls": 54,
+      "tottime": 0.00011371600000000001,
+      "cumtime": 0.000175884
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'cumsum' of 'numpy.ndarray' objects>",
+      "primitive_calls": 57,
+      "total_calls": 57,
+      "tottime": 0.00016531600000000001,
+      "cumtime": 0.00016531600000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'keys' of 'dict' objects>",
+      "primitive_calls": 3165,
+      "total_calls": 3165,
+      "tottime": 0.00015907,
+      "cumtime": 0.00015907
+    },
+    {
+      "filename": "<frozen abc>",
+      "lineno": 110,
+      "funcname": "register",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "tottime": 3.924e-06,
+      "cumtime": 0.000155739
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _abc._abc_register>",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "tottime": 5.703e-06,
+      "cumtime": 0.00015181500000000002
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 173,
+      "funcname": "__exit__",
+      "primitive_calls": 60,
+      "total_calls": 60,
+      "tottime": 3.8924e-05,
+      "cumtime": 0.000137252
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'search' of 're.Pattern' objects>",
+      "primitive_calls": 95,
+      "total_calls": 95,
+      "tottime": 0.000132046,
+      "cumtime": 0.000132046
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 244,
+      "funcname": "_verbose_message",
+      "primitive_calls": 519,
+      "total_calls": 519,
+      "tottime": 0.0001305,
+      "cumtime": 0.0001305
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 132,
+      "funcname": "_path_split",
+      "primitive_calls": 56,
+      "total_calls": 56,
+      "tottime": 5.903e-05,
+      "cumtime": 0.00013017400000000002
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'sort' of 'numpy.ndarray' objects>",
+      "primitive_calls": 56,
+      "total_calls": 56,
+      "tottime": 0.000123439,
+      "cumtime": 0.000123439
+    },
+    {
+      "filename": "<frozen importlib.util>",
+      "lineno": 74,
+      "funcname": "find_spec",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.466e-06,
+      "cumtime": 0.00011647300000000001
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1411,
+      "funcname": "_path_hooks",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 1.7062e-05,
+      "cumtime": 0.00010703500000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'join' of 'str' objects>",
+      "primitive_calls": 525,
+      "total_calls": 525,
+      "tottime": 9.365500000000001e-05,
+      "cumtime": 0.00010421700000000001
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/Rivernet.py",
+      "lineno": 931,
+      "funcname": "Caculate_node_average_level_at_real_cell",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "tottime": 3.906e-05,
+      "cumtime": 0.00010230800000000001
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method '__reduce_ex__' of 'object' objects>",
+      "primitive_calls": 34,
+      "total_calls": 34,
+      "tottime": 6.7934e-05,
+      "cumtime": 9.5767e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 920,
+      "funcname": "find_spec",
+      "primitive_calls": 61,
+      "total_calls": 61,
+      "tottime": 3.9138000000000004e-05,
+      "cumtime": 9.3236e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 71,
+      "funcname": "__init__",
+      "primitive_calls": 60,
+      "total_calls": 60,
+      "tottime": 6.2536e-05,
+      "cumtime": 8.8714e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 642,
+      "funcname": "_classify_pyc",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 4.224e-05,
+      "cumtime": 8.568e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1658,
+      "funcname": "_fill_cache",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 1.3513000000000001e-05,
+      "cumtime": 8.135e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'close' of '_io.TextIOWrapper' objects>",
+      "primitive_calls": 5,
+      "total_calls": 5,
+      "tottime": 8.1265e-05,
+      "cumtime": 8.1265e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 1030,
+      "funcname": "__exit__",
+      "primitive_calls": 251,
+      "total_calls": 251,
+      "tottime": 5.5837e-05,
+      "cumtime": 7.5556e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 198,
+      "funcname": "cb",
+      "primitive_calls": 60,
+      "total_calls": 60,
+      "tottime": 5.2549e-05,
+      "cumtime": 7.164e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 1026,
+      "funcname": "__enter__",
+      "primitive_calls": 251,
+      "total_calls": 251,
+      "tottime": 5.2255e-05,
+      "cumtime": 7.0227e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 561,
+      "funcname": "__ge__",
+      "primitive_calls": 14,
+      "total_calls": 14,
+      "tottime": 1.3743e-05,
+      "cumtime": 6.990200000000001e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'any' of 'numpy.ndarray' objects>",
+      "primitive_calls": 22,
+      "total_calls": 22,
+      "tottime": 1.4847e-05,
+      "cumtime": 6.9825e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _abc._abc_init>",
+      "primitive_calls": 22,
+      "total_calls": 22,
+      "tottime": 6.9756e-05,
+      "cumtime": 6.9756e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 84,
+      "funcname": "_unpack_uint32",
+      "primitive_calls": 84,
+      "total_calls": 84,
+      "tottime": 4.9523e-05,
+      "cumtime": 6.9089e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'group' of 're.Match' objects>",
+      "primitive_calls": 610,
+      "total_calls": 610,
+      "tottime": 6.9002e-05,
+      "cumtime": 6.9002e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.listdir>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 6.5772e-05,
+      "cumtime": 6.5772e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'encode' of 'str' objects>",
+      "primitive_calls": 519,
+      "total_calls": 519,
+      "tottime": 6.5689e-05,
+      "cumtime": 6.5689e-05
+    },
+    {
+      "filename": "<frozen posixpath>",
+      "lineno": 71,
+      "funcname": "join",
+      "primitive_calls": 25,
+      "total_calls": 25,
+      "tottime": 4.2073e-05,
+      "cumtime": 6.5121e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.id>",
+      "primitive_calls": 888,
+      "total_calls": 888,
+      "tottime": 6.375800000000001e-05,
+      "cumtime": 6.375800000000001e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'rstrip' of 'str' objects>",
+      "primitive_calls": 937,
+      "total_calls": 937,
+      "tottime": 6.0301000000000004e-05,
+      "cumtime": 6.0301000000000004e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 748,
+      "funcname": "find_spec",
+      "primitive_calls": 61,
+      "total_calls": 61,
+      "tottime": 3.1618e-05,
+      "cumtime": 5.8500000000000006e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 675,
+      "funcname": "_validate_timestamp_pyc",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 2.7531e-05,
+      "cumtime": 5.8407000000000005e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1146,
+      "funcname": "path_stats",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 1.9235e-05,
+      "cumtime": 5.5083e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method '__exit__' of '_io._IOBase' objects>",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 5.478e-05,
+      "cumtime": 5.478e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method '__exit__' of '_thread.lock' objects>",
+      "primitive_calls": 472,
+      "total_calls": 472,
+      "tottime": 5.2786000000000006e-05,
+      "cumtime": 5.2786000000000006e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _imp.acquire_lock>",
+      "primitive_calls": 510,
+      "total_calls": 510,
+      "tottime": 4.7654e-05,
+      "cumtime": 4.7654e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'mean' of 'numpy.ndarray' objects>",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "tottime": 9.899000000000001e-06,
+      "cumtime": 4.7443e-05
+    },
+    {
+      "filename": "<frozen zipimport>",
+      "lineno": 64,
+      "funcname": "__init__",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 3.8971000000000003e-05,
+      "cumtime": 4.6703e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'add' of 'set' objects>",
+      "primitive_calls": 583,
+      "total_calls": 583,
+      "tottime": 4.6473e-05,
+      "cumtime": 4.6473e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method '__array_namespace__' of 'numpy.ndarray' objects>",
+      "primitive_calls": 72,
+      "total_calls": 72,
+      "tottime": 4.5442e-05,
+      "cumtime": 4.5442e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method fromkeys>",
+      "primitive_calls": 90,
+      "total_calls": 90,
+      "tottime": 2.9317e-05,
+      "cumtime": 4.3524000000000005e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _imp.release_lock>",
+      "primitive_calls": 510,
+      "total_calls": 510,
+      "tottime": 4.3311000000000006e-05,
+      "cumtime": 4.3311000000000006e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1699,
+      "funcname": "path_hook_for_FileFinder",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 8.809e-06,
+      "cumtime": 4.3270000000000004e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'flatten' of 'numpy.ndarray' objects>",
+      "primitive_calls": 56,
+      "total_calls": 56,
+      "tottime": 4.1466000000000006e-05,
+      "cumtime": 4.1466000000000006e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy.arange>",
+      "primitive_calls": 7,
+      "total_calls": 7,
+      "tottime": 4.1047e-05,
+      "cumtime": 4.1047e-05
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3124,
+      "funcname": "Save_result_per_time_step",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 2.4345e-05,
+      "cumtime": 4.0668000000000004e-05
+    },
+    {
+      "filename": "<frozen os>",
+      "lineno": 200,
+      "funcname": "makedirs",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 8.754000000000001e-06,
+      "cumtime": 3.9088e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 134,
+      "funcname": "<genexpr>",
+      "primitive_calls": 112,
+      "total_calls": 112,
+      "tottime": 2.9003000000000003e-05,
+      "cumtime": 3.8605e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 357,
+      "funcname": "__init__",
+      "primitive_calls": 61,
+      "total_calls": 61,
+      "tottime": 3.5226000000000005e-05,
+      "cumtime": 3.5226000000000005e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _thread.get_ident>",
+      "primitive_calls": 398,
+      "total_calls": 398,
+      "tottime": 3.2964000000000005e-05,
+      "cumtime": 3.2964000000000005e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'copy' of 'dict' objects>",
+      "primitive_calls": 269,
+      "total_calls": 269,
+      "tottime": 3.2807e-05,
+      "cumtime": 3.2807e-05
+    },
+    {
+      "filename": "<frozen os>",
+      "lineno": 619,
+      "funcname": "get_exec_path",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 9.132e-06,
+      "cumtime": 3.2706e-05
+    },
+    {
+      "filename": "<frozen genericpath>",
+      "lineno": 16,
+      "funcname": "exists",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 4.338000000000001e-06,
+      "cumtime": 3.1542000000000004e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _imp.find_frozen>",
+      "primitive_calls": 61,
+      "total_calls": 61,
+      "tottime": 3.1262e-05,
+      "cumtime": 3.1262e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 599,
+      "funcname": "_check_name_wrapper",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 2.4813e-05,
+      "cumtime": 3.0232e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'pop' of 'dict' objects>",
+      "primitive_calls": 254,
+      "total_calls": 254,
+      "tottime": 2.9023000000000003e-05,
+      "cumtime": 3.0068e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'split' of 'str' objects>",
+      "primitive_calls": 144,
+      "total_calls": 144,
+      "tottime": 2.9686000000000003e-05,
+      "cumtime": 2.9686000000000003e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.waitpid>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.9143000000000002e-05,
+      "cumtime": 2.9143000000000002e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'values' of 'dict' objects>",
+      "primitive_calls": 277,
+      "total_calls": 277,
+      "tottime": 2.9014e-05,
+      "cumtime": 2.9014e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'format' of 'str' objects>",
+      "primitive_calls": 37,
+      "total_calls": 37,
+      "tottime": 2.8414000000000003e-05,
+      "cumtime": 2.8414000000000003e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 180,
+      "funcname": "_path_isabs",
+      "primitive_calls": 58,
+      "total_calls": 58,
+      "tottime": 1.7413e-05,
+      "cumtime": 2.782e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 790,
+      "funcname": "items",
+      "primitive_calls": 47,
+      "total_calls": 47,
+      "tottime": 1.8576e-05,
+      "cumtime": 2.7530000000000002e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _imp.is_builtin>",
+      "primitive_calls": 61,
+      "total_calls": 61,
+      "tottime": 2.6882e-05,
+      "cumtime": 2.6882e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _thread.allocate_lock>",
+      "primitive_calls": 124,
+      "total_calls": 124,
+      "tottime": 2.6869000000000003e-05,
+      "cumtime": 2.6869000000000003e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 798,
+      "funcname": "__eq__",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 3.445e-06,
+      "cumtime": 2.6839000000000002e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1562,
+      "funcname": "__init__",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 1.2696e-05,
+      "cumtime": 2.6513000000000002e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'endswith' of 'str' objects>",
+      "primitive_calls": 113,
+      "total_calls": 113,
+      "tottime": 2.5593e-05,
+      "cumtime": 2.5593e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'extend' of 'list' objects>",
+      "primitive_calls": 60,
+      "total_calls": 60,
+      "tottime": 2.1045000000000003e-05,
+      "cumtime": 2.5457e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _imp._fix_co_filename>",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 2.4996000000000003e-05,
+      "cumtime": 2.4996000000000003e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'remove' of 'list' objects>",
+      "primitive_calls": 61,
+      "total_calls": 61,
+      "tottime": 2.4883000000000002e-05,
+      "cumtime": 2.4883000000000002e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.callable>",
+      "primitive_calls": 347,
+      "total_calls": 347,
+      "tottime": 2.407e-05,
+      "cumtime": 2.407e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 409,
+      "funcname": "__subclasshook__",
+      "primitive_calls": 166,
+      "total_calls": 166,
+      "tottime": 2.3718000000000002e-05,
+      "cumtime": 2.3718000000000002e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 835,
+      "funcname": "__iter__",
+      "primitive_calls": 102,
+      "total_calls": 102,
+      "tottime": 1.5641e-05,
+      "cumtime": 2.3096e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.iter>",
+      "primitive_calls": 166,
+      "total_calls": 166,
+      "tottime": 2.0224e-05,
+      "cumtime": 2.2376e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 585,
+      "funcname": "__and__",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 3.599e-06,
+      "cumtime": 2.2321000000000002e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'match' of 're.Pattern' objects>",
+      "primitive_calls": 23,
+      "total_calls": 23,
+      "tottime": 2.1814e-05,
+      "cumtime": 2.1814e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'round' of 'numpy.ndarray' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.1808000000000002e-05,
+      "cumtime": 2.1808000000000002e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 607,
+      "funcname": "__sub__",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 7.058e-06,
+      "cumtime": 2.156e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 576,
+      "funcname": "_from_iterable",
+      "primitive_calls": 8,
+      "total_calls": 8,
+      "tottime": 3.309e-06,
+      "cumtime": 2.0483e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy.ascontiguousarray>",
+      "primitive_calls": 112,
+      "total_calls": 112,
+      "tottime": 1.9951000000000003e-05,
+      "cumtime": 1.9951000000000003e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'writerow' of '_csv.writer' objects>",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 1.8647e-05,
+      "cumtime": 1.8647e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.read>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.8421000000000002e-05,
+      "cumtime": 1.8421000000000002e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.fspath>",
+      "primitive_calls": 178,
+      "total_calls": 178,
+      "tottime": 1.8005e-05,
+      "cumtime": 1.8005e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 48,
+      "funcname": "_new_module",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 1.7818e-05,
+      "cumtime": 1.7818e-05
+    },
+    {
+      "filename": "<frozen os>",
+      "lineno": 806,
+      "funcname": "fsencode",
+      "primitive_calls": 21,
+      "total_calls": 21,
+      "tottime": 1.2814000000000001e-05,
+      "cumtime": 1.7508000000000002e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _operator.index>",
+      "primitive_calls": 82,
+      "total_calls": 82,
+      "tottime": 1.7291e-05,
+      "cumtime": 1.7291e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method '__deepcopy__' of 'numpy.ndarray' objects>",
+      "primitive_calls": 23,
+      "total_calls": 23,
+      "tottime": 1.6741e-05,
+      "cumtime": 1.6741e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 165,
+      "funcname": "__init__",
+      "primitive_calls": 60,
+      "total_calls": 60,
+      "tottime": 1.6527e-05,
+      "cumtime": 1.6527e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'view' of 'numpy.ndarray' objects>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 1.3847000000000001e-05,
+      "cumtime": 1.5299e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'keys' of 'mappingproxy' objects>",
+      "primitive_calls": 128,
+      "total_calls": 128,
+      "tottime": 1.5202000000000001e-05,
+      "cumtime": 1.5202000000000001e-05
+    },
+    {
+      "filename": "<frozen os>",
+      "lineno": 674,
+      "funcname": "__getitem__",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 8.846000000000001e-06,
+      "cumtime": 1.5097000000000001e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy.lib.array_utils.normalize_axis_index>",
+      "primitive_calls": 74,
+      "total_calls": 74,
+      "tottime": 1.4886000000000001e-05,
+      "cumtime": 1.4886000000000001e-05
+    },
+    {
+      "filename": "<frozen posixpath>",
+      "lineno": 229,
+      "funcname": "expanduser",
+      "primitive_calls": 10,
+      "total_calls": 10,
+      "tottime": 1.0431e-05,
+      "cumtime": 1.4678e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'pop' of 'list' objects>",
+      "primitive_calls": 83,
+      "total_calls": 83,
+      "tottime": 1.4560000000000001e-05,
+      "cumtime": 1.4560000000000001e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method sys.intern>",
+      "primitive_calls": 38,
+      "total_calls": 38,
+      "tottime": 1.4551e-05,
+      "cumtime": 1.4551e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method from_bytes>",
+      "primitive_calls": 85,
+      "total_calls": 85,
+      "tottime": 1.447e-05,
+      "cumtime": 1.447e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 786,
+      "funcname": "keys",
+      "primitive_calls": 22,
+      "total_calls": 22,
+      "tottime": 1.0459000000000001e-05,
+      "cumtime": 1.4358e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 812,
+      "funcname": "__init__",
+      "primitive_calls": 72,
+      "total_calls": 72,
+      "tottime": 1.4304e-05,
+      "cumtime": 1.4304e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _warnings._filters_mutated>",
+      "primitive_calls": 183,
+      "total_calls": 183,
+      "tottime": 1.4240000000000001e-05,
+      "cumtime": 1.4240000000000001e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.hash>",
+      "primitive_calls": 105,
+      "total_calls": 105,
+      "tottime": 1.3999000000000001e-05,
+      "cumtime": 1.3999000000000001e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1097,
+      "funcname": "__init__",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 1.3687000000000001e-05,
+      "cumtime": 1.3687000000000001e-05
+    },
+    {
+      "filename": "<frozen posixpath>",
+      "lineno": 397,
+      "funcname": "abspath",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 3.994e-06,
+      "cumtime": 1.2979e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 315,
+      "funcname": "__subclasshook__",
+      "primitive_calls": 72,
+      "total_calls": 72,
+      "tottime": 1.2823e-05,
+      "cumtime": 1.2823e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 878,
+      "funcname": "__iter__",
+      "primitive_calls": 24,
+      "total_calls": 24,
+      "tottime": 8.557000000000001e-06,
+      "cumtime": 1.253e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _csv.writer>",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 1.2069e-05,
+      "cumtime": 1.2069e-05
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 71,
+      "funcname": "_relax_case",
+      "primitive_calls": 101,
+      "total_calls": 101,
+      "tottime": 1.1499000000000001e-05,
+      "cumtime": 1.1499000000000001e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'copy' of 'set' objects>",
+      "primitive_calls": 31,
+      "total_calls": 31,
+      "tottime": 1.1451000000000001e-05,
+      "cumtime": 1.1451000000000001e-05
+    },
+    {
+      "filename": "<frozen posixpath>",
+      "lineno": 41,
+      "funcname": "_get_sep",
+      "primitive_calls": 29,
+      "total_calls": 29,
+      "tottime": 8.102e-06,
+      "cumtime": 1.1045e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'rfind' of 'str' objects>",
+      "primitive_calls": 60,
+      "total_calls": 60,
+      "tottime": 1.0938000000000001e-05,
+      "cumtime": 1.0938000000000001e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'insert' of 'list' objects>",
+      "primitive_calls": 67,
+      "total_calls": 67,
+      "tottime": 1.0362e-05,
+      "cumtime": 1.0362e-05
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method '__exit__' of '_thread.RLock' objects>",
+      "primitive_calls": 61,
+      "total_calls": 61,
+      "tottime": 1.0074e-05,
+      "cumtime": 1.0074e-05
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 78,
+      "funcname": "_check_methods",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 9.875000000000001e-06,
+      "cumtime": 9.875000000000001e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.mkdir>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 9.4e-06,
+      "cumtime": 9.4e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.pipe>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 9.113e-06,
+      "cumtime": 9.113e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'transpose' of 'numpy.ndarray' objects>",
+      "primitive_calls": 16,
+      "total_calls": 16,
+      "tottime": 8.518e-06,
+      "cumtime": 8.518e-06
+    },
+    {
+      "filename": "/tmp/feature_cython_exact_nodechain_top3/handoff_network_model_20260312/river_for_net.py",
+      "lineno": 3154,
+      "funcname": "_advance_save_scheduler",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 7.969000000000001e-06,
+      "cumtime": 8.359e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _operator.lt>",
+      "primitive_calls": 5,
+      "total_calls": 5,
+      "tottime": 8.332000000000001e-06,
+      "cumtime": 8.332000000000001e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method numpy._core._multiarray_umath._make_extobj>",
+      "primitive_calls": 20,
+      "total_calls": 20,
+      "tottime": 8.063e-06,
+      "cumtime": 8.063e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'reset' of '_contextvars.ContextVar' objects>",
+      "primitive_calls": 20,
+      "total_calls": 20,
+      "tottime": 8.011e-06,
+      "cumtime": 8.011e-06
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 164,
+      "funcname": "_path_isdir",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 2.06e-06,
+      "cumtime": 7.948e-06
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 262,
+      "funcname": "__subclasshook__",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 3.157e-06,
+      "cumtime": 7.939e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'set' of '_contextvars.ContextVar' objects>",
+      "primitive_calls": 20,
+      "total_calls": 20,
+      "tottime": 7.860000000000001e-06,
+      "cumtime": 7.860000000000001e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.close>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 7.591000000000001e-06,
+      "cumtime": 7.591000000000001e-06
+    },
+    {
+      "filename": "<frozen os>",
+      "lineno": 1081,
+      "funcname": "__subclasshook__",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 2.26e-06,
+      "cumtime": 7.353000000000001e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.locals>",
+      "primitive_calls": 10,
+      "total_calls": 10,
+      "tottime": 7.344e-06,
+      "cumtime": 7.344e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.sorted>",
+      "primitive_calls": 10,
+      "total_calls": 10,
+      "tottime": 7.181e-06,
+      "cumtime": 7.181e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method '__setstate__' of 'numpy.dtype' objects>",
+      "primitive_calls": 9,
+      "total_calls": 9,
+      "tottime": 6.747000000000001e-06,
+      "cumtime": 6.747000000000001e-06
+    },
+    {
+      "filename": "<frozen posixpath>",
+      "lineno": 100,
+      "funcname": "split",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 4.729e-06,
+      "cumtime": 6.6530000000000005e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _codecs.lookup>",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 6.605e-06,
+      "cumtime": 6.605e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'move_to_end' of 'collections.OrderedDict' objects>",
+      "primitive_calls": 59,
+      "total_calls": 59,
+      "tottime": 6.527e-06,
+      "cumtime": 6.527e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method '__contains__' of 'frozenset' objects>",
+      "primitive_calls": 32,
+      "total_calls": 32,
+      "tottime": 6.498e-06,
+      "cumtime": 6.498e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.open>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 6.353e-06,
+      "cumtime": 6.353e-06
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 413,
+      "funcname": "has_location",
+      "primitive_calls": 54,
+      "total_calls": 54,
+      "tottime": 6.1690000000000006e-06,
+      "cumtime": 6.1690000000000006e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'decode' of 'bytes' objects>",
+      "primitive_calls": 22,
+      "total_calls": 22,
+      "tottime": 5.878e-06,
+      "cumtime": 5.878e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'max' of 'numpy.ndarray' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.233e-06,
+      "cumtime": 5.772e-06
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1220,
+      "funcname": "__init__",
+      "primitive_calls": 26,
+      "total_calls": 26,
+      "tottime": 5.7680000000000005e-06,
+      "cumtime": 5.7680000000000005e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.ord>",
+      "primitive_calls": 66,
+      "total_calls": 66,
+      "tottime": 5.625e-06,
+      "cumtime": 5.625e-06
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1122,
+      "funcname": "get_filename",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 5.419e-06,
+      "cumtime": 5.419e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method builtins.print>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 5.346e-06,
+      "cumtime": 5.346e-06
+    },
+    {
+      "filename": "<frozen posixpath>",
+      "lineno": 150,
+      "funcname": "dirname",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 3.5890000000000003e-06,
+      "cumtime": 5.31e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'index' of 'tuple' objects>",
+      "primitive_calls": 40,
+      "total_calls": 40,
+      "tottime": 5.202e-06,
+      "cumtime": 5.202e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _sre.compile>",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "tottime": 5.139e-06,
+      "cumtime": 5.139e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'isidentifier' of 'str' objects>",
+      "primitive_calls": 32,
+      "total_calls": 32,
+      "tottime": 4.789e-06,
+      "cumtime": 4.789e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'lstrip' of 'bytes' objects>",
+      "primitive_calls": 13,
+      "total_calls": 13,
+      "tottime": 4.731e-06,
+      "cumtime": 4.731e-06
+    },
+    {
+      "filename": "<frozen os>",
+      "lineno": 756,
+      "funcname": "encode",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 3.598e-06,
+      "cumtime": 4.722000000000001e-06
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 588,
+      "funcname": "<genexpr>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 3.2860000000000004e-06,
+      "cumtime": 4.588e-06
+    },
+    {
+      "filename": "<frozen codecs>",
+      "lineno": 94,
+      "funcname": "__new__",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 3.8280000000000004e-06,
+      "cumtime": 4.521e-06
+    },
+    {
+      "filename": "<frozen codecs>",
+      "lineno": 319,
+      "funcname": "decode",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 3.917e-06,
+      "cumtime": 4.4770000000000005e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _sre.unicode_iscased>",
+      "primitive_calls": 48,
+      "total_calls": 48,
+      "tottime": 4.473e-06,
+      "cumtime": 4.473e-06
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 1568,
+      "funcname": "<genexpr>",
+      "primitive_calls": 32,
+      "total_calls": 32,
+      "tottime": 4.412e-06,
+      "cumtime": 4.412e-06
+    },
+    {
+      "filename": "<frozen importlib._bootstrap_external>",
+      "lineno": 931,
+      "funcname": "create_module",
+      "primitive_calls": 28,
+      "total_calls": 28,
+      "tottime": 4.3360000000000005e-06,
+      "cumtime": 4.3360000000000005e-06
+    },
+    {
+      "filename": "<frozen os>",
+      "lineno": 818,
+      "funcname": "fsdecode",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 2.7430000000000002e-06,
+      "cumtime": 4.332e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'find' of 'bytearray' objects>",
+      "primitive_calls": 14,
+      "total_calls": 14,
+      "tottime": 4.266e-06,
+      "cumtime": 4.266e-06
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 907,
+      "funcname": "pop",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.4530000000000001e-06,
+      "cumtime": 4.13e-06
+    },
+    {
+      "filename": "<frozen genericpath>",
+      "lineno": 39,
+      "funcname": "isdir",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.5690000000000003e-06,
+      "cumtime": 4.0540000000000005e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'ravel' of 'numpy.ndarray' objects>",
+      "primitive_calls": 14,
+      "total_calls": 14,
+      "tottime": 3.951e-06,
+      "cumtime": 3.951e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method '__enter__' of '_thread.lock' objects>",
+      "primitive_calls": 22,
+      "total_calls": 22,
+      "tottime": 3.7370000000000004e-06,
+      "cumtime": 3.7370000000000004e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method time.time>",
+      "primitive_calls": 9,
+      "total_calls": 9,
+      "tottime": 3.412e-06,
+      "cumtime": 3.412e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'replace' of 'str' objects>",
+      "primitive_calls": 21,
+      "total_calls": 21,
+      "tottime": 3.3700000000000003e-06,
+      "cumtime": 3.3700000000000003e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'argsort' of 'numpy.ndarray' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 3.294e-06,
+      "cumtime": 3.294e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method math.prod>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 3.2750000000000004e-06,
+      "cumtime": 3.2750000000000004e-06
+    },
+    {
+      "filename": "<frozen posixpath>",
+      "lineno": 389,
+      "funcname": "normpath",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.81e-06,
+      "cumtime": 3.271e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _codecs.lookup_error>",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 3.0530000000000002e-06,
+      "cumtime": 3.0530000000000002e-06
+    },
+    {
+      "filename": "<string>",
+      "lineno": 2,
+      "funcname": "__init__",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 2.951e-06,
+      "cumtime": 2.951e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'lstrip' of 'str' objects>",
+      "primitive_calls": 17,
+      "total_calls": 17,
+      "tottime": 2.8740000000000004e-06,
+      "cumtime": 2.8740000000000004e-06
+    },
+    {
+      "filename": "<frozen codecs>",
+      "lineno": 309,
+      "funcname": "__init__",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.667e-06,
+      "cumtime": 2.797e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'startswith' of 'bytes' objects>",
+      "primitive_calls": 19,
+      "total_calls": 19,
+      "tottime": 2.668e-06,
+      "cumtime": 2.668e-06
+    },
+    {
+      "filename": "<frozen codecs>",
+      "lineno": 186,
+      "funcname": "__init__",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 2.6540000000000003e-06,
+      "cumtime": 2.6540000000000003e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'endswith' of 'bytes' objects>",
+      "primitive_calls": 19,
+      "total_calls": 19,
+      "tottime": 2.576e-06,
+      "cumtime": 2.576e-06
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 794,
+      "funcname": "values",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 1.827e-06,
+      "cumtime": 2.448e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _sre.unicode_tolower>",
+      "primitive_calls": 38,
+      "total_calls": 38,
+      "tottime": 2.415e-06,
+      "cumtime": 2.415e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'upper' of 'str' objects>",
+      "primitive_calls": 5,
+      "total_calls": 5,
+      "tottime": 2.227e-06,
+      "cumtime": 2.227e-06
+    },
+    {
+      "filename": "<frozen importlib._bootstrap>",
+      "lineno": 1101,
+      "funcname": "_sanity_check",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 1.9210000000000003e-06,
+      "cumtime": 2.177e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'stream_reader' of 'zstd.ZstdDecompressor' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.172e-06,
+      "cumtime": 2.172e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<function FrozenList.__getitem__ at 0x7fadf9b145e0>",
+      "primitive_calls": 22,
+      "total_calls": 22,
+      "tottime": 2.1690000000000003e-06,
+      "cumtime": 2.1690000000000003e-06
+    },
+    {
+      "filename": "<string>",
+      "lineno": 1,
+      "funcname": "<lambda>",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 1.619e-06,
+      "cumtime": 2.105e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.getcwd>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.032e-06,
+      "cumtime": 2.032e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _stat.S_ISDIR>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 1.996e-06,
+      "cumtime": 1.996e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.urandom>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.968e-06,
+      "cumtime": 1.968e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'end' of 're.Match' objects>",
+      "primitive_calls": 20,
+      "total_calls": 20,
+      "tottime": 1.9050000000000002e-06,
+      "cumtime": 1.9050000000000002e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'isalnum' of 'str' objects>",
+      "primitive_calls": 9,
+      "total_calls": 9,
+      "tottime": 1.7160000000000002e-06,
+      "cumtime": 1.7160000000000002e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'setter' of 'property' objects>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 1.698e-06,
+      "cumtime": 1.698e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'difference_update' of 'set' objects>",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 1.5330000000000002e-06,
+      "cumtime": 1.5330000000000002e-06
+    },
+    {
+      "filename": "<frozen os>",
+      "lineno": 760,
+      "funcname": "decode",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.0450000000000002e-06,
+      "cumtime": 1.529e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'find' of 'str' objects>",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "tottime": 1.4880000000000002e-06,
+      "cumtime": 1.4880000000000002e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'nonzero' of 'numpy.ndarray' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.4790000000000002e-06,
+      "cumtime": 1.4790000000000002e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method sys._getframe>",
+      "primitive_calls": 8,
+      "total_calls": 8,
+      "tottime": 1.4170000000000002e-06,
+      "cumtime": 1.4170000000000002e-06
+    },
+    {
+      "filename": "<frozen _collections_abc>",
+      "lineno": 612,
+      "funcname": "<genexpr>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 1.364e-06,
+      "cumtime": 1.364e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix._path_normpath>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.3630000000000001e-06,
+      "cumtime": 1.3630000000000001e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method '__exit__' of 'zstd.ZstdDecompressionReader' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.3290000000000001e-06,
+      "cumtime": 1.3290000000000001e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'get' of 'mappingproxy' objects>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 1.3150000000000001e-06,
+      "cumtime": 1.3150000000000001e-06
+    },
+    {
+      "filename": "<frozen posixpath>",
+      "lineno": 60,
+      "funcname": "isabs",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 6.960000000000001e-07,
+      "cumtime": 1.1740000000000001e-06
+    },
+    {
+      "filename": "<frozen codecs>",
+      "lineno": 260,
+      "funcname": "__init__",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.13e-06,
+      "cumtime": 1.13e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'reverse' of 'list' objects>",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "tottime": 1.0450000000000002e-06,
+      "cumtime": 1.0450000000000002e-06
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'intersection' of 'set' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 9.89e-07,
+      "cumtime": 9.89e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method atexit.register>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 8.200000000000001e-07,
+      "cumtime": 8.200000000000001e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _weakref._remove_dead_weakref>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 7.990000000000001e-07,
+      "cumtime": 7.990000000000001e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'union' of 'set' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 7.7e-07,
+      "cumtime": 7.7e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'disable' of '_lsprof.Profiler' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 7.33e-07,
+      "cumtime": 7.33e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'values' of 'mappingproxy' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 7.32e-07,
+      "cumtime": 7.32e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'isascii' of 'str' objects>",
+      "primitive_calls": 9,
+      "total_calls": 9,
+      "tottime": 7.170000000000001e-07,
+      "cumtime": 7.170000000000001e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'strip' of 'str' objects>",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "tottime": 7.05e-07,
+      "cumtime": 7.05e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'count' of 'list' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 6.88e-07,
+      "cumtime": 6.88e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'acquire' of '_thread.RLock' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 5.77e-07,
+      "cumtime": 5.77e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method _codecs.utf_8_decode>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 5.6e-07,
+      "cumtime": 5.6e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method sys.setdlopenflags>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 5.37e-07,
+      "cumtime": 5.37e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method sys.exc_info>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 4.95e-07,
+      "cumtime": 4.95e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method sys.getdlopenflags>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 4.6700000000000004e-07,
+      "cumtime": 4.6700000000000004e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'rfind' of 'bytes' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 4.3e-07,
+      "cumtime": 4.3e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'append' of 'collections.deque' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 3.34e-07,
+      "cumtime": 3.34e-07
+    },
+    {
+      "filename": "<frozen abc>",
+      "lineno": 7,
+      "funcname": "abstractmethod",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 3.3300000000000003e-07,
+      "cumtime": 3.3300000000000003e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method sys.getrecursionlimit>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 3.04e-07,
+      "cumtime": 3.04e-07
+    },
+    {
+      "filename": "<string>",
+      "lineno": 1,
+      "funcname": "<module>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.72e-07,
+      "cumtime": 2.72e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'pop' of 'collections.deque' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 2.54e-07,
+      "cumtime": 2.54e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.waitstatus_to_exitcode>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 2.48e-07,
+      "cumtime": 2.48e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<method 'release' of '_thread.RLock' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "tottime": 2.1100000000000002e-07,
+      "cumtime": 2.1100000000000002e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method sys.audit>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.9e-07,
+      "cumtime": 1.9e-07
+    },
+    {
+      "filename": "~",
+      "lineno": 0,
+      "funcname": "<built-in method posix.WIFSTOPPED>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "tottime": 1.8800000000000002e-07,
+      "cumtime": 1.8800000000000002e-07
+    }
+  ]
+}
