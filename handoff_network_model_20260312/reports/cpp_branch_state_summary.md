@@ -65,16 +65,36 @@
 ## current known problems
 
 1. bridge-only gains are small because the time-step loop still crosses Python/Cython/C++ boundaries heavily
-2. `Update_cell_proprity2` is still the clearest remaining native gap, but prior native variants have shown an unresolved exact gap versus the Python reference path
-3. `Assemble_Flux_2` and nodechain post-iteration state commit still retain substantial Python ownership
+2. even after wrapper-bypass and native update-cell, nodechain post-iteration state commit still retains substantial Python ownership
+3. `Assemble_Flux_2` remains the clearest remaining per-cell native gap after `Update_cell_proprity2`
 4. generated compile artifacts and benchmark JSONs exist in both worktrees and must stay out of source commits
 
 ## next optimization direction
 
-1. isolate and fix the exact rounding/commit gap in `Update_cell_proprity2`
-2. push `Assemble_Flux_2` and related per-cell conservative/friction/admissibility loops deeper into C++
-3. native-ize nodechain state commit and post-node write-back
+1. push `Assemble_Flux_2` and related per-cell conservative/friction/admissibility loops deeper into C++
+2. native-ize nodechain state commit and post-node write-back
+3. revisit remaining river-step kernels in current hotspot order:
+   - `Caculate_Roe_Flux_2`
+   - `Caculate_Roe_matrix`
+   - `Caculate_face_U_C`
 4. only after the above, revisit a fuller native full-step loop
+
+## current branch-local accepted delta
+
+On this pushdown branch, the newly validated exact addition is:
+
+- `ISLAM_CPP_USE_UPDATE_CELL=1`
+
+Validated exact results relative to the phase-3 accepted source config:
+
+- 10m:
+  - `1.457326 s -> 1.259714 s`
+- 2h:
+  - `11.400661 s -> 10.262386 s`
+- 40h:
+  - `202.210932 s -> 177.525983 s`
+
+All three validation windows pass exact compare.
 
 ## commit policy for this line
 

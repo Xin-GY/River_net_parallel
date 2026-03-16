@@ -1,14 +1,65 @@
+# distutils: language = c++
 # cython: language_level=3
 # cython: boundscheck=False
 # cython: wraparound=False
 # cython: initializedcheck=False
 # cython: cdivision=True
 
+import numpy as np
 from libc.math cimport fabs, sqrt
+from libc.stdint cimport uint8_t
+from libcpp.vector cimport vector
 
 cimport numpy as cnp
 
+from cython_cross_section cimport CrossSectionTableCython
 from cython_cross_section import compute_general_hr_flux_interface
+
+cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
+    cdef cppclass TableView:
+        const double* area_axis
+        const double* depth_a
+        const double* level_a
+        const double* width_a
+        const double* wetted_a
+        const double* press_a
+        const double* area_axis_wet
+        const double* width_a_wet
+        const double* depth_axis
+        const double* area_d
+        size_t area_len
+        size_t wet_len
+        size_t depth_len
+        double bed_level
+
+    cdef cppclass UpdateCellStats:
+        size_t forced_dry_increment
+
+    UpdateCellStats update_cell_properties_exact_cpp_kernel "update_cell_properties_exact"(
+        const TableView* tables,
+        size_t n,
+        float* S,
+        float* Q,
+        double* water_level,
+        double* water_depth,
+        float* U,
+        float* C,
+        float* FR,
+        float* P,
+        float* PRESS,
+        float* R,
+        float* QIN,
+        const double* cell_s_limit,
+        const double* cell_bed,
+        uint8_t* forced_dry_recorded,
+        double g,
+        double eps,
+        double water_depth_limit,
+        double velocity_depth_limit,
+        int preserve_true_width,
+        int near_dry_velocity_mode,
+        int near_dry_derived_mode,
+    ) except +
 
 
 cdef inline double _maxd(double a, double b) noexcept:
@@ -111,6 +162,149 @@ cpdef bint fill_general_hr_flux_exact(object river):
         rain_half = -0.5 * float(cell_lengths[j]) * float(QIN[j])
         Flux_Source_left[j, 0] += rain_half
         Flux_Source_right[j, 0] += rain_half
+    return True
+
+
+cdef class CppUpdateCellPlan:
+    cdef vector[TableView] _views
+    cdef Py_ssize_t _size
+
+    def __cinit__(self, object tables):
+        cdef Py_ssize_t i, n = len(tables)
+        cdef CrossSectionTableCython tbl
+        cdef TableView view
+        self._size = n
+        self._views.reserve(<size_t>n)
+        for i in range(n):
+            tbl = <CrossSectionTableCython>tables[i]
+            view.area_axis = &tbl._area_axis_mv[0]
+            view.depth_a = &tbl._depth_a_mv[0]
+            view.level_a = &tbl._level_a_mv[0]
+            view.width_a = &tbl._width_a_mv[0]
+            view.wetted_a = &tbl._wetted_a_mv[0]
+            view.press_a = &tbl._press_a_mv[0]
+            if tbl._area_axis_wet_mv.shape[0] > 0:
+                view.area_axis_wet = &tbl._area_axis_wet_mv[0]
+                view.width_a_wet = &tbl._width_a_wet_mv[0]
+            else:
+                view.area_axis_wet = NULL
+                view.width_a_wet = NULL
+            view.depth_axis = &tbl._depth_axis_mv[0]
+            view.area_d = &tbl._area_d_mv[0]
+            view.area_len = <size_t>tbl._area_axis_mv.shape[0]
+            view.wet_len = <size_t>tbl._area_axis_wet_mv.shape[0]
+            view.depth_len = <size_t>tbl._depth_axis_mv.shape[0]
+            view.bed_level = tbl._bed_level
+            self._views.push_back(view)
+
+    cdef const TableView* data(self) noexcept:
+        if self._views.size() == 0:
+            return NULL
+        return &self._views[0]
+
+    cdef size_t size(self) noexcept:
+        return self._views.size()
+
+
+cpdef bint prepare_cpp_update_cell_plan(object river):
+    cdef object plan = getattr(river, "_cpp_update_cell_plan", None)
+    cdef tuple tables
+    if plan is not None and bool(getattr(river, "_cpp_update_cell_ready", False)):
+        return True
+    if not bool(getattr(river, "_cython_cell_state_ready", False)):
+        river._cpp_update_cell_plan = None
+        river._cpp_update_cell_ready = False
+        return False
+    tables = river._cell_section_tables
+    if not tables:
+        river._cpp_update_cell_plan = None
+        river._cpp_update_cell_ready = False
+        return False
+    river._cpp_update_cell_plan = CppUpdateCellPlan(tables)
+    river._cpp_update_cell_ready = True
+    return True
+
+
+cpdef bint update_cell_properties_exact_cpp(object river):
+    cdef CppUpdateCellPlan plan
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] S_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Q_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] water_level_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] water_depth_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] U_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] C_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] FR_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] P_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] PRESS_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] R_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] QIN_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] cell_s_limit_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] cell_bed_arr
+    cdef cnp.ndarray[cnp.uint8_t, ndim=1] forced_dry_flags
+    cdef UpdateCellStats stats
+    cdef int near_dry_velocity_mode
+    cdef int near_dry_derived_mode
+
+    if not prepare_cpp_update_cell_plan(river):
+        return False
+
+    plan = <CppUpdateCellPlan>river._cpp_update_cell_plan
+    S_arr = river.S
+    Q_arr = river.Q
+    water_level_arr = river.water_level
+    water_depth_arr = river.water_depth
+    U_arr = river.U
+    C_arr = river.C
+    FR_arr = river.FR
+    P_arr = river.P
+    PRESS_arr = river.PRESS
+    R_arr = river.R
+    QIN_arr = river.QIN
+    cell_s_limit_arr = river._cell_s_limit_arr
+    cell_bed_arr = river._cell_bed_level_arr
+    forced_dry_flags = river._forced_dry_recorded.view(np.uint8)
+
+    if river.near_dry_velocity_cutoff_mode == "zero_q":
+        near_dry_velocity_mode = 0
+    else:
+        near_dry_velocity_mode = 1
+
+    if river.near_dry_derived_mode == "floor_u_and_c":
+        near_dry_derived_mode = 0
+    elif river.near_dry_derived_mode == "actual_u_floor_c":
+        near_dry_derived_mode = 1
+    elif river.near_dry_derived_mode == "actual_u_soft_floor_c":
+        near_dry_derived_mode = 2
+    else:
+        near_dry_derived_mode = 3
+
+    stats = update_cell_properties_exact_cpp_kernel(
+        plan.data(),
+        plan.size(),
+        &S_arr[0],
+        &Q_arr[0],
+        &water_level_arr[0],
+        &water_depth_arr[0],
+        &U_arr[0],
+        &C_arr[0],
+        &FR_arr[0],
+        &P_arr[0],
+        &PRESS_arr[0],
+        &R_arr[0],
+        &QIN_arr[0],
+        &cell_s_limit_arr[0],
+        &cell_bed_arr[0],
+        &forced_dry_flags[0],
+        float(river.g),
+        float(river.EPSILON),
+        float(river.water_depth_limit),
+        float(river.velocity_depth_limit),
+        1 if bool(river.fix_02_preserve_true_width) else 0,
+        near_dry_velocity_mode,
+        near_dry_derived_mode,
+    )
+    river.current_forced_dry_count += int(stats.forced_dry_increment)
+    river.total_forced_dry_count += int(stats.forced_dry_increment)
     return True
 
 

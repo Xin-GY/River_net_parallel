@@ -22,9 +22,10 @@ def existing_extensions():
         specs.append(
             Extension(
                 name="cython_river_kernels",
-                sources=["cython_river_kernels.pyx"],
-                include_dirs=[np.get_include()],
-                extra_compile_args=["-O3"],
+                sources=["cython_river_kernels.pyx", "cpp/river_kernels.cpp"],
+                include_dirs=[np.get_include(), str(root)],
+                language="c++",
+                extra_compile_args=["-O3", "-std=c++17"],
             )
         )
     return specs

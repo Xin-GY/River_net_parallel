@@ -37,10 +37,14 @@ try:
     from cython_river_kernels import (
         fill_general_hr_flux_exact as cython_fill_general_hr_flux_exact,
         update_cell_properties_exact as cython_update_cell_properties_exact,
+        update_cell_properties_exact_cpp as cpp_update_cell_properties_exact,
+        prepare_cpp_update_cell_plan as prepare_cpp_update_cell_plan,
     )
 except Exception:
     cython_fill_general_hr_flux_exact = None
     cython_update_cell_properties_exact = None
+    cpp_update_cell_properties_exact = None
+    prepare_cpp_update_cell_plan = None
 try:
     from cython_cpp_bridge import CppOutputBuffer
 except Exception:
@@ -860,6 +864,8 @@ class River(Process):
         self._general_hr_left_tables = ()
         self._general_hr_right_tables = ()
         self._general_hr_cython_batch_ready = False
+        self._cpp_update_cell_plan = None
+        self._cpp_update_cell_ready = False
         default_roe_flag = '1' if os.environ.get('ISLAM_USE_CPP_EVOLVE', '0') == '1' else '0'
         self.use_cython_roe_flux = os.environ.get('ISLAM_USE_CYTHON_ROE_FLUX', default_roe_flag) == '1'
         default_update_flag = os.environ.get('ISLAM_USE_CYTHON_UPDATE_CELL', '0')
@@ -967,6 +973,10 @@ class River(Process):
                 for tbl in self._general_hr_left_tables + self._general_hr_right_tables
             )
         )
+        self._cpp_update_cell_ready = False
+        self._cpp_update_cell_plan = None
+        if prepare_cpp_update_cell_plan is not None and bool(getattr(self, 'use_cython_update_cell', False)):
+            prepare_cpp_update_cell_plan(self)
 
     def _get_cell_table_ref(self, idx):
         if 0 <= idx < len(self._cell_section_tables):
@@ -3406,6 +3416,9 @@ class River(Process):
 
     def Update_cell_proprity2(self):
         # State-refresh owner: derive depth/level/U/C/Fr and final dry flags from S/Q.
+        if bool(getattr(self, 'use_cython_update_cell', False)) and cpp_update_cell_properties_exact is not None:
+            if cpp_update_cell_properties_exact(self):
+                return
         if bool(getattr(self, 'use_cython_update_cell', False)) and cython_update_cell_properties_exact is not None:
             if cython_update_cell_properties_exact(self):
                 return
