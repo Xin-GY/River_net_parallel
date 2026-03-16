@@ -1,0 +1,13 @@
+## feature/cpp-exact-evolve-nodechain-deepnative
+?? handoff_network_model_20260312/cython_node_iteration.c
+?? handoff_network_model_20260312/cython_node_iteration.cpython-311-x86_64-linux-gnu.so
+?? handoff_network_model_20260312/cython_river_kernels.cpp
+?? handoff_network_model_20260312/cython_river_kernels.cpython-311-x86_64-linux-gnu.so
+?? handoff_network_model_20260312/reports/cpp_nodechain_push_branch_layout.md
+?? handoff_network_model_20260312/reports/cpp_nodechain_push_preflight_git_status.txt
+?? handoff_network_model_20260312/reports/cpp_nodechain_push_untracked_inventory.md
+?? handoff_network_model_20260312/reports/cpp_nodechainpush_accepted_2h_perf.json
+?? handoff_network_model_20260312/reports/cpp_nodechainpush_accepted_2h_summary.json
+?? handoff_network_model_20260312/reports/nodechain_hotspots_breakdown_after_fluxdeep.md
+?? handoff_network_model_20260312/reports/nodechain_native_gap_ranked_after_fluxdeep.md
+?? handoff_network_model_20260312/reports/nodechain_remaining_python_chain_after_fluxdeep.md

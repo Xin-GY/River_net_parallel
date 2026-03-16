@@ -636,3 +636,44 @@
 - Result:
   - accepted checkpoint candidate
   - next biggest remaining resistance is nodechain, not bridge shape
+
+## 2026-03-16 Stage 0-1: nodechain-deepnative branch bootstrap and nodechain native-gap audit
+
+### Done
+
+- Created clean continuation branch/worktree from accepted flux-deep exact baseline:
+  - `feature/cpp-exact-evolve-nodechain-deepnative`
+  - `/tmp/feature_cpp_exact_evolve_nodechain_deepnative`
+- Rebuilt the Cython extensions in the new worktree so profiling and compare could run from a clean branch-local state.
+- Recorded branch-local preflight files:
+  - `reports/cpp_nodechain_push_preflight_git_status.txt`
+  - `reports/cpp_nodechain_push_untracked_inventory.md`
+  - `reports/cpp_nodechain_push_branch_layout.md`
+- Ran an accepted-config 2h single-process exact profile in the new worktree and wrote:
+  - `reports/cpp_nodechainpush_accepted_2h_summary.json`
+  - `reports/cpp_nodechainpush_accepted_2h_perf.json`
+- Wrote nodechain-specific native-gap reports:
+  - `reports/nodechain_remaining_python_chain_after_fluxdeep.md`
+  - `reports/nodechain_native_gap_ranked_after_fluxdeep.md`
+  - `reports/nodechain_hotspots_breakdown_after_fluxdeep.md`
+
+### Findings
+
+- The remaining nodechain gap is no longer in the closure formula itself; it is in ownership around the formula.
+- The dominant remaining nodechain sub-cost is still:
+  - `apply_and_boundary_closure`
+- The accepted prebound fast path is active, but each closure still pays for:
+  - a Python river helper call
+  - Python-owned commit / `_refresh_cell_state`
+  - Python-owned boundary-face attribute writeback
+- Residual / `Ac` still re-read boundary-face state and width data through Python-owned lookups.
+- This explains why the accepted exact path is still above `100 s` on 40h even after flux deep ownership succeeded.
+
+### Next
+
+- push `apply_and_boundary_closure` deeper so native code owns:
+  - branch plan
+  - closure context
+  - per-iteration face-state cache
+  - immediate post-closure state refresh / commit
+- then move residual / `Ac` to consume that native-owned face state instead of Python attrs and repeated lookups
