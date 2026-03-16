@@ -9,6 +9,7 @@ struct TableView {
     const double* area_axis;
     const double* depth_a;
     const double* level_a;
+    const double* DEB_a;
     const double* width_a;
     const double* wetted_a;
     const double* press_a;
@@ -23,6 +24,10 @@ struct TableView {
 };
 
 struct UpdateCellStats {
+    std::size_t forced_dry_increment;
+};
+
+struct AssemblePostStepStats {
     std::size_t forced_dry_increment;
 };
 
@@ -62,6 +67,21 @@ UpdateCellStats update_cell_properties_exact(
     int preserve_true_width,
     int near_dry_velocity_mode,
     int near_dry_derived_mode
+);
+
+AssemblePostStepStats apply_explicit_manning_poststep_exact(
+    const TableView* tables,
+    std::size_t n,
+    float* S,
+    float* Q,
+    const double* water_depth,
+    const double* cell_s_limit,
+    std::uint8_t* forced_dry_recorded,
+    double g,
+    double dt,
+    double eps,
+    double water_depth_limit,
+    double friction_min_depth
 );
 
 }  // namespace rivernet

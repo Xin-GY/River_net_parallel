@@ -193,6 +193,62 @@
   - move real numerical work, not only orchestration, from Python/Cython into C++ runtime kernels
   - start with the node iteration chain and then the river-step kernels
 
+## 2026-03-16 C++ fullchain pushdown continuation
+
+### Done
+
+- created a clean continuation branch from the accepted update-cell checkpoint:
+  - `feature/cpp-exact-evolve-fullchain-pushdown-next`
+- recorded current preflight and native-gap reports for this continuation line
+- implemented an exact native `Assemble_Flux_2` post-step kernel behind:
+  - `ISLAM_CPP_USE_ASSEMBLE=1`
+- moved the remaining explicit manning friction substep and explicit admissibility post-pass out of the Python per-cell loop and into C++:
+  - `cpp/river_kernels.hpp`
+  - `cpp/river_kernels.cpp`
+  - `cython_river_kernels.pyx`
+  - `river_for_net.py`
+- diagnosed and fixed the original drift with step-by-step river/cell comparison scripts until:
+  - 10m exact compare passed
+  - 2h exact compare passed
+  - 40h exact compare passed
+
+### Findings
+
+- the first native `Assemble_Flux_2` prototype failed not because of high-level orchestration, but because the friction coefficient path did not exactly match NumPy scalar semantics
+- the accepted exact kernel now preserves the required staging for:
+  - `g * DT * S`
+  - `deb * deb`
+  - float32/float64 interaction in the coefficient calculation
+- after `Update_cell_proprity2` and `Assemble_Flux_2` are both native, the remaining fullchain gaps become much clearer:
+  - nodechain state commit / final apply
+  - deeper `Caculate_Roe_Flux_2` pushdown
+  - `Caculate_Roe_matrix`, then `Caculate_face_U_C`
+
+### Results
+
+- current accepted continuation exact config:
+  - `ISLAM_USE_CPP_EVOLVE=1`
+  - `ISLAM_CPP_THREADS=0`
+  - `ISLAM_USE_CYTHON_NODECHAIN=1`
+  - `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
+  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
+  - `ISLAM_CPP_USE_UPDATE_CELL=1`
+  - `ISLAM_CPP_USE_ASSEMBLE=1`
+  - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
+- exact evolve/model improvements relative to the update-cell continuation baseline:
+  - 10m: `1.266910 s -> 1.074628 s`
+  - 2h: `9.865382 s -> 8.403064 s`
+  - 40h: `177.525983 s -> 142.210454 s`
+- all three compare windows passed exact compare
+
+### Next
+
+- keep `Assemble_Flux_2` as an accepted exact kernel on this line
+- continue with the next native gaps in this order:
+  1. nodechain state commit / final apply
+  2. deeper `Caculate_Roe_Flux_2` ownership if it still ranks above the remaining river-step kernels
+  3. `Caculate_Roe_matrix`
+
 ## 2026-03-15 Phase 0-2
 
 ### Done

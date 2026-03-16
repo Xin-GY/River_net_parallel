@@ -20,6 +20,7 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         const double* area_axis
         const double* depth_a
         const double* level_a
+        const double* DEB_a
         const double* width_a
         const double* wetted_a
         const double* press_a
@@ -33,6 +34,9 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double bed_level
 
     cdef cppclass UpdateCellStats:
+        size_t forced_dry_increment
+
+    cdef cppclass AssemblePostStepStats:
         size_t forced_dry_increment
 
     UpdateCellStats update_cell_properties_exact_cpp_kernel "update_cell_properties_exact"(
@@ -59,6 +63,21 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         int preserve_true_width,
         int near_dry_velocity_mode,
         int near_dry_derived_mode,
+    ) except +
+
+    AssemblePostStepStats apply_explicit_manning_poststep_exact_cpp_kernel "apply_explicit_manning_poststep_exact"(
+        const TableView* tables,
+        size_t n,
+        float* S,
+        float* Q,
+        const double* water_depth,
+        const double* cell_s_limit,
+        uint8_t* forced_dry_recorded,
+        double g,
+        double dt,
+        double eps,
+        double water_depth_limit,
+        double friction_min_depth,
     ) except +
 
 
@@ -180,6 +199,7 @@ cdef class CppUpdateCellPlan:
             view.area_axis = &tbl._area_axis_mv[0]
             view.depth_a = &tbl._depth_a_mv[0]
             view.level_a = &tbl._level_a_mv[0]
+            view.DEB_a = &tbl._DEB_a_mv[0]
             view.width_a = &tbl._width_a_mv[0]
             view.wetted_a = &tbl._wetted_a_mv[0]
             view.press_a = &tbl._press_a_mv[0]
@@ -302,6 +322,48 @@ cpdef bint update_cell_properties_exact_cpp(object river):
         1 if bool(river.fix_02_preserve_true_width) else 0,
         near_dry_velocity_mode,
         near_dry_derived_mode,
+    )
+    river.current_forced_dry_count += int(stats.forced_dry_increment)
+    river.total_forced_dry_count += int(stats.forced_dry_increment)
+    return True
+
+
+cpdef bint assemble_flux_poststep_exact_cpp(object river):
+    cdef CppUpdateCellPlan plan
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] S_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Q_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] water_depth_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] cell_s_limit_arr
+    cdef cnp.ndarray[cnp.uint8_t, ndim=1] forced_dry_flags
+    cdef AssemblePostStepStats stats
+
+    if not bool(getattr(river, "FRTIMP", False)):
+        return False
+    if str(getattr(river, "friction_model", "manning")).lower() != "manning":
+        return False
+    if not prepare_cpp_update_cell_plan(river):
+        return False
+
+    plan = <CppUpdateCellPlan>river._cpp_update_cell_plan
+    S_arr = river.S[1:river.cell_num + 1]
+    Q_arr = river.Q[1:river.cell_num + 1]
+    water_depth_arr = river.water_depth[1:river.cell_num + 1]
+    cell_s_limit_arr = river._cell_s_limit_arr[1:river.cell_num + 1]
+    forced_dry_flags = river._forced_dry_recorded[1:river.cell_num + 1].view(np.uint8)
+
+    stats = apply_explicit_manning_poststep_exact_cpp_kernel(
+        plan.data() + 1,
+        river.cell_num,
+        &S_arr[0],
+        &Q_arr[0],
+        &water_depth_arr[0],
+        &cell_s_limit_arr[0],
+        &forced_dry_flags[0],
+        float(river.g),
+        float(river.DT),
+        float(river.EPSILON),
+        float(river.water_depth_limit),
+        float(getattr(river, "friction_min_depth", 0.0)),
     )
     river.current_forced_dry_count += int(stats.forced_dry_increment)
     river.total_forced_dry_count += int(stats.forced_dry_increment)

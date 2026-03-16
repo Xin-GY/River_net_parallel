@@ -51,6 +51,10 @@ inline double table_level_by_area(const TableView& tbl, double area) noexcept {
     return interp_sorted(area, tbl.area_axis, tbl.level_a, tbl.area_len);
 }
 
+inline double table_deb_by_area(const TableView& tbl, double area) noexcept {
+    return interp_sorted(area, tbl.area_axis, tbl.DEB_a, tbl.area_len);
+}
+
 inline double table_depth_by_area(const TableView& tbl, double area) noexcept {
     return interp_sorted(area, tbl.area_axis, tbl.depth_a, tbl.area_len);
 }
@@ -235,6 +239,90 @@ UpdateCellStats update_cell_properties_exact(
         PRESS[i] = static_cast<float>(table_press_by_area(tbl, final_area));
         R[i] = static_cast<float>(table_hradius_by_area(tbl, final_area));
         QIN[i] = 0.0f;
+    }
+
+    return stats;
+}
+
+AssemblePostStepStats apply_explicit_manning_poststep_exact(
+    const TableView* tables,
+    std::size_t n,
+    float* S,
+    float* Q,
+    const double* water_depth,
+    const double* cell_s_limit,
+    std::uint8_t* forced_dry_recorded,
+    double g,
+    double dt,
+    double eps,
+    double water_depth_limit,
+    double friction_min_depth
+) {
+    AssemblePostStepStats stats{};
+    const float g_f = static_cast<float>(g);
+    const float dt_f = static_cast<float>(dt);
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const TableView& tbl = tables[i];
+        const double prev_s = static_cast<double>(S[i]);
+        const double prev_depth = water_depth[i];
+        const float area_pos = std::max(S[i], 0.0f);
+        const double depth_i = table_depth_by_area(tbl, static_cast<double>(area_pos));
+        const double s_limit = cell_s_limit[i];
+
+        if (is_cell_dry(static_cast<double>(S[i]), depth_i, static_cast<double>(Q[i]), s_limit, g, eps, water_depth_limit)) {
+            if (forced_dry_recorded[i] == 0 && (prev_s > s_limit || prev_depth > water_depth_limit)) {
+                forced_dry_recorded[i] = 1;
+                stats.forced_dry_increment += 1;
+            }
+            S[i] = 0.0f;
+            Q[i] = 0.0f;
+        } else {
+            float coef = 0.0f;
+            if (!(friction_min_depth > 0.0 && depth_i <= friction_min_depth)) {
+                const double deb = table_deb_by_area(tbl, static_cast<double>(S[i]));
+                const float num1 = g_f * dt_f;
+                const float num2 = num1 * S[i];
+                const float den = static_cast<float>(deb * deb);
+                coef = num2 / den;
+            }
+            const float abs_q = std::fabs(Q[i]);
+            const float mult1 = 4.0f * coef;
+            const float mult2 = mult1 * abs_q;
+            const float delta = 1.0f + mult2;
+            if (coef > 1.0e-06f) {
+                const float root = std::sqrt(delta);
+                const float denom = 2.0f * coef;
+                if (Q[i] > 0.0f) {
+                    const float numer = -1.0f + root;
+                    Q[i] = numer / denom;
+                } else {
+                    const float numer = 1.0f - root;
+                    Q[i] = numer / denom;
+                }
+            } else {
+                const float mult3 = coef * Q[i];
+                const float factor = 1.0f - mult3;
+                Q[i] = Q[i] * factor;
+            }
+        }
+    }
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const TableView& tbl = tables[i];
+        const double prev_s = static_cast<double>(S[i]);
+        const double prev_depth = water_depth[i];
+        const float area_pos = std::max(S[i], 0.0f);
+        const double depth_i = table_depth_by_area(tbl, static_cast<double>(area_pos));
+        const double s_limit = cell_s_limit[i];
+        if (is_cell_dry(static_cast<double>(S[i]), depth_i, static_cast<double>(Q[i]), s_limit, g, eps, water_depth_limit)) {
+            if (forced_dry_recorded[i] == 0 && (prev_s > s_limit || prev_depth > water_depth_limit)) {
+                forced_dry_recorded[i] = 1;
+                stats.forced_dry_increment += 1;
+            }
+            S[i] = 0.0f;
+            Q[i] = 0.0f;
+        }
     }
 
     return stats;
