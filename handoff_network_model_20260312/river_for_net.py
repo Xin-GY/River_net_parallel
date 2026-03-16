@@ -40,6 +40,7 @@ try:
         update_cell_properties_exact_cpp as cpp_update_cell_properties_exact,
         prepare_cpp_update_cell_plan as prepare_cpp_update_cell_plan,
         assemble_flux_poststep_exact_cpp as cpp_assemble_flux_poststep_exact,
+        roe_matrix_exact_cpp as cpp_roe_matrix_exact,
     )
 except Exception:
     cython_fill_general_hr_flux_exact = None
@@ -47,6 +48,7 @@ except Exception:
     cpp_update_cell_properties_exact = None
     prepare_cpp_update_cell_plan = None
     cpp_assemble_flux_poststep_exact = None
+    cpp_roe_matrix_exact = None
 try:
     from cython_cpp_bridge import CppOutputBuffer
 except Exception:
@@ -873,6 +875,7 @@ class River(Process):
         default_update_flag = os.environ.get('ISLAM_USE_CYTHON_UPDATE_CELL', '0')
         self.use_cython_update_cell = os.environ.get('ISLAM_CPP_USE_UPDATE_CELL', default_update_flag) == '1'
         self.use_cpp_assemble = os.environ.get('ISLAM_CPP_USE_ASSEMBLE', '0') == '1'
+        self.use_cpp_roe_matrix = os.environ.get('ISLAM_CPP_USE_ROE_MATRIX', '0') == '1'
         self._general_hr_flux_mass_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_flux_momentum_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_press_left_hr_buf = np.zeros(self.cell_num + 1, dtype=float)
@@ -1893,6 +1896,9 @@ class River(Process):
                 self.friction_source[i, 1] = 2 * g * smil * frot
 
     def Caculate_Roe_matrix(self):
+        if bool(getattr(self, 'use_cpp_roe_matrix', False)) and cpp_roe_matrix_exact is not None:
+            if cpp_roe_matrix_exact(self):
+                return
         N = self.cell_num + 1
         eps = self.EPSILON
         Roe_C = self.F_C[:N]

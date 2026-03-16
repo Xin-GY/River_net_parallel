@@ -249,6 +249,62 @@
   2. deeper `Caculate_Roe_Flux_2` ownership if it still ranks above the remaining river-step kernels
   3. `Caculate_Roe_matrix`
 
+## 2026-03-16 C++ fullchain pushdown Roe-matrix step
+
+### Done
+
+- implemented an exact native `Caculate_Roe_matrix` kernel behind:
+  - `ISLAM_CPP_USE_ROE_MATRIX=1`
+- moved the full interface loop for:
+  - `Lambda1/Lambda2`
+  - LeVeque correction masks
+  - `alpha1/alpha2`
+  - `Vactor1/Vactor2/Vactor1_T/Vactor2_T`
+  - interface regime counters
+  into C++
+- extended the branch-local benchmark tool so it can explicitly toggle:
+  - `ISLAM_CPP_USE_ASSEMBLE`
+  - `ISLAM_CPP_USE_ROE_MATRIX`
+- validated the candidate on:
+  - 10m
+  - 2h
+  - 40h
+
+### Findings
+
+- this kernel is a much cleaner native target than nodechain commit because it is mostly arrays-only work with stable dtype semantics
+- the key exactness rule here was to preserve the NumPy path's `float32` intermediate arithmetic, then write the resulting values into the existing `float64` eigenvector arrays
+- once `Roe_matrix` is native, the remaining river-step bottleneck picture changes again:
+  - `Caculate_Roe_Flux_2` is now the dominant river-step hotspot
+  - `Caculate_face_U_C` becomes the next clean arrays-heavy candidate
+  - nodechain remains the biggest non-river-step domain
+
+### Results
+
+- accepted continuation exact config is now:
+  - `ISLAM_USE_CPP_EVOLVE=1`
+  - `ISLAM_CPP_THREADS=0`
+  - `ISLAM_USE_CYTHON_NODECHAIN=1`
+  - `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
+  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
+  - `ISLAM_CPP_USE_UPDATE_CELL=1`
+  - `ISLAM_CPP_USE_ASSEMBLE=1`
+  - `ISLAM_CPP_USE_ROE_MATRIX=1`
+  - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
+- exact evolve/model improvements relative to the assemble continuation baseline:
+  - 10m: `1.074628 s -> 0.997237 s`
+  - 2h: `8.403064 s -> 7.561386 s`
+  - 40h: `142.210454 s -> 124.534376 s`
+- all three compare windows passed exact compare
+
+### Next
+
+- keep `Caculate_Roe_matrix` as an accepted exact kernel on this line
+- continue with the next native gaps in this order:
+  1. nodechain state commit / final apply
+  2. deeper `Caculate_Roe_Flux_2`
+  3. `Caculate_face_U_C`
+
 ## 2026-03-15 Phase 0-2
 
 ### Done

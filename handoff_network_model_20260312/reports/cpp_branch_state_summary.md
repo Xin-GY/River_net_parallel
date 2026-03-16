@@ -83,18 +83,17 @@
 Validated no-profile spot checks in this clean continuation worktree:
 
 - 10m:
-  - `1.074628 s`
+  - `0.997237 s`
 - 2h:
-  - `8.403064 s`
+  - `7.561386 s`
 - 40h:
-  - `142.210454 s`
+  - `124.534376 s`
 
 ## next optimization direction
 
 1. native-ize nodechain state commit and post-node write-back
 2. revisit remaining river-step kernels in current hotspot order:
    - `Caculate_Roe_Flux_2`
-   - `Caculate_Roe_matrix`
    - `Caculate_face_U_C`
 3. only after the above, revisit a fuller native full-step loop
 
@@ -127,6 +126,21 @@ Validated exact results relative to the update-cell continuation baseline:
   - `9.865382 s -> 8.403064 s`
 - 40h:
   - `177.525983 s -> 142.210454 s`
+
+All three validation windows pass exact compare.
+
+The next newly validated exact addition on this continuation branch is:
+
+- `ISLAM_CPP_USE_ROE_MATRIX=1`
+
+Validated exact results relative to the assemble continuation baseline:
+
+- 10m:
+  - `1.074628 s -> 0.997237 s`
+- 2h:
+  - `8.403064 s -> 7.561386 s`
+- 40h:
+  - `142.210454 s -> 124.534376 s`
 
 All three validation windows pass exact compare.
 

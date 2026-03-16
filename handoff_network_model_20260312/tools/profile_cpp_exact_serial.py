@@ -23,6 +23,8 @@ def main() -> int:
     parser.add_argument("--use-cython-nodechain", action="store_true", default=False)
     parser.add_argument("--use-cython-roe-flux", action="store_true", default=False)
     parser.add_argument("--use-cpp-update-cell", action="store_true", default=False)
+    parser.add_argument("--use-cpp-assemble", action="store_true", default=False)
+    parser.add_argument("--use-cpp-roe-matrix", action="store_true", default=False)
     args = parser.parse_args()
 
     os.environ["ISLAM_USE_PARALLEL"] = "0"
@@ -32,6 +34,8 @@ def main() -> int:
     os.environ["ISLAM_USE_CYTHON_NODECHAIN"] = "1" if args.use_cython_nodechain else "0"
     os.environ["ISLAM_USE_CYTHON_ROE_FLUX"] = "1" if args.use_cython_roe_flux else "0"
     os.environ["ISLAM_CPP_USE_UPDATE_CELL"] = "1" if args.use_cpp_update_cell else "0"
+    os.environ["ISLAM_CPP_USE_ASSEMBLE"] = "1" if args.use_cpp_assemble else "0"
+    os.environ["ISLAM_CPP_USE_ROE_MATRIX"] = "1" if args.use_cpp_roe_matrix else "0"
     os.environ["ISLAM_OUTPUT_PATH"] = args.output_dir
     os.environ["ISLAM_SIM_END_TIME"] = args.sim_end_time
     os.environ["ISLAM_OUTPUT_RIVERS"] = "river11"
@@ -75,6 +79,8 @@ def main() -> int:
         "use_cython_nodechain": bool(args.use_cython_nodechain),
         "use_cython_roe_flux": bool(args.use_cython_roe_flux),
         "use_cpp_update_cell": bool(args.use_cpp_update_cell),
+        "use_cpp_assemble": bool(args.use_cpp_assemble),
+        "use_cpp_roe_matrix": bool(args.use_cpp_roe_matrix),
     }
     perf_stats = net.export_perf_stats() if hasattr(net, "export_perf_stats") else {}
 

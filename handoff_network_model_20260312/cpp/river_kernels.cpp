@@ -328,4 +328,140 @@ AssemblePostStepStats apply_explicit_manning_poststep_exact(
     return stats;
 }
 
+RoeMatrixStats compute_roe_matrix_exact(
+    std::size_t n,
+    float eps,
+    float water_depth_limit,
+    const float* F_C,
+    const float* F_U,
+    const float* BETA,
+    const float* FR,
+    const double* water_depth,
+    const float* U,
+    const float* C,
+    const float* S,
+    const float* Q,
+    double* flag_LeVeque,
+    float* abs_Lambda1,
+    float* abs_Lambda2,
+    float* alpha1,
+    float* alpha2,
+    float* Lambda1,
+    float* Lambda2,
+    double* Vactor1,
+    double* Vactor2,
+    double* Vactor1_T,
+    double* Vactor2_T
+) {
+    RoeMatrixStats stats{};
+    if (n == 0) {
+        stats.lambda1_min = 0.0f;
+        stats.lambda1_max = 0.0f;
+        stats.lambda2_min = 0.0f;
+        stats.lambda2_max = 0.0f;
+        return stats;
+    }
+
+    bool lambda_init = false;
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const float roe_c = F_C[i];
+        const float roe_u = F_U[i];
+        const float beta_arr = 0.5f * (BETA[i] + BETA[i + 1]);
+
+        flag_LeVeque[i] = 0.0;
+
+        const float tmp = beta_arr * (1.0f - beta_arr) * roe_u * roe_u;
+        const float z_sq = std::max(roe_c * roe_c - tmp, 0.0f);
+        const float z = std::sqrt(z_sq);
+        const float z_safe = z + eps;
+
+        float lambda1_i = beta_arr * roe_u - z;
+        float lambda2_i = beta_arr * roe_u + z;
+
+        const float fr_l = FR[i];
+        const float fr_r = FR[i + 1];
+        const double depth_l = water_depth[i];
+        const double depth_r = water_depth[i + 1];
+        const bool indic = (depth_l > water_depth_limit) && (depth_r > water_depth_limit);
+        const bool mask1 = (fr_r > 1.0f) && (fr_l < 1.0f) && (roe_u > 0.0f) && indic;
+        const bool mask2 = (fr_r < 1.0f) && (fr_l > 1.0f) && (roe_u < 0.0f) && indic;
+
+        if (mask1) {
+            const float l1d = beta_arr * U[i] - C[i];
+            const float l1g = beta_arr * U[i + 1] - C[i + 1];
+            const float den = l1g - l1d;
+            float ratio1 = 0.0f;
+            if (den != 0.0f) {
+                ratio1 = (lambda1_i - l1d) / den;
+            }
+            lambda1_i = l1g * ratio1;
+            flag_LeVeque[i] = 2.0;
+        }
+        if (mask2) {
+            const float l2d = beta_arr * U[i] + C[i];
+            const float l2g = beta_arr * U[i + 1] + C[i + 1];
+            const float den = l2d - l2g;
+            float ratio2 = 0.0f;
+            if (den != 0.0f) {
+                ratio2 = (lambda2_i - l2g) / den;
+            }
+            lambda2_i = l2d * ratio2;
+            flag_LeVeque[i] = 1.0;
+        }
+
+        const float dS = S[i + 1] - S[i];
+        const float dQ = Q[i + 1] - Q[i];
+        const float two_roe_c = 2.0f * roe_c + eps;
+        const float alpha2_i = (dQ - dS * (roe_u - roe_c)) / two_roe_c;
+        const float alpha1_i = dS - alpha2_i;
+        const float beta_u = beta_arr * roe_u;
+
+        abs_Lambda1[i] = std::fabs(lambda1_i);
+        abs_Lambda2[i] = std::fabs(lambda2_i);
+        alpha1[i] = alpha1_i;
+        alpha2[i] = alpha2_i;
+        Lambda1[i] = lambda1_i;
+        Lambda2[i] = lambda2_i;
+
+        Vactor1[2 * i] = 1.0;
+        Vactor1[2 * i + 1] = static_cast<double>(beta_u - z);
+        Vactor1_T[2 * i] = static_cast<double>((beta_u + z) / (2.0f * z_safe));
+        Vactor1_T[2 * i + 1] = static_cast<double>(-1.0f / (2.0f * z_safe));
+        Vactor2[2 * i] = 1.0;
+        Vactor2[2 * i + 1] = static_cast<double>(beta_u + z);
+        Vactor2_T[2 * i] = static_cast<double>(-(beta_u - z) / (2.0f * z_safe));
+        Vactor2_T[2 * i + 1] = static_cast<double>(1.0f / (2.0f * z_safe));
+
+        const bool wet_iface = (depth_l > water_depth_limit) || (depth_r > water_depth_limit);
+        if (wet_iface) {
+            if (roe_u >= roe_c) {
+                stats.supercritical_pos += 1;
+            } else if (roe_u <= -roe_c) {
+                stats.supercritical_neg += 1;
+            } else {
+                stats.subcritical += 1;
+            }
+        }
+        if (flag_LeVeque[i] != 0.0) {
+            stats.leveque_count += 1;
+        }
+
+        if (!lambda_init) {
+            stats.lambda1_min = lambda1_i;
+            stats.lambda1_max = lambda1_i;
+            stats.lambda2_min = lambda2_i;
+            stats.lambda2_max = lambda2_i;
+            lambda_init = true;
+        } else {
+            stats.lambda1_min = std::min(stats.lambda1_min, lambda1_i);
+            stats.lambda1_max = std::max(stats.lambda1_max, lambda1_i);
+            stats.lambda2_min = std::min(stats.lambda2_min, lambda2_i);
+            stats.lambda2_max = std::max(stats.lambda2_max, lambda2_i);
+        }
+    }
+
+    return stats;
+}
+
 }  // namespace rivernet

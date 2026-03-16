@@ -39,6 +39,16 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
     cdef cppclass AssemblePostStepStats:
         size_t forced_dry_increment
 
+    cdef cppclass RoeMatrixStats:
+        size_t supercritical_pos
+        size_t supercritical_neg
+        size_t subcritical
+        size_t leveque_count
+        float lambda1_min
+        float lambda1_max
+        float lambda2_min
+        float lambda2_max
+
     UpdateCellStats update_cell_properties_exact_cpp_kernel "update_cell_properties_exact"(
         const TableView* tables,
         size_t n,
@@ -78,6 +88,32 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double eps,
         double water_depth_limit,
         double friction_min_depth,
+    ) except +
+
+    RoeMatrixStats compute_roe_matrix_exact_cpp_kernel "rivernet::compute_roe_matrix_exact"(
+        size_t n,
+        float eps,
+        float water_depth_limit,
+        const float* F_C,
+        const float* F_U,
+        const float* BETA,
+        const float* FR,
+        const double* water_depth,
+        const float* U,
+        const float* C,
+        const float* S,
+        const float* Q,
+        double* flag_LeVeque,
+        float* abs_Lambda1,
+        float* abs_Lambda2,
+        float* alpha1,
+        float* alpha2,
+        float* Lambda1,
+        float* Lambda2,
+        double* Vactor1,
+        double* Vactor2,
+        double* Vactor1_T,
+        double* Vactor2_T,
     ) except +
 
 
@@ -367,6 +403,103 @@ cpdef bint assemble_flux_poststep_exact_cpp(object river):
     )
     river.current_forced_dry_count += int(stats.forced_dry_increment)
     river.total_forced_dry_count += int(stats.forced_dry_increment)
+    return True
+
+
+cpdef bint roe_matrix_exact_cpp(object river):
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] F_C_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] F_U_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] BETA_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] FR_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] water_depth_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] U_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] C_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] S_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Q_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] flag_LeVeque_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] abs_Lambda1_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] abs_Lambda2_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] alpha1_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] alpha2_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Lambda1_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Lambda2_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Vactor1_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Vactor2_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Vactor1_T_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Vactor2_T_arr
+    cdef RoeMatrixStats stats
+    cdef int N
+
+    N = int(river.cell_num) + 1
+    if N <= 0:
+        river.current_interface_counts = {
+            'supercritical_pos': 0,
+            'supercritical_neg': 0,
+            'subcritical': 0,
+        }
+        river.current_leveque_count = 0
+        return True
+
+    F_C_arr = river.F_C
+    F_U_arr = river.F_U
+    BETA_arr = river.BETA
+    FR_arr = river.FR
+    water_depth_arr = river.water_depth
+    U_arr = river.U
+    C_arr = river.C
+    S_arr = river.S
+    Q_arr = river.Q
+    flag_LeVeque_arr = river.flag_LeVeque
+    abs_Lambda1_arr = river.abs_Lambda1
+    abs_Lambda2_arr = river.abs_Lambda2
+    alpha1_arr = river.alpha1
+    alpha2_arr = river.alpha2
+    Lambda1_arr = river.Lambda1
+    Lambda2_arr = river.Lambda2
+    Vactor1_arr = river.Vactor1
+    Vactor2_arr = river.Vactor2
+    Vactor1_T_arr = river.Vactor1_T
+    Vactor2_T_arr = river.Vactor2_T
+
+    stats = compute_roe_matrix_exact_cpp_kernel(
+        <size_t>N,
+        <float>float(river.EPSILON),
+        <float>float(river.water_depth_limit),
+        &F_C_arr[0],
+        &F_U_arr[0],
+        &BETA_arr[0],
+        &FR_arr[0],
+        &water_depth_arr[0],
+        &U_arr[0],
+        &C_arr[0],
+        &S_arr[0],
+        &Q_arr[0],
+        &flag_LeVeque_arr[0],
+        &abs_Lambda1_arr[0],
+        &abs_Lambda2_arr[0],
+        &alpha1_arr[0],
+        &alpha2_arr[0],
+        &Lambda1_arr[0],
+        &Lambda2_arr[0],
+        &Vactor1_arr[0, 0],
+        &Vactor2_arr[0, 0],
+        &Vactor1_T_arr[0, 0],
+        &Vactor2_T_arr[0, 0],
+    )
+
+    river.current_interface_counts = {
+        'supercritical_pos': int(stats.supercritical_pos),
+        'supercritical_neg': int(stats.supercritical_neg),
+        'subcritical': int(stats.subcritical),
+    }
+    river.current_leveque_count = int(stats.leveque_count)
+    river.total_leveque_count += int(stats.leveque_count)
+    river.lambda_range_current = {
+        'lambda1_min': float(stats.lambda1_min),
+        'lambda1_max': float(stats.lambda1_max),
+        'lambda2_min': float(stats.lambda2_min),
+        'lambda2_max': float(stats.lambda2_max),
+    }
     return True
 
 

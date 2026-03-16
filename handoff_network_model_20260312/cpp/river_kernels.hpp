@@ -31,6 +31,17 @@ struct AssemblePostStepStats {
     std::size_t forced_dry_increment;
 };
 
+struct RoeMatrixStats {
+    std::size_t supercritical_pos;
+    std::size_t supercritical_neg;
+    std::size_t subcritical;
+    std::size_t leveque_count;
+    float lambda1_min;
+    float lambda1_max;
+    float lambda2_min;
+    float lambda2_max;
+};
+
 enum NearDryVelocityMode : int {
     ZERO_Q = 0,
     PRESERVE_Q_FLOOR_DERIVED = 1,
@@ -82,6 +93,32 @@ AssemblePostStepStats apply_explicit_manning_poststep_exact(
     double eps,
     double water_depth_limit,
     double friction_min_depth
+);
+
+RoeMatrixStats compute_roe_matrix_exact(
+    std::size_t n,
+    float eps,
+    float water_depth_limit,
+    const float* F_C,
+    const float* F_U,
+    const float* BETA,
+    const float* FR,
+    const double* water_depth,
+    const float* U,
+    const float* C,
+    const float* S,
+    const float* Q,
+    double* flag_LeVeque,
+    float* abs_Lambda1,
+    float* abs_Lambda2,
+    float* alpha1,
+    float* alpha2,
+    float* Lambda1,
+    float* Lambda2,
+    double* Vactor1,
+    double* Vactor2,
+    double* Vactor1_T,
+    double* Vactor2_T
 );
 
 }  // namespace rivernet
