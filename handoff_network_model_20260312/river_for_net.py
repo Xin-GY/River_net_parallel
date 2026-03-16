@@ -41,6 +41,10 @@ try:
 except Exception:
     cython_fill_general_hr_flux_exact = None
     cython_update_cell_properties_exact = None
+try:
+    from cython_cpp_bridge import CppOutputBuffer
+except Exception:
+    CppOutputBuffer = None
 
 
 def _freeze_section_data(section_data):
@@ -734,6 +738,11 @@ class River(Process):
         self._output_snapshot_times = []
         self._output_snapshot_vars = {'depth': [], 'level': [], 'U': [], 'Q': []}
         self._output_coord_arrays = {}
+        self.cpp_write_mode = os.environ.get('ISLAM_CPP_WRITE_MODE', 'buffered_end').strip().lower()
+        self.use_cpp_output_buffer = bool(
+            CppOutputBuffer is not None and self.cpp_write_mode == 'buffered_end'
+        )
+        self.cpp_output_buffer = None
         self.total_sim_time_seconds = (self.sim_end_time - self.sim_start_time).total_seconds()
         # 可选：在每个内部时间步执行一次边界更新函数（例如测试脚本传入）
         self.boundary_updater = None
@@ -851,8 +860,10 @@ class River(Process):
         self._general_hr_left_tables = ()
         self._general_hr_right_tables = ()
         self._general_hr_cython_batch_ready = False
-        self.use_cython_roe_flux = os.environ.get('ISLAM_USE_CYTHON_ROE_FLUX', '0') == '1'
-        self.use_cython_update_cell = os.environ.get('ISLAM_USE_CYTHON_UPDATE_CELL', '0') == '1'
+        default_roe_flag = '1' if os.environ.get('ISLAM_USE_CPP_EVOLVE', '0') == '1' else '0'
+        self.use_cython_roe_flux = os.environ.get('ISLAM_USE_CYTHON_ROE_FLUX', default_roe_flag) == '1'
+        default_update_flag = os.environ.get('ISLAM_USE_CYTHON_UPDATE_CELL', '0')
+        self.use_cython_update_cell = os.environ.get('ISLAM_CPP_USE_UPDATE_CELL', default_update_flag) == '1'
         self._general_hr_flux_mass_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_flux_momentum_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_press_left_hr_buf = np.zeros(self.cell_num + 1, dtype=float)
@@ -3045,20 +3056,52 @@ class River(Process):
     def _reset_output_snapshot_buffer(self):
         self._output_snapshot_times = []
         self._output_snapshot_vars = {'depth': [], 'level': [], 'U': [], 'Q': []}
+        if self.cpp_output_buffer is not None:
+            self.cpp_output_buffer.reset()
+
+    def _ensure_cpp_output_buffer(self):
+        if not self.use_cpp_output_buffer:
+            return None
+        if self.cpp_output_buffer is not None:
+            return self.cpp_output_buffer
+        space = self._output_coord_arrays.get('space')
+        if space is None:
+            return None
+        self.cpp_output_buffer = CppOutputBuffer(len(space))
+        return self.cpp_output_buffer
 
     def _saved_snapshot_count(self):
+        if self.cpp_output_buffer is not None:
+            return int(self.cpp_output_buffer.snapshot_count())
         return len(self._output_snapshot_times)
 
     def _build_output_dataset_from_buffer(self):
-        if not self._output_snapshot_times:
+        if self.cpp_output_buffer is not None and self.cpp_output_buffer.snapshot_count() > 0:
+            snapshot_times = self.cpp_output_buffer.export_times()
+            var_depth = self.cpp_output_buffer.export_var('depth')
+            var_level = self.cpp_output_buffer.export_var('level')
+            var_u = self.cpp_output_buffer.export_var('U')
+            var_q = self.cpp_output_buffer.export_var('Q')
+        else:
+            snapshot_times = self._output_snapshot_times
+            if not snapshot_times:
+                raise ValueError('输出缓冲区为空，无法生成结果数据集')
+            var_depth = np.stack(self._output_snapshot_vars['depth'], axis=0)
+            var_level = np.stack(self._output_snapshot_vars['level'], axis=0)
+            var_u = np.stack(self._output_snapshot_vars['U'], axis=0)
+            var_q = np.stack(self._output_snapshot_vars['Q'], axis=0)
+        if len(snapshot_times) == 0:
             raise ValueError('输出缓冲区为空，无法生成结果数据集')
         if not self._output_coord_arrays:
             raise ValueError('输出坐标未初始化，无法生成结果数据集')
-        data_vars = {}
-        for name, samples in self._output_snapshot_vars.items():
-            data_vars[name] = (('time', 'space'), np.stack(samples, axis=0))
+        data_vars = {
+            'depth': (('time', 'space'), np.asarray(var_depth)),
+            'level': (('time', 'space'), np.asarray(var_level)),
+            'U': (('time', 'space'), np.asarray(var_u)),
+            'Q': (('time', 'space'), np.asarray(var_q)),
+        }
         coords = {
-            'time': np.asarray(self._output_snapshot_times, dtype=float),
+            'time': np.asarray(snapshot_times, dtype=float),
             'space': self._output_coord_arrays['space'],
             'x': ('space', self._output_coord_arrays['x']),
             'y': ('space', self._output_coord_arrays['y']),
@@ -3169,6 +3212,15 @@ class River(Process):
         level = self.water_level[sl].copy()
         U = self.U[sl].copy()
         Q = self.Q[sl].copy()
+        if self.cpp_output_buffer is not None:
+            self.cpp_output_buffer.append_snapshot(
+                float(self.current_sim_time),
+                np.ascontiguousarray(depth, dtype=np.float64),
+                np.ascontiguousarray(level, dtype=np.float64),
+                np.ascontiguousarray(U, dtype=np.float64),
+                np.ascontiguousarray(Q, dtype=np.float64),
+            )
+            return
         self._output_snapshot_times.append(float(self.current_sim_time))
         self._output_snapshot_vars['depth'].append(depth)
         self._output_snapshot_vars['level'].append(level)
@@ -3239,6 +3291,7 @@ class River(Process):
             'lon': lon,
             'lat': lat,
         }
+        self._ensure_cpp_output_buffer()
 
     def Side_inflow(self, pos, side_Q):
         cell_num = self.Get_nearest_cell_num(pos)

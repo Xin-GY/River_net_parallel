@@ -1,0 +1,11 @@
+{
+  "case_name": "cython_exact_serial_2h_recheck",
+  "cwd": "/tmp/feature_cpp_exact_evolve_fullchain/handoff_network_model_20260312",
+  "output_dir": "/tmp/feature_cpp_exact_evolve_fullchain/handoff_network_model_20260312/result/cython_exact_serial_2h_recheck",
+  "summary_json": "/tmp/feature_cpp_exact_evolve_fullchain/handoff_network_model_20260312/reports/cython_exact_serial_2h_recheck_summary.json",
+  "profile_out": null,
+  "model_time_seconds": 11.697025299072266,
+  "evolve_wall_time_seconds": 11.899288646993227,
+  "step_count": 1482,
+  "warmup_used": false
+}

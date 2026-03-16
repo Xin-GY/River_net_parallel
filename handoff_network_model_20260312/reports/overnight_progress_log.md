@@ -1,5 +1,33 @@
 # Overnight Progress Log
 
+## 2026-03-16 C++ bridge checkpoint
+
+- Added a new `Cython + C++` bridge layer for prepared evolve:
+  - `cython_cpp_bridge.pyx`
+  - `cpp/output_buffer.hpp/.cpp`
+  - `cpp/evolve_core.hpp/.cpp`
+  - `build_cpp_exact_kernels.py`
+- Wired `Rivernet` so prepared evolve can route through:
+  - `ISLAM_USE_CPP_EVOLVE=1`
+  - `ISLAM_CPP_THREADS=0/1`
+- Added a C++ output buffer path in `river_for_net.py` so the runtime can accumulate snapshots in native storage and only materialize them back into Python/xarray at finalize time.
+- Updated `Islam.run_prepared_evolve(...)` so the evolve-only benchmark path actually exercises the new bridge.
+- Found and fixed a long-run exactness issue:
+  - the first bridge draft cast step-time scalars through `float(...)` each loop
+  - this produced small 2-hour drift
+  - the bridge now preserves the original Python-object arithmetic order for time-step updates and CFL/yield-step checks
+- Validation status:
+  - 10-minute exact compare: pass
+  - 2-hour exact compare: pass
+  - 40-hour exact compare against same-branch exact serial: pass
+- Current measured evolve-only speed:
+  - `40h cython exact serial`: `206.436461 s`
+  - `40h cpp bridge`: `205.593739 s`
+  - delta: `-0.842722 s`
+- Next step:
+  - move real numerical work, not only orchestration, from Python/Cython into C++ runtime kernels
+  - start with the node iteration chain and then the river-step kernels
+
 ## 2026-03-15 Phase 0-2
 
 ### Done

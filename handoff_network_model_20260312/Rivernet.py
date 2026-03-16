@@ -43,6 +43,14 @@ try:
     from cython_node_iteration import run_internal_node_iteration_exact as cython_run_internal_node_iteration_exact
 except Exception:
     cython_run_internal_node_iteration_exact = None
+try:
+    from cython_cpp_bridge import (
+        run_cpp_network_evolve_serial as cpp_run_network_evolve_serial,
+        run_cpp_network_evolve_threads as cpp_run_network_evolve_threads,
+    )
+except Exception:
+    cpp_run_network_evolve_serial = None
+    cpp_run_network_evolve_threads = None
 
 class Rivernet():
     def __init__(self, Topology, model_data, verbos=True):
@@ -145,6 +153,11 @@ class Rivernet():
         self.output_save_interval = None
         self.use_cython_nodechain = False
         self._cython_nodechain_plan = None
+        self.use_cpp_evolve = False
+        self.cpp_threads = False
+        self.cpp_n_threads = max((os.cpu_count() or 1), 1)
+        self.cpp_write_mode = 'buffered_end'
+        self.cpp_threads_last_mode = 'disabled'
 
     def _refresh_river_cache(self):
         # Topology is fixed after construction in the current workflow. Cache
@@ -1742,6 +1755,33 @@ class Rivernet():
             return self._all_river_names()
         return list(self.output_river_names)
 
+    def _record_internal_node_history_current_state(self):
+        if not (self.save_outputs and self.internal_nodes):
+            return
+        rec = {'time': float(self.current_sim_time)}
+        for n in self.internal_nodes:
+            rec[f'{n}_level'] = float(self._internal_node_level_cache.get(n, np.nan))
+            rec[f'{n}_Qnet'] = float(self._get_node_mass_residual_current_state(n))
+            for r, name in self._in_branches_by_node[n]:
+                rec[f'{n}_{name}_face_level'] = float(
+                    getattr(r, 'boundary_face_level_right', np.nan)
+                )
+                rec[f'{n}_{name}_face_Q'] = float(
+                    getattr(r, 'boundary_face_discharge_right', np.nan)
+                )
+                rec[f'{n}_{name}_cell_level'] = float(r.water_level[-2])
+                rec[f'{n}_{name}_cell_Q'] = float(r.Q[-2])
+            for r, name in self._out_branches_by_node[n]:
+                rec[f'{n}_{name}_face_level'] = float(
+                    getattr(r, 'boundary_face_level_left', np.nan)
+                )
+                rec[f'{n}_{name}_face_Q'] = float(
+                    getattr(r, 'boundary_face_discharge_left', np.nan)
+                )
+                rec[f'{n}_{name}_cell_level'] = float(r.water_level[1])
+                rec[f'{n}_{name}_cell_Q'] = float(r.Q[1])
+        self.internal_node_history.append(rec)
+
     def _record_internal_node_history_from_snapshots(self, snapshots):
         if not (self.save_outputs and self.internal_nodes):
             return
@@ -1762,6 +1802,13 @@ class Rivernet():
                 rec[f'{n}_{name}_cell_level'] = float(end[SNAP_CELL_LEVEL])
                 rec[f'{n}_{name}_cell_Q'] = float(end[SNAP_CELL_Q])
         self.internal_node_history.append(rec)
+
+    def _finalize_evolve_outputs(self):
+        if not self.save_outputs:
+            return
+        self.Resample_and_Save_result_net()
+        self.Save_internal_node_history()
+        self.Save_cfl_history()
 
     def _evolve_base_parallel_threads(self, yield_step, pool):
         yield_flag = False
@@ -1785,30 +1832,7 @@ class Rivernet():
             # bitwise-aligned with the accepted serial workflow.
             self.Update_boundary_conditions()
 
-            if self.save_outputs and self.internal_nodes:
-                rec = {'time': float(self.current_sim_time)}
-                for n in self.internal_nodes:
-                    rec[f'{n}_level'] = float(self._internal_node_level_cache.get(n, np.nan))
-                    rec[f'{n}_Qnet'] = float(self._get_node_mass_residual_current_state(n))
-                    for r, name in self._in_branches_by_node[n]:
-                        rec[f'{n}_{name}_face_level'] = float(
-                            getattr(r, 'boundary_face_level_right', np.nan)
-                        )
-                        rec[f'{n}_{name}_face_Q'] = float(
-                            getattr(r, 'boundary_face_discharge_right', np.nan)
-                        )
-                        rec[f'{n}_{name}_cell_level'] = float(r.water_level[-2])
-                        rec[f'{n}_{name}_cell_Q'] = float(r.Q[-2])
-                    for r, name in self._out_branches_by_node[n]:
-                        rec[f'{n}_{name}_face_level'] = float(
-                            getattr(r, 'boundary_face_level_left', np.nan)
-                        )
-                        rec[f'{n}_{name}_face_Q'] = float(
-                            getattr(r, 'boundary_face_discharge_left', np.nan)
-                        )
-                        rec[f'{n}_{name}_cell_level'] = float(r.water_level[1])
-                        rec[f'{n}_{name}_cell_Q'] = float(r.Q[1])
-                self.internal_node_history.append(rec)
+            self._record_internal_node_history_current_state()
 
             dt_map = pool.advance_local_step(
                 use_implicit_branch_update=self.use_implicit_branch_update,
@@ -1840,10 +1864,7 @@ class Rivernet():
 
         self.caculation_time = time.time() - self.caculation_start_time
         print(f'计算结束，保存结果...\n共计算 {self.step_count} 步，总耗时: {self.caculation_time:.2f} 秒')
-        if self.save_outputs:
-            self.Resample_and_Save_result_net()
-            self.Save_internal_node_history()
-            self.Save_cfl_history()
+        self._finalize_evolve_outputs()
 
     def _evolve_base_parallel_process(self, yield_step, pool):
         yield_flag = False
@@ -2014,10 +2035,24 @@ class Rivernet():
         # 计算结束，保存结果
         self.caculation_time = time.time() - self.caculation_start_time  # 计算总耗时
         print(f'计算结束，保存结果...\n共计算 {self.step_count} 步，总耗时: {self.caculation_time:.2f} 秒')
-        if self.save_outputs:
-            self.Resample_and_Save_result_net()
-            self.Save_internal_node_history()
-            self.Save_cfl_history()
+        self._finalize_evolve_outputs()
+
+    def _run_prepared_evolve(self, yield_step):
+        if self.use_cpp_evolve and cpp_run_network_evolve_serial is not None:
+            if self.cpp_threads and cpp_run_network_evolve_threads is not None:
+                emitted_times = cpp_run_network_evolve_threads(
+                    self,
+                    float(yield_step),
+                    int(self.cpp_n_threads),
+                )
+            else:
+                emitted_times = cpp_run_network_evolve_serial(self, float(yield_step))
+            for t in emitted_times:
+                yield t
+            return
+
+        for t in self._evolve_base(yield_step):
+            yield t
 
     # 演进过程
     def Evolve(self, yield_step=None):
@@ -2046,6 +2081,11 @@ class Rivernet():
         # 计算第一步时间步长
         self.Caculate_global_CFL()
         self.DT = self.cfl_allowed_dt  # 初始时间步长为全局最小CFL时间步长
+
+        if self.use_cpp_evolve and cpp_run_network_evolve_serial is not None:
+            for t in self._run_prepared_evolve(yield_step):
+                yield t
+            return
 
         use_parallel = bool(self.use_parallel_workers and self.parallel_n_workers > 1 and len(self._river_edges) > 1)
 

@@ -1,0 +1,11 @@
+{
+  "case_name": "cpp_evolve_serial_10m_explicitkernels",
+  "cwd": "/tmp/feature_cpp_exact_evolve_fullchain/handoff_network_model_20260312",
+  "output_dir": "/tmp/feature_cpp_exact_evolve_fullchain/handoff_network_model_20260312/result/cpp_evolve_serial_10m_explicitkernels",
+  "summary_json": "/tmp/feature_cpp_exact_evolve_fullchain/handoff_network_model_20260312/reports/cpp_evolve_serial_10m_explicitkernels_summary.json",
+  "profile_out": null,
+  "model_time_seconds": 1.4663667678833008,
+  "evolve_wall_time_seconds": 1.4949682519654743,
+  "step_count": 181,
+  "warmup_used": false
+}

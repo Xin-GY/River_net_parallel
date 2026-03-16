@@ -602,12 +602,19 @@ output_rivers = {s.strip() for s in output_rivers_env.split(',') if s.strip()} i
 
 
 def configure_net_options(net_obj, export_png=False):
+    net_obj.use_cpp_evolve = os.environ.get('ISLAM_USE_CPP_EVOLVE', '0') == '1'
+    net_obj.cpp_threads = os.environ.get('ISLAM_CPP_THREADS', '0') == '1'
+    net_obj.cpp_n_threads = int(os.environ.get('ISLAM_CPP_N_THREADS', str(os.cpu_count() or 1)))
+    net_obj.cpp_write_mode = os.environ.get('ISLAM_CPP_WRITE_MODE', 'buffered_end').strip().lower()
     net_obj.use_parallel_workers = os.environ.get('ISLAM_USE_PARALLEL', '0') == '1'
     net_obj.parallel_backend = os.environ.get('ISLAM_PARALLEL_BACKEND', 'threads').strip().lower()
     net_obj.parallel_n_workers = int(os.environ.get('ISLAM_N_WORKERS', str(net_obj.parallel_n_workers)))
     net_obj.parallel_start_method = os.environ.get('ISLAM_PARALLEL_START_METHOD', 'auto').strip().lower()
     net_obj.parallel_sync_main_state_on_yield = os.environ.get('ISLAM_PARALLEL_SYNC_ON_YIELD', '1') == '1'
-    net_obj.use_cython_nodechain = os.environ.get('ISLAM_USE_CYTHON_NODECHAIN', '0') == '1'
+    net_obj.use_cython_nodechain = os.environ.get(
+        'ISLAM_USE_CYTHON_NODECHAIN',
+        '1' if net_obj.use_cpp_evolve else '0',
+    ) == '1'
     save_interval_env = os.environ.get('ISLAM_SAVE_INTERVAL', '').strip()
     net_obj.output_save_interval = float(save_interval_env) if save_interval_env else None
     net_obj.save_cfl_history = os.environ.get('ISLAM_SAVE_CFL_HISTORY', '0') == '1'
@@ -647,6 +654,9 @@ def configure_net_options(net_obj, export_png=False):
         '1' if stage_on_face_global else '0'
     ) == '1'
     net_obj.verbos = False
+
+    if net_obj.use_cpp_evolve:
+        net_obj.use_parallel_workers = False
 
     if net_obj.Fine_flag:
         missing_pos = []
@@ -932,7 +942,7 @@ def prepare_net_for_evolve(net, yield_step=1800):
 
 
 def run_prepared_evolve(net, yield_step=1800, print_progress=False):
-    for _ in net._evolve_base(yield_step):
+    for _ in net._run_prepared_evolve(yield_step):
         if print_progress:
             net.print_evolve_info()
     write_boundary_supercritical_counts(net)
