@@ -618,6 +618,7 @@ def configure_net_options(net_obj, export_png=False):
         'ISLAM_USE_CYTHON_NODECHAIN',
         '1' if net_obj.use_cpp_evolve else '0',
     ) == '1'
+    net_obj.use_cython_nodechain_direct_fast = os.environ.get('ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST', '0') == '1'
     save_interval_env = os.environ.get('ISLAM_SAVE_INTERVAL', '').strip()
     net_obj.output_save_interval = float(save_interval_env) if save_interval_env else None
     net_obj.save_cfl_history = os.environ.get('ISLAM_SAVE_CFL_HISTORY', '0') == '1'

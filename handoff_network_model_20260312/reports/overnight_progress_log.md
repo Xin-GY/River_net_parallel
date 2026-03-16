@@ -85,6 +85,45 @@
   - first on 10m/2h exact compare
   - then on 40h evolve-only timing
 
+## 2026-03-16 C++ kernelize-next phase 3
+
+### Done
+
+- tested a deeper direct stage-boundary numeric closure prototype inside `cython_node_iteration.pyx`
+- rejected that prototype after a reproducible 10m segmentation fault
+- tested direct table-ref width lookup inside nodechain residual/Ac assembly
+- rejected that prototype after exact compare showed small but real drift
+- implemented a safer exact wrapper-bypass nodechain path:
+  - `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
+  - the nodechain loop now tries `river._stage_boundary_fix_level_cython_fast(...)` directly
+  - if that fast exact closure rejects, the original Python wrapper path is preserved
+- validated the accepted wrapper-bypass candidate on:
+  - 10m
+  - 2h
+  - 40h
+
+### Findings
+
+- the two deeper prototypes were useful for scoping risk:
+  - direct numeric closure was unstable
+  - direct width-ref lookup was numerically non-exact
+- the accepted wrapper-bypass cut stays exact and still gives a measurable full-case gain
+- evolve/model time improved:
+  - 10m: `1.459050 s -> 1.457326 s`
+  - 2h: `12.330136 s -> 11.400661 s`
+  - 40h: `206.306033 s -> 202.210932 s`
+- corrected 2h perf also improved the nodechain shell:
+  - `boundary_updater.total`: `4.076405 s -> 3.969430 s`
+  - `nodechain.apply_and_boundary_closure`: `2.771246 s -> 2.681397 s`
+  - `nodechain.final_apply`: `0.261257 s -> 0.253436 s`
+
+### Next
+
+- checkpoint the accepted wrapper-bypass nodechain implementation
+- then continue to phase 5 style work:
+  - reduce per-step Python/Cython/C++ boundary crossings
+  - shrink the `call_river_function_by_name` fan-out inside the bridge loop
+
 ## 2026-03-16 C++ bridge checkpoint
 
 - Added a new `Cython + C++` bridge layer for prepared evolve:

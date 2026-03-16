@@ -14,6 +14,28 @@ cdef inline double _maxd(double a, double b) noexcept:
     return a if a >= b else b
 
 
+cdef bint _apply_stage_boundary_wrapper_bypass(
+    object river,
+    bint is_left,
+    double level,
+    bint use_fix_level_bc_v2,
+    bint use_stabilizers,
+    bint respect_supercritical,
+    bint stage_on_face,
+):
+    if use_fix_level_bc_v2:
+        return False
+    return bool(
+        river._stage_boundary_fix_level_cython_fast(
+            'left' if is_left else 'right',
+            float(level),
+            use_stabilizers=bool(use_stabilizers),
+            respect_supercritical=bool(respect_supercritical),
+            stage_on_face=bool(stage_on_face),
+        )
+    )
+
+
 cpdef bint run_internal_node_iteration_exact(
     object net,
     object node_names,
@@ -52,6 +74,7 @@ cpdef bint run_internal_node_iteration_exact(
     cdef int side_code
     cdef int max_iteration = int(net.max_iteration)
     cdef bint perf_enabled = bool(getattr(net, 'perf_profile_enabled', False))
+    cdef bint use_direct_fast = bool(getattr(net, 'use_cython_nodechain_direct_fast', False))
     cdef double perf_total_start = 0.0
     cdef double perf_stage_start = 0.0
     cdef Py_ssize_t closure_calls = 0
@@ -104,6 +127,17 @@ cpdef bint run_internal_node_iteration_exact(
                 closure_calls += 1
                 river = branch_rivers[k]
                 side_code = <int>branch_side_codes[k]
+                if use_direct_fast:
+                    if _apply_stage_boundary_wrapper_bypass(
+                        river,
+                        side_code == 0,
+                        float(levels[i]),
+                        use_fix_level_bc_v2,
+                        use_stabilizers,
+                        respect_supercritical,
+                        stage_on_face,
+                    ):
+                        continue
                 if side_code == 1:
                     if use_fix_level_bc_v2:
                         river.OutBound_Fix_level_V2(float(levels[i]))
@@ -268,6 +302,17 @@ cpdef bint run_internal_node_iteration_exact(
             closure_calls += 1
             river = branch_rivers[k]
             side_code = <int>branch_side_codes[k]
+            if use_direct_fast:
+                if _apply_stage_boundary_wrapper_bypass(
+                    river,
+                    side_code == 0,
+                    float(levels[i]),
+                    use_fix_level_bc_v2,
+                    use_stabilizers,
+                    respect_supercritical,
+                    stage_on_face,
+                ):
+                    continue
             if side_code == 1:
                 if use_fix_level_bc_v2:
                     river.OutBound_Fix_level_V2(float(levels[i]))

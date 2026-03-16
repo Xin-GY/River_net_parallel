@@ -152,6 +152,7 @@ class Rivernet():
         self.cfl_history = []
         self.output_save_interval = None
         self.use_cython_nodechain = False
+        self.use_cython_nodechain_direct_fast = False
         self._cython_nodechain_plan = None
         self.use_cpp_evolve = False
         self.cpp_threads = False
