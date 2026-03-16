@@ -723,3 +723,51 @@
   - residual / Ac / Jacobian / stopping deeper native ownership
   - final apply / state commit deeper native ownership
   - only after that, fullstep native loop
+
+## 2026-03-16 Stage 0-1: nodecommit refresh continuation and nodechain tail audit
+
+### Done
+
+- created clean continuation branch/worktree from accepted deep-apply baseline:
+  - `feature/cpp-exact-evolve-nodecommit-refresh`
+  - `/tmp/feature_cpp_exact_evolve_nodecommit_refresh`
+- recorded continuation preflight:
+  - `reports/cpp_nodecommit_preflight_git_status.txt`
+  - `reports/cpp_nodecommit_untracked_inventory.md`
+  - `reports/cpp_nodecommit_branch_layout.md`
+- rebuilt required local extensions in the new worktree:
+  - `cython_cross_section`
+  - `cython_node_iteration`
+  - `cython_river_kernels`
+  - `cython_cpp_bridge`
+- reran accepted exact 10m and 2h on the continuation worktree
+- verified the continuation worktree reproduces the source accepted outputs exactly:
+  - `cpp_nodecommit_accepted_10m_compare.json`: `allclose = true`
+  - `cpp_nodecommit_accepted_2h_compare.json`: `allclose = true`
+- wrote nodechain-tail reports:
+  - `nodechain_tail_remaining_python_chain.md`
+  - `nodechain_tail_hotspots_breakdown.md`
+  - `nodechain_tail_native_gap_ranked.md`
+
+### Findings
+
+- the accepted exact baseline is reproducible from this branch/worktree
+- the largest remaining nodechain tail ownership gap is no longer residual/Ac
+- the next target is clearly:
+  - `final_apply / state commit`
+- the main residual Python-owned blocker after deep apply is:
+  - `river._refresh_cell_state(...)`
+- 2h cProfile confirms `_refresh_cell_state` is still the largest Python-owned call near the nodechain tail:
+  - `347876` calls
+  - `2.287927 s` cumulative
+- current accepted 2h nodechain breakdown on this branch:
+  - `nodechain.total = 2.923550 s`
+  - `apply_and_boundary_closure = 1.278234 s`
+  - `residual_and_ac = 0.018511 s`
+  - `final_apply = 0.129647 s`
+
+### Next
+
+- push `final_apply / state commit` deeper into native ownership first
+- only after that, tackle `_refresh_cell_state` ownership
+- leave residual/Jacobian for a later recheck unless the profile changes materially

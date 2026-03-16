@@ -1,0 +1,6 @@
+Branch: feature/cpp-exact-evolve-nodecommit-refresh
+HEAD: f8f0db0
+
+git status --short
+
+(clean at branch creation)
