@@ -1,5 +1,45 @@
 # Overnight Progress Log
 
+## 2026-03-16 C++ kernelize-next phase 1
+
+### Done
+
+- created clean continuation branch:
+  - `feature/cpp-exact-evolve-kernelize-next`
+- created isolated worktree:
+  - `/tmp/feature_cpp_exact_evolve_kernelize_next`
+- recorded preservation / branch-layout reports for the source bridge line
+- mapped the current exact evolve chain again from the new branch’s actual code, not from older notes
+- wrote C++-focused phase-1 reports:
+  - `cpp_evolve_call_chain.md`
+  - `cpp_nodechain_math_and_dataflow.md`
+  - `cpp_riverstep_math_and_dataflow.md`
+  - `cpp_data_layout_and_boundary_crossings.md`
+
+### Findings
+
+- the current bridge is real, but it is still mostly a compiled loop shell
+- the exact nodechain remains object-heavy:
+  - Cython shell
+  - Python river objects
+  - Python boundary-closure methods
+  - Python-backed section-table lookups
+- the network step still dispatches six river phases from Python via `call_river_function_by_name`
+- the real blocker is now clear:
+  - too many Python/Cython/C++ crossings
+  - too much state still owned by Python objects
+- this explains why 40h evolve improved by only about `0.84 s`
+
+### Next
+
+- establish the current branch’s single-process exact evolve-only baseline for:
+  - 10m
+  - 2h
+  - 40h
+- generate Top 10 hotspots and identify the real Top 3 on this branch
+- then start the first true native kernelization step:
+  - internal node exact chain in C++
+
 ## 2026-03-16 C++ bridge checkpoint
 
 - Added a new `Cython + C++` bridge layer for prepared evolve:
