@@ -771,3 +771,38 @@
 - push `final_apply / state commit` deeper into native ownership first
 - only after that, tackle `_refresh_cell_state` ownership
 - leave residual/Jacobian for a later recheck unless the profile changes materially
+
+## 2026-03-16 Stage 2: nodechain final_apply / state commit deeper native ownership
+
+### Done
+
+- kept exact boundary-face state native-owned through final apply when deep apply is active
+- attached deep plans back onto river objects for cached face-state reads
+- switched nodechain-tail consumers to read boundary-face state via native cache first
+- added continuation profiling support for:
+  - `ISLAM_CPP_USE_NODECHAIN_COMMIT_DEEP=1`
+- validated the candidate on:
+  - 10m
+  - 2h
+  - 40h
+
+### Findings
+
+- 10m strict compare: pass
+- 2h strict compare: pass
+- 40h strict compare: pass
+- 40h compare: `allclose = true`
+- this step is a real nodechain-tail ownership pushdown, not a dispatch reshaping
+- 40h evolve/model improved:
+  - `92.091939 s -> 91.329929 s`
+- 40h nodechain tail costs improved in the intended direction:
+  - `nodechain.total`: `36.756061 s -> 35.837393 s`
+  - `nodechain.apply_and_boundary_closure`: `14.925780 s -> 14.675724 s`
+  - `nodechain.final_apply`: `2.637463 s -> 2.457427 s`
+- the gain is modest, but it is exact and stable on full case
+
+### Next
+
+- checkpoint this path as the new accepted exact candidate on the continuation line
+- move to `_refresh_cell_state` deeper native ownership next
+- only revisit residual/Jacobian if the post-refresh profile says it is worth it

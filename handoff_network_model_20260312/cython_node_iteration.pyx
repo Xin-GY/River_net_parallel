@@ -218,6 +218,16 @@ cdef class NodeBoundaryDeepPlan:
             self.river.boundary_face_discharge_right = float(self.face_discharge)
             self.river.boundary_face_width_right = float(self.face_width)
 
+    cpdef object export_face_state(self):
+        if not self.face_valid:
+            return None
+        return (
+            float(self.face_level),
+            float(self.face_area),
+            float(self.face_discharge),
+            float(self.face_width),
+        )
+
 
 cpdef object build_nodechain_deep_apply_plan(
     object branch_rivers,
@@ -354,6 +364,7 @@ cpdef bint run_internal_node_iteration_exact(
     cdef bint use_direct_fast = bool(getattr(net, 'use_cython_nodechain_direct_fast', False))
     cdef bint use_prebound_fast = bool(getattr(net, 'use_cython_nodechain_prebound_fast', False))
     cdef bint use_deep_apply = bool(getattr(net, 'use_cpp_nodechain_deep_apply', False)) and branch_deep_apply_plans is not None
+    cdef bint use_commit_deep = bool(getattr(net, 'use_cpp_nodechain_commit_deep', False)) and use_deep_apply
     cdef double perf_total_start = 0.0
     cdef double perf_stage_start = 0.0
     cdef Py_ssize_t closure_calls = 0
@@ -683,7 +694,8 @@ cpdef bint run_internal_node_iteration_exact(
                 if deep_plan.apply_level(float(levels[i])):
                     prebound_fast_hits += 1
                     deep_apply_hits += 1
-                    deep_plan.sync_python_boundary_state()
+                    if not use_commit_deep:
+                        deep_plan.sync_python_boundary_state()
                     continue
             if use_prebound_fast:
                 boundary_python_calls += 1

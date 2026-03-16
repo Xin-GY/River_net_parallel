@@ -159,6 +159,7 @@ class Rivernet():
         self.use_cython_nodechain_direct_fast = False
         self.use_cython_nodechain_prebound_fast = False
         self.use_cpp_nodechain_deep_apply = False
+        self.use_cpp_nodechain_commit_deep = False
         self._cython_nodechain_plan = None
         self.use_cpp_evolve = False
         self.cpp_threads = False
@@ -268,6 +269,10 @@ class Rivernet():
         node_offsets = np.zeros(len(node_names) + 1, dtype=np.int32)
         branch_rivers = []
         branch_side_codes = []
+        for _, _, data in self._river_edges:
+            river_obj = data['river']
+            river_obj._nodechain_deep_plan_left = None
+            river_obj._nodechain_deep_plan_right = None
         for i, node_name in enumerate(node_names):
             node_offsets[i] = len(branch_rivers)
             for river_obj, _ in self._in_branches_by_node[node_name]:
@@ -287,6 +292,12 @@ class Rivernet():
                 tuple(branch_rivers),
                 branch_side_codes_arr,
             )
+            if branch_deep_apply_plans is not None:
+                for river_obj, side_code, plan_obj in zip(branch_rivers, branch_side_codes_arr.tolist(), branch_deep_apply_plans):
+                    if int(side_code) == 0:
+                        river_obj._nodechain_deep_plan_left = plan_obj
+                    else:
+                        river_obj._nodechain_deep_plan_right = plan_obj
         self._cython_nodechain_plan = {
             'node_names': node_names,
             'node_offsets': node_offsets,
@@ -305,6 +316,30 @@ class Rivernet():
         if bool(getattr(self, 'use_cpp_nodechain_deep_apply', False)) and plan.get('branch_deep_apply_plans') is None:
             return self._build_cython_nodechain_plan()
         return plan
+
+    def _get_boundary_face_state_cached(self, river, side):
+        if bool(getattr(self, 'use_cpp_nodechain_commit_deep', False)):
+            if side == 'left':
+                plan = getattr(river, '_nodechain_deep_plan_left', None)
+            else:
+                plan = getattr(river, '_nodechain_deep_plan_right', None)
+            if plan is not None:
+                face_state = plan.export_face_state()
+                if face_state is not None:
+                    return face_state
+        if side == 'left':
+            return (
+                getattr(river, 'boundary_face_level_left', None),
+                getattr(river, 'boundary_face_area_left', None),
+                getattr(river, 'boundary_face_discharge_left', None),
+                getattr(river, 'boundary_face_width_left', None),
+            )
+        return (
+            getattr(river, 'boundary_face_level_right', None),
+            getattr(river, 'boundary_face_area_right', None),
+            getattr(river, 'boundary_face_discharge_right', None),
+            getattr(river, 'boundary_face_width_right', None),
+        )
 
     def _try_update_internal_boundary_conditions_cython(self):
         if not self._cython_nodechain_supported():
@@ -1187,9 +1222,7 @@ class Rivernet():
         epsA = 1e-12
 
         for r, _ in self._in_branches_by_node[node]:
-            A_face = getattr(r, 'boundary_face_area_right', None)
-            B_face = getattr(r, 'boundary_face_width_right', None)
-            Q_face = getattr(r, 'boundary_face_discharge_right', None)
+            _, A_face, Q_face, B_face = self._get_boundary_face_state_cached(r, 'right')
             if self.internal_node_use_boundary_face_ac and A_face is not None and B_face is not None and Q_face is not None:
                 A = float(max(A_face, epsA))
                 B = float(max(B_face, epsA))
@@ -1201,9 +1234,7 @@ class Rivernet():
             ac += (np.sqrt(self.g * A * B) - Q * B / A)
 
         for r, _ in self._out_branches_by_node[node]:
-            A_face = getattr(r, 'boundary_face_area_left', None)
-            B_face = getattr(r, 'boundary_face_width_left', None)
-            Q_face = getattr(r, 'boundary_face_discharge_left', None)
+            _, A_face, Q_face, B_face = self._get_boundary_face_state_cached(r, 'left')
             if self.internal_node_use_boundary_face_ac and A_face is not None and B_face is not None and Q_face is not None:
                 A = float(max(A_face, epsA))
                 B = float(max(B_face, epsA))
@@ -1386,7 +1417,7 @@ class Rivernet():
 
         # 流入节点的边
         for river_temp, _ in self._in_branches_by_node[node]:
-            face_q = getattr(river_temp, 'boundary_face_discharge_right', None)
+            _, _, face_q, _ = self._get_boundary_face_state_cached(river_temp, 'right')
             if self.internal_node_prefer_boundary_face_discharge and face_q is not None:
                 q_in = float(face_q)
             elif self.internal_node_use_face_discharge:
@@ -1397,7 +1428,7 @@ class Rivernet():
 
         # 流出节点的边
         for river_temp, _ in self._out_branches_by_node[node]:
-            face_q = getattr(river_temp, 'boundary_face_discharge_left', None)
+            _, _, face_q, _ = self._get_boundary_face_state_cached(river_temp, 'left')
             if self.internal_node_prefer_boundary_face_discharge and face_q is not None:
                 q_out = float(face_q)
             elif self.internal_node_use_face_discharge:
@@ -1852,21 +1883,15 @@ class Rivernet():
             rec[f'{n}_level'] = float(self._internal_node_level_cache.get(n, np.nan))
             rec[f'{n}_Qnet'] = float(self._get_node_mass_residual_current_state(n))
             for r, name in self._in_branches_by_node[n]:
-                rec[f'{n}_{name}_face_level'] = float(
-                    getattr(r, 'boundary_face_level_right', np.nan)
-                )
-                rec[f'{n}_{name}_face_Q'] = float(
-                    getattr(r, 'boundary_face_discharge_right', np.nan)
-                )
+                face_level, _, face_q, _ = self._get_boundary_face_state_cached(r, 'right')
+                rec[f'{n}_{name}_face_level'] = float(np.nan if face_level is None else face_level)
+                rec[f'{n}_{name}_face_Q'] = float(np.nan if face_q is None else face_q)
                 rec[f'{n}_{name}_cell_level'] = float(r.water_level[-2])
                 rec[f'{n}_{name}_cell_Q'] = float(r.Q[-2])
             for r, name in self._out_branches_by_node[n]:
-                rec[f'{n}_{name}_face_level'] = float(
-                    getattr(r, 'boundary_face_level_left', np.nan)
-                )
-                rec[f'{n}_{name}_face_Q'] = float(
-                    getattr(r, 'boundary_face_discharge_left', np.nan)
-                )
+                face_level, _, face_q, _ = self._get_boundary_face_state_cached(r, 'left')
+                rec[f'{n}_{name}_face_level'] = float(np.nan if face_level is None else face_level)
+                rec[f'{n}_{name}_face_Q'] = float(np.nan if face_q is None else face_q)
                 rec[f'{n}_{name}_cell_level'] = float(r.water_level[1])
                 rec[f'{n}_{name}_cell_Q'] = float(r.Q[1])
         self.internal_node_history.append(rec)
