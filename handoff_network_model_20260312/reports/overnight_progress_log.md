@@ -354,3 +354,29 @@
 
 - clean up and stage the accepted exact-Cython work for a checkpoint commit
 - keep generated build artifacts and failed experimental paths out of the final commit
+
+## 2026-03-16 fullchain pushdown phase 0 reset
+
+### Done
+
+- kept the source worktree `/home/xin/River_net_parallel` untouched as the protected dirty experiment source
+- created a clean continuation branch:
+  - `feature/cpp-exact-evolve-fullchain-pushdown-next`
+- created a clean continuation worktree:
+  - `/tmp/feature_cpp_exact_evolve_fullchain_pushdown_next`
+- recorded source-state reports for the continuation line:
+  - `cpp_fullchain_preflight_git_status.txt`
+  - `cpp_fullchain_untracked_inventory.md`
+  - `cpp_fullchain_branch_layout.md`
+
+### Findings
+
+- the accepted exact baseline we continue from is `1d71dee`
+- the source worktree still contains the rejected-but-useful `Assemble_Flux_2` native prototype and benchmark artifacts, so leaving it untouched is the safest way to preserve that work
+- the new continuation line can now profile and push kernels down without mixing those rejected changes into accepted code
+
+### Next
+
+- re-profile the accepted exact configuration in this clean continuation branch
+- write the remaining native-gap and hotspot reports against the real accepted path
+- then push the next exact C++ kernel after accepted update-cell, not the rejected assemble experiment

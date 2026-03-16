@@ -1,14 +1,23 @@
 # evolve remaining python chain
 
-当前 accepted exact 配置：
+当前 pushdown continuation 的工作基线：
 
 - `ISLAM_USE_CPP_EVOLVE=1`
 - `ISLAM_CPP_THREADS=0`
 - `ISLAM_USE_CYTHON_NODECHAIN=1`
 - `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
 - `ISLAM_USE_CYTHON_ROE_FLUX=1`
-- `ISLAM_CPP_USE_UPDATE_CELL=0`
+- `ISLAM_CPP_USE_UPDATE_CELL=1`
 - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
+
+说明：
+
+- phase-3 对照基线仍然是 `ISLAM_CPP_USE_UPDATE_CELL=0` 的 accepted exact 路径。
+- 但当前这条 continuation 分支已经把 `Update_cell_proprity2` native kernel 接纳为新的工作基线，因为后续剩余 native gap 必须以这条更强的 exact 路径来排序。
+- 当前 clean worktree 复核结果：
+  - 10m `evolve/model`: `1.2669095993041992 s`
+  - 2h `evolve/model`: `9.865381956100464 s`
+  - 与 phase-3 exact 对照相比，步数保持不变，收益来自单步成本下降。
 
 ## real entry chain
 
@@ -82,17 +91,21 @@
   - `_enforce_explicit_conservative_admissibility()` 仍是 Python per-cell loop
 - hot-path：高
 - remaining gap：
-  - 显式 conservative 更新链还没有 native kernel
+  - 显式 conservative 更新链只 native 了 `Update_cell` 之后的部分前提条件
+  - 真正的 friction/admissibility post-step 仍在 Python per-cell loop
 
 ### G. `Update_cell_property_net`
 - 入口层：Cython -> Python wrapper
 - 主执行层：Python per-river dispatch
 - river 内：
-  - 当前 accepted 路径仍走 Python `_refresh_cell_state()` per-cell loop
-  - `ISLAM_CPP_USE_UPDATE_CELL=1` 对应的 native 路径还未 accepted
-- hot-path：高
+  - 当前 continuation 基线已经命中 C++ `update_cell_properties_exact`
+  - Python 层仍保留：
+    - per-river dispatch
+    - feature-flag / fallback 路由
+    - forced-dry 计数与 diagnostics 相关的轻量衔接
+- hot-path：已明显下降
 - remaining gap：
-  - 典型 per-cell state refresh / near-dry / geometry query / diagnostics bookkeeping 仍在 Python
+  - 仍有少量 wrapper/fallback 成分，但不再是当前最值得优先 pushdown 的主 gap
 
 ### H. `Caculate_global_CFL`
 - 入口层：Cython -> Python wrapper
@@ -107,3 +120,14 @@
 - bridge 已把输出缓冲持久化到 C++
 - 但 save 调度和 river 数据提取仍经 Python wrapper
 - 因本轮 headline 只看 evolve/model time，这部分只在 crossing 统计中记录，不作为初始化优化对象
+
+## why the bridge still does not dominate the gain
+
+- 2h profiled run里仍有：
+  - `336020` 次 nodechain boundary-closure 调用
+  - `306380` 次 width lookup
+  - `14820` 次 bridge step-level Python crossing
+- 这说明目前的主要成本已经不再是“有没有 C++ bridge”，而是：
+  - nodechain 结束后的 native ownership 还不够完整
+  - `Assemble_Flux_2` 的 per-cell post-step 仍留在 Python
+  - `Roe/Matrix/Face_U_C` 仍有明显的 per-river Python dispatch 和跨层衔接

@@ -6,7 +6,7 @@
 - source frozen worktree: `/tmp/feature_cpp_exact_evolve_kernelize_next`
 - accepted head: `a67a12e`
 
-### accepted exact config
+### accepted exact config from phase-3 source line
 
 - `ISLAM_USE_CPP_EVOLVE=1`
 - `ISLAM_CPP_THREADS=0`
@@ -33,11 +33,11 @@
   - 40h full case regressed
 - `Update_cell_proprity2` native variants are still excluded from accepted exact config
 
-## current pushdown line
+## current pushdown continuation line
 
-- current branch: `feature/cpp-exact-evolve-fullchain-pushdown`
-- current worktree: `/home/xin/River_net_parallel`
-- start point for this line: `a67a12e`
+- current branch: `feature/cpp-exact-evolve-fullchain-pushdown-next`
+- current worktree: `/tmp/feature_cpp_exact_evolve_fullchain_pushdown_next`
+- continuation start point: `1d71dee`
 
 ### this line's purpose
 
@@ -69,6 +69,23 @@
 3. `Assemble_Flux_2` remains the clearest remaining per-cell native gap after `Update_cell_proprity2`
 4. generated compile artifacts and benchmark JSONs exist in both worktrees and must stay out of source commits
 
+## current continuation working baseline
+
+- `ISLAM_USE_CPP_EVOLVE=1`
+- `ISLAM_CPP_THREADS=0`
+- `ISLAM_USE_CYTHON_NODECHAIN=1`
+- `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
+- `ISLAM_USE_CYTHON_ROE_FLUX=1`
+- `ISLAM_CPP_USE_UPDATE_CELL=1`
+- `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
+
+Validated no-profile spot checks in this clean continuation worktree:
+
+- 10m:
+  - `1.266910 s`
+- 2h:
+  - `9.865382 s`
+
 ## next optimization direction
 
 1. push `Assemble_Flux_2` and related per-cell conservative/friction/admissibility loops deeper into C++
@@ -79,7 +96,7 @@
    - `Caculate_face_U_C`
 4. only after the above, revisit a fuller native full-step loop
 
-## current branch-local accepted delta
+## branch-local accepted delta vs phase-3 source baseline
 
 On this pushdown branch, the newly validated exact addition is:
 

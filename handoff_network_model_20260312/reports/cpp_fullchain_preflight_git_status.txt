@@ -1,32 +1,25 @@
-source_worktree: /tmp/feature_cpp_exact_evolve_kernelize_next
-source_branch: feature/cpp-exact-evolve-kernelize-next
-source_head: a67a12e
-
-## source status
-## feature/cpp-exact-evolve-kernelize-next
-?? handoff_network_model_20260312/cython_cpp_bridge.cpp
-?? handoff_network_model_20260312/cython_cpp_bridge.cpython-311-x86_64-linux-gnu.so
+## feature/cpp-exact-evolve-fullchain-pushdown
+ M handoff_network_model_20260312/cpp/river_kernels.cpp
+ M handoff_network_model_20260312/cpp/river_kernels.hpp
+ M handoff_network_model_20260312/cython_river_kernels.pyx
+ M handoff_network_model_20260312/reports/overnight_progress_log.md
+ M handoff_network_model_20260312/river_for_net.py
 ?? handoff_network_model_20260312/cython_node_iteration.c
 ?? handoff_network_model_20260312/cython_node_iteration.cpython-311-x86_64-linux-gnu.so
-?? handoff_network_model_20260312/cython_river_kernels.c
+?? handoff_network_model_20260312/cython_river_kernels.cpp
 ?? handoff_network_model_20260312/cython_river_kernels.cpython-311-x86_64-linux-gnu.so
-?? handoff_network_model_20260312/reports/cpp_bridge_directdispatch_10m_compare.json
-?? handoff_network_model_20260312/reports/cpp_bridge_directdispatch_10m_summary.json
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_10m_noperf_summary.json
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_10m_perf.json
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_10m_summary.json
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_2h.prof
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_2h_cprofile.prof
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_2h_cprofile_after_crosssection.prof
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_2h_cprofile_summary.json
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_2h_cprofile_top20.json
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_2h_noperf_solo_summary.json
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_2h_noperf_summary.json
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_2h_perf.json
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_2h_summary.json
-?? handoff_network_model_20260312/reports/cpp_kernelize_next_40h_noperf_summary.json
-?? handoff_network_model_20260312/reports/cpp_nodechain_widthfast_10m_compare.json
-?? handoff_network_model_20260312/reports/cpp_nodechain_widthfast_10m_summary.json
-
-## current worktree status
-## feature/cpp-exact-evolve-fullchain-pushdown
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_assemble_10m_compare.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_assemble_10m_perf.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_assemble_10m_summary.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_baselinecheck_10m_perf.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_baselinecheck_10m_summary.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_updatecell_10m_compare.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_updatecell_10m_perf.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_updatecell_10m_summary.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_updatecell_2h_compare.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_updatecell_2h_perf.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_updatecell_2h_summary.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_updatecell_40h_compare.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_updatecell_40h_perf.json
+?? handoff_network_model_20260312/reports/cpp_fullchain_pushdown_updatecell_40h_summary.json
+?? handoff_network_model_20260312/reports/cpp_vs_cython_updatecell_10m_compare.json

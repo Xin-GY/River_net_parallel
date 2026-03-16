@@ -1,12 +1,19 @@
 # evolve native gap topdown
 
-accepted phase-3 exact 从 `206.306033 s` 降到 `202.210932 s`，收益只有 `4.095101 s`。这说明：
+当前 continuation 线已经把 `Update_cell_proprity2` 纳入 exact 工作基线。
 
-1. bridge 本身不是主要瓶颈；
-2. wrapper-bypass 只解决了 nodechain 里一层明显的 Python 包装开销；
-3. 绝大多数时间仍耗在“每步真实数值循环 + state write-back + Python/Cython 对象协调”。
+关键对照：
 
-## why bridge gain is small
+- phase-3 accepted exact：
+  - 40h `evolve/model = 202.210932 s`
+- current continuation working baseline:
+  - `ISLAM_CPP_USE_UPDATE_CELL=1`
+  - 2h `evolve/model = 9.865381956100464 s`
+  - 历史 40h exact compare 已通过，40h `evolve/model = 177.525983 s`
+
+这说明 `Update_cell_proprity2` 这一大块 native gap 已经被吃掉了。现在继续往下推时，bridge 本身更不是主瓶颈；真正的剩余成本已经集中到 nodechain 和 river-step 里还没有 native ownership 的链段。
+
+## why the remaining gain is now harder
 
 - `cython_cpp_bridge.run_cpp_network_evolve_serial()` 目前还是一个 Cython 壳，它每步依次调：
   - `Update_boundary_conditions`
@@ -18,34 +25,50 @@ accepted phase-3 exact 从 `206.306033 s` 降到 `202.210932 s`，收益只有 `
   - `Update_cell_property_net`
   - `Caculate_global_CFL`
 - 这些 `_net()` 入口大多只是 Python per-river dispatch，真正的 arrays/workspace 仍挂在 Python `River` 对象上。
-- 因此 bridge 只省掉了最外层 generator/loop 的少量解释器开销，没有真正消掉每步的 per-river/per-cell/per-interface Python 开销。
+- 因此 bridge 只省掉了最外层 generator/loop 的一部分解释器开销，没有真正消掉每步的 per-river/per-cell/per-interface Python 开销。
+- 在 `Update_cell` native 化以后，bridge 的剩余问题更清楚了：
+  - nodechain solve 之后的 state commit 仍有 Python ownership
+  - `Assemble_Flux_2` 的 friction/admissibility 仍是 Python per-cell loop
+  - `Roe matrix / face_uc / source` 仍通过 Python per-river dispatch 串联
 
 ## remaining native gaps
 
 按预计收益排序：
 
-1. `Update_cell_proprity2`
-   - 仍是 Python per-cell `_refresh_cell_state()` 主循环
-   - 包含 near-dry、width lookup、pressure/perimeter/radius 更新、forced-dry bookkeeping
-   - 是当前最清晰的 native pushdown 目标
+1. nodechain state commit / final apply
+   - wrapper-bypass 已绕开边界包装器，但 internal-node solve 的“算完 -> 写回 -> river-step 使用”还没有闭合在 native 层
+   - 2h profiled metrics:
+     - `boundary_updater.total = 9.075200 s`
+     - `nodechain.total = 14.950724 s`
+     - `nodechain.apply_and_boundary_closure = 6.499194 s`
+     - `nodechain.final_apply = 0.618823 s`
+   - 这里同时带着跨层对象协调和状态 write-back 开销
 
 2. `Assemble_Flux_2`
    - 虽然 conservative increment 主要是 NumPy，但 friction substep 和 admissibility 仍是 Python per-cell loop
-   - 与 update-cell 强相关，适合后续一起 native 化
+   - 2h profiled metric:
+     - `river_dispatch.Assemble_Flux_2.time = 3.056615 s`
+   - 这是当前最清晰的剩余 per-cell native gap
 
-3. nodechain state commit
-   - wrapper-bypass 已绕开边界包装器
-   - 但 internal-node solve 结束后的 state write-back、river-side 衔接仍未闭合在 native 层
+3. `Caculate_Roe_Flux_2`
+   - 当前已有 Cython exact batch kernel，但 2h 里仍然是主热点之一：
+     - `river_dispatch.Caculate_Roe_Flux_2.time = 3.825342 s`
+   - 说明 general-HR 之外仍有一部分 river-step 协调/状态衔接留在 Python/Cython 边界上
 
-4. `Caculate_source_term_2`
-   - 仍是 Python per-interface loop
-   - 伴随 `DEB`/friction/depth query 的 Python lookup
-
-5. `Caculate_Roe_matrix`
+4. `Caculate_Roe_matrix`
    - 主体是 NumPy，但仍通过 Python per-river dispatch 和 object state 访问
+   - 2h profiled metric:
+     - `river_dispatch.Caculate_Roe_matrix.time = 1.276841 s`
 
-6. `Caculate_face_U_C`
-   - 与 Roe matrix 类似，内核矢量化已有，但 native fullstep 还没接上
+5. `Caculate_face_U_C`
+   - 2h profiled metric:
+     - `river_dispatch.Caculate_face_U_C.time = 0.712105 s`
+   - 第二梯队，但仍是完整 fullstep native loop 的必要一环
+
+6. `Caculate_source_term_2`
+   - 2h profiled metric:
+     - `river_dispatch.Caculate_source_term_2.time = 0.133709 s`
+   - 当前不是第一优先级，但它仍阻断 fullstep native chain 的完整闭合
 
 7. global CFL / dt reduction
    - 仍是 Python per-river reduction
@@ -57,9 +80,8 @@ accepted phase-3 exact 从 `206.306033 s` 降到 `202.210932 s`，收益只有 `
 
 ## execution order
 
-1. `Update_cell_proprity2` exact C++ kernel
-2. `Assemble_Flux_2` 剩余 Python per-cell 子链
-3. nodechain commit native 化
-4. 当前 Top 3 中剩余的 river-step kernel
-5. fullstep native loop 合并
-6. build flags / memory layout 微优化
+1. `Assemble_Flux_2` 剩余 Python per-cell 子链
+2. nodechain commit native 化
+3. 根据重新 profile 后的顺序，在 `Roe_Flux / Roe_matrix / face_U_C` 中继续下沉下一块
+4. fullstep native loop 合并
+5. build flags / memory layout 微优化
