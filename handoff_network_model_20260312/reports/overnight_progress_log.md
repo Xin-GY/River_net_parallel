@@ -677,3 +677,49 @@
   - per-iteration face-state cache
   - immediate post-closure state refresh / commit
 - then move residual / `Ac` to consume that native-owned face state instead of Python attrs and repeated lookups
+
+## 2026-03-16 Stage 2: nodechain apply/closure deep ownership
+
+### Done
+
+- added a deeper exact nodechain apply path behind:
+  - `ISLAM_CPP_USE_NODECHAIN_DEEP_APPLY=1`
+- exported `compute_stage_boundary_mainline_fast(...)` into the nodechain Cython layer
+- added `NodeBoundaryDeepPlan` plus:
+  - precompiled side/layout indices
+  - prebound table refs
+  - typed state-array views
+  - face-state cache
+  - implicit-vector write-back support
+- routed node iteration apply/final apply through the deep plan when enabled
+- replaced repeated Python-owned boundary closure and width lookup traffic with native-owned closure + face cache reuse
+- validated the accepted candidate on:
+  - 10m
+  - 2h
+  - 40h
+
+### Findings
+
+- this step is a real ownership pushdown, not another wrapper tweak
+- 40h exact compare passes:
+  - `allclose = true`
+- headline evolve/model improved:
+  - `106.473473 s -> 92.091939 s`
+- the first milestone is now met:
+  - `40h < 100 s`
+- 40h nodechain sub-costs dropped materially:
+  - `nodechain.total`: `65.117052 s -> 36.756061 s`
+  - `apply_and_boundary_closure`: `25.879760 s -> 14.925780 s`
+  - `residual_and_ac`: `1.742821 s -> 0.213633 s`
+  - `final_apply`: `4.360243 s -> 2.637463 s`
+- Python boundary ownership in the hot path is effectively gone:
+  - `cython_to_python_boundary_calls`: `4010220 -> 0`
+  - `cython_to_python_width_calls`: `3414560 -> 0`
+
+### Next
+
+- checkpoint this path as the new accepted exact candidate for the continuation line
+- continue from the new `~92.09 s` baseline and focus on:
+  - residual / Ac / Jacobian / stopping deeper native ownership
+  - final apply / state commit deeper native ownership
+  - only after that, fullstep native loop

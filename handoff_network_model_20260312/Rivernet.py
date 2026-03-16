@@ -40,8 +40,12 @@ from parallel_river_pool import (
     SNAP_RIGHT,
 )
 try:
-    from cython_node_iteration import run_internal_node_iteration_exact as cython_run_internal_node_iteration_exact
+    from cython_node_iteration import (
+        build_nodechain_deep_apply_plan as cython_build_nodechain_deep_apply_plan,
+        run_internal_node_iteration_exact as cython_run_internal_node_iteration_exact,
+    )
 except Exception:
+    cython_build_nodechain_deep_apply_plan = None
     cython_run_internal_node_iteration_exact = None
 try:
     from cython_cpp_bridge import (
@@ -154,6 +158,7 @@ class Rivernet():
         self.use_cython_nodechain = False
         self.use_cython_nodechain_direct_fast = False
         self.use_cython_nodechain_prebound_fast = False
+        self.use_cpp_nodechain_deep_apply = False
         self._cython_nodechain_plan = None
         self.use_cpp_evolve = False
         self.cpp_threads = False
@@ -272,11 +277,22 @@ class Rivernet():
                 branch_rivers.append(river_obj)
                 branch_side_codes.append(0)  # node on branch left end -> inbound closure
         node_offsets[len(node_names)] = len(branch_rivers)
+        branch_side_codes_arr = np.asarray(branch_side_codes, dtype=np.int8)
+        branch_deep_apply_plans = None
+        if (
+            bool(getattr(self, 'use_cpp_nodechain_deep_apply', False))
+            and cython_build_nodechain_deep_apply_plan is not None
+        ):
+            branch_deep_apply_plans = cython_build_nodechain_deep_apply_plan(
+                tuple(branch_rivers),
+                branch_side_codes_arr,
+            )
         self._cython_nodechain_plan = {
             'node_names': node_names,
             'node_offsets': node_offsets,
             'branch_rivers': tuple(branch_rivers),
-            'branch_side_codes': np.asarray(branch_side_codes, dtype=np.int8),
+            'branch_side_codes': branch_side_codes_arr,
+            'branch_deep_apply_plans': branch_deep_apply_plans,
         }
         return self._cython_nodechain_plan
 
@@ -285,6 +301,8 @@ class Rivernet():
         if plan is None:
             return self._build_cython_nodechain_plan()
         if len(plan['node_names']) != len(getattr(self, 'internal_nodes', ())):
+            return self._build_cython_nodechain_plan()
+        if bool(getattr(self, 'use_cpp_nodechain_deep_apply', False)) and plan.get('branch_deep_apply_plans') is None:
             return self._build_cython_nodechain_plan()
         return plan
 
@@ -301,6 +319,7 @@ class Rivernet():
                 plan['node_offsets'],
                 plan['branch_rivers'],
                 plan['branch_side_codes'],
+                plan.get('branch_deep_apply_plans'),
             )
         )
 

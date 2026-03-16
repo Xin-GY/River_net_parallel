@@ -79,3 +79,26 @@ cdef class CrossSectionTableCython:
     cpdef double get_top_level(self)
     cpdef double get_max_depth(self)
     cpdef object get_value_by_area(self, double area, value_name, method=*)
+
+cpdef object compute_stage_boundary_mainline_fast(
+    CrossSectionTableCython inner_tbl,
+    CrossSectionTableCython target_tbl,
+    object second_tbl,
+    bint is_left,
+    double g,
+    double tinyA,
+    double tinyT,
+    double level,
+    double Ai,
+    double Qi,
+    double inner_depth,
+    double s_limit,
+    double water_depth_limit,
+    double dt_moc,
+    bint use_o2,
+    double A2,
+    double Q2,
+    double guard_q_delta,
+    double guard_abs_delta,
+    bint swap_moc_sign,
+)
