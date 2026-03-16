@@ -24,6 +24,7 @@ def main() -> int:
     parser.add_argument("--use-cython-nodechain-direct-fast", action="store_true", default=False)
     parser.add_argument("--use-cython-nodechain-prebound-fast", action="store_true", default=False)
     parser.add_argument("--use-cython-roe-flux", action="store_true", default=False)
+    parser.add_argument("--use-cpp-roe-flux-deep", action="store_true", default=False)
     parser.add_argument("--use-cpp-update-cell", action="store_true", default=False)
     parser.add_argument("--use-cpp-assemble", action="store_true", default=False)
     parser.add_argument("--use-cpp-roe-matrix", action="store_true", default=False)
@@ -38,6 +39,7 @@ def main() -> int:
     os.environ["ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST"] = "1" if args.use_cython_nodechain_direct_fast else "0"
     os.environ["ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST"] = "1" if args.use_cython_nodechain_prebound_fast else "0"
     os.environ["ISLAM_USE_CYTHON_ROE_FLUX"] = "1" if args.use_cython_roe_flux else "0"
+    os.environ["ISLAM_CPP_USE_ROE_FLUX_DEEP"] = "1" if args.use_cpp_roe_flux_deep else "0"
     os.environ["ISLAM_CPP_USE_UPDATE_CELL"] = "1" if args.use_cpp_update_cell else "0"
     os.environ["ISLAM_CPP_USE_ASSEMBLE"] = "1" if args.use_cpp_assemble else "0"
     os.environ["ISLAM_CPP_USE_ROE_MATRIX"] = "1" if args.use_cpp_roe_matrix else "0"
@@ -86,6 +88,7 @@ def main() -> int:
         "use_cython_nodechain_direct_fast": bool(args.use_cython_nodechain_direct_fast),
         "use_cython_nodechain_prebound_fast": bool(args.use_cython_nodechain_prebound_fast),
         "use_cython_roe_flux": bool(args.use_cython_roe_flux),
+        "use_cpp_roe_flux_deep": bool(args.use_cpp_roe_flux_deep),
         "use_cpp_update_cell": bool(args.use_cpp_update_cell),
         "use_cpp_assemble": bool(args.use_cpp_assemble),
         "use_cpp_roe_matrix": bool(args.use_cpp_roe_matrix),

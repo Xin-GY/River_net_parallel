@@ -135,4 +135,26 @@ void compute_face_uc_exact(
     float* F_C
 );
 
+void fill_general_hr_flux_exact_deep(
+    const TableView* left_tables,
+    const TableView* right_tables,
+    std::size_t n,
+    double g,
+    double tiny,
+    double roe_entropy_fix,
+    double roe_entropy_fix_factor,
+    const double* river_bed_height,
+    const double* water_depth,
+    const float* S,
+    const float* Q,
+    const float* PRESS,
+    const float* QIN,
+    const double* cell_lengths,
+    double dt,
+    int cell_num,
+    double* flux_loc,
+    double* flux_source_left,
+    double* flux_source_right
+);
+
 }  // namespace rivernet

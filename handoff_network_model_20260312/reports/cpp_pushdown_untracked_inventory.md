@@ -1,0 +1,59 @@
+# cpp pushdown untracked inventory
+
+Generated from current accepted worktree before opening the next continuation branch.
+
+- total untracked entries: `53`
+
+- `handoff_network_model_20260312/cython_cpp_bridge.cpp`: compiled/generated extension artifact
+- `handoff_network_model_20260312/cython_cpp_bridge.cpython-311-x86_64-linux-gnu.so`: compiled/generated extension artifact
+- `handoff_network_model_20260312/cython_node_iteration.c`: compiled/generated extension artifact
+- `handoff_network_model_20260312/cython_node_iteration.cpython-311-x86_64-linux-gnu.so`: compiled/generated extension artifact
+- `handoff_network_model_20260312/cython_river_kernels.cpp`: compiled/generated extension artifact
+- `handoff_network_model_20260312/cython_river_kernels.cpython-311-x86_64-linux-gnu.so`: compiled/generated extension artifact
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_10m_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_10m_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_10m_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_10m_v2_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_10m_v2_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_10m_v2_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_2h_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_2h_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_2h_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_40h_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_40h_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_assemble_40h_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_faceuc_10m_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_faceuc_10m_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_faceuc_10m_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_faceuc_2h_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_faceuc_2h_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_faceuc_2h_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_faceuc_40h_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_faceuc_40h_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_faceuc_40h_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_nodecommit_10m_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_nodecommit_10m_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_nodecommit_10m_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_nodecommit_2h_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_nodecommit_2h_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_nodecommit_2h_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_nodecommit_40h_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_nodecommit_40h_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_nodecommit_40h_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_roematrix_10m_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_roematrix_10m_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_roematrix_10m_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_roematrix_2h_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_roematrix_2h_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_roematrix_2h_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_roematrix_40h_compare.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_roematrix_40h_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_roematrix_40h_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_updatecell_10m_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_updatecell_10m_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_updatecell_2h.prof`: profile artifact
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_updatecell_2h_noprof_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_updatecell_2h_noprof_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_updatecell_2h_perf.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_fullchain_pushdown_next_updatecell_2h_summary.json`: benchmark/compare json
+- `handoff_network_model_20260312/reports/cpp_pushdown_preflight_git_status.txt`: generated artifact

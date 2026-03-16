@@ -103,6 +103,25 @@ inline double resolve_width_exact(
     return std::max(width, eps);
 }
 
+inline double roe_abs_with_fix(
+    double lam,
+    double c,
+    double roe_entropy_fix,
+    double roe_entropy_fix_factor
+) noexcept {
+    double delta = roe_entropy_fix;
+    const double aval = std::fabs(lam);
+    const double cabs = std::fabs(c);
+    const double scaled = roe_entropy_fix_factor * cabs;
+    if (scaled > delta) {
+        delta = scaled;
+    }
+    if (delta <= 0.0 || aval >= delta) {
+        return aval;
+    }
+    return 0.5 * (lam * lam / delta + delta);
+}
+
 inline bool is_cell_dry(
     double area,
     double depth,
@@ -520,6 +539,187 @@ void compute_face_uc_exact(
             F_U[i] = static_cast<float>(fu);
             F_C[i] = static_cast<float>(fc);
         }
+    }
+}
+
+void fill_general_hr_flux_exact_deep(
+    const TableView* left_tables,
+    const TableView* right_tables,
+    std::size_t n,
+    double g,
+    double tiny,
+    double roe_entropy_fix,
+    double roe_entropy_fix_factor,
+    const double* river_bed_height,
+    const double* water_depth,
+    const float* S,
+    const float* Q,
+    const float* PRESS,
+    const float* QIN,
+    const double* cell_lengths,
+    double dt,
+    int cell_num,
+    double* flux_loc,
+    double* flux_source_left,
+    double* flux_source_right
+) {
+    for (std::size_t i = 0; i < n; ++i) {
+        const TableView& left_tbl = left_tables[i];
+        const TableView& right_tbl = right_tables[i];
+
+        double h_left = water_depth[i];
+        double h_right = water_depth[i + 1];
+        if (h_left < 0.0) {
+            h_left = 0.0;
+        }
+        if (h_right < 0.0) {
+            h_right = 0.0;
+        }
+
+        const double z_left = river_bed_height[i];
+        const double z_right = river_bed_height[i + 1];
+        const double eta_left = z_left + h_left;
+        const double eta_right = z_right + h_right;
+
+        const double area_left_center = static_cast<double>(S[i]);
+        const double area_right_center = static_cast<double>(S[i + 1]);
+        const double q_left_center = static_cast<double>(Q[i]);
+        const double q_right_center = static_cast<double>(Q[i + 1]);
+
+        double u_left = 0.0;
+        double u_right = 0.0;
+        if (area_left_center > tiny && h_left > tiny) {
+            u_left = q_left_center / area_left_center;
+        }
+        if (area_right_center > tiny && h_right > tiny) {
+            u_right = q_right_center / area_right_center;
+        }
+
+        const double z_face = (z_left >= z_right) ? z_left : z_right;
+        double h_left_hr = eta_left - z_face;
+        double h_right_hr = eta_right - z_face;
+        if (h_left_hr < 0.0) {
+            h_left_hr = 0.0;
+        }
+        if (h_right_hr < 0.0) {
+            h_right_hr = 0.0;
+        }
+
+        const double a_left = table_area_by_depth(left_tbl, h_left_hr);
+        const double a_right = table_area_by_depth(right_tbl, h_right_hr);
+        const double p_left_hr = table_press_by_area(left_tbl, a_left);
+        const double p_right_hr = table_press_by_area(right_tbl, a_right);
+        const double q_left = a_left * u_left;
+        const double q_right = a_right * u_right;
+        const double f_left0 = q_left;
+        const double f_left1 = q_left * u_left + p_left_hr;
+        const double f_right0 = q_right;
+        const double f_right1 = q_right * u_right + p_right_hr;
+
+        double flux0 = 0.0;
+        double flux1 = 0.0;
+
+        if (!(a_left <= tiny && a_right <= tiny)) {
+            double t_left = table_width_by_area(left_tbl, (a_left > tiny) ? a_left : tiny);
+            double t_right = table_width_by_area(right_tbl, (a_right > tiny) ? a_right : tiny);
+            if (t_left < tiny) {
+                t_left = tiny;
+            }
+            if (t_right < tiny) {
+                t_right = tiny;
+            }
+
+            const double c_left = (a_left > tiny) ? std::sqrt(g * a_left / t_left) : 0.0;
+            const double c_right = (a_right > tiny) ? std::sqrt(g * a_right / t_right) : 0.0;
+            double s_left = u_left - c_left;
+            const double s_left_r = u_right - c_right;
+            if (s_left_r < s_left) {
+                s_left = s_left_r;
+            }
+            double s_right = u_left + c_left;
+            const double s_right_r = u_right + c_right;
+            if (s_right_r > s_right) {
+                s_right = s_right_r;
+            }
+
+            if (a_left > tiny && a_right > tiny) {
+                const double sqrt_al = std::sqrt((a_left > 0.0) ? a_left : 0.0);
+                const double sqrt_ar = std::sqrt((a_right > 0.0) ? a_right : 0.0);
+                const double denom = sqrt_al + sqrt_ar;
+                double u_roe = 0.0;
+                if (denom > tiny) {
+                    u_roe = (u_left * sqrt_al + u_right * sqrt_ar) / denom;
+                }
+
+                double c_roe;
+                if (std::fabs(a_right - a_left) > tiny) {
+                    const double ratio = (p_right_hr - p_left_hr) / (a_right - a_left);
+                    c_roe = (ratio > 0.0) ? std::sqrt(ratio) : 0.0;
+                } else {
+                    c_roe = 0.5 * (c_left + c_right);
+                }
+
+                if (c_roe <= tiny) {
+                    flux0 = 0.5 * (f_left0 + f_right0);
+                    flux1 = 0.5 * (f_left1 + f_right1);
+                } else {
+                    const double da = a_right - a_left;
+                    const double dq = q_right - q_left;
+                    const double alpha1 = ((u_roe + c_roe) * da - dq) / (2.0 * c_roe);
+                    const double alpha2 = (dq - (u_roe - c_roe) * da) / (2.0 * c_roe);
+                    const double lam1 = u_roe - c_roe;
+                    const double lam2 = u_roe + c_roe;
+                    const double abs1 = roe_abs_with_fix(lam1, c_roe, roe_entropy_fix, roe_entropy_fix_factor);
+                    const double abs2 = roe_abs_with_fix(lam2, c_roe, roe_entropy_fix, roe_entropy_fix_factor);
+                    flux0 = 0.5 * (f_left0 + f_right0) - 0.5 * (abs1 * alpha1 + abs2 * alpha2);
+                    flux1 = 0.5 * (f_left1 + f_right1) - 0.5 * (
+                        abs1 * alpha1 * (u_roe - c_roe) + abs2 * alpha2 * (u_roe + c_roe)
+                    );
+                }
+            } else if (s_left >= 0.0) {
+                flux0 = f_left0;
+                flux1 = f_left1;
+            } else if (s_right <= 0.0) {
+                flux0 = f_right0;
+                flux1 = f_right1;
+            } else if (s_right - s_left <= tiny) {
+                flux0 = 0.0;
+                flux1 = 0.0;
+            } else {
+                flux0 = (s_right * f_left0 - s_left * f_right0 + s_left * s_right * (a_right - a_left)) / (s_right - s_left);
+                flux1 = (s_right * f_left1 - s_left * f_right1 + s_left * s_right * (q_right - q_left)) / (s_right - s_left);
+            }
+        }
+
+        if (dt > 0.0 && std::fabs(flux0) > tiny) {
+            int donor = -1;
+            if (flux0 > 0.0 && 1 <= static_cast<int>(i) && static_cast<int>(i) <= cell_num) {
+                donor = static_cast<int>(i);
+            } else if (flux0 < 0.0 && 1 <= static_cast<int>(i) + 1 && static_cast<int>(i) + 1 <= cell_num) {
+                donor = static_cast<int>(i) + 1;
+            }
+            if (donor >= 0) {
+                double available = std::max(static_cast<double>(S[donor]), 0.0);
+                available *= std::max(cell_lengths[donor], tiny);
+                const double max_flux = available / std::max(dt, tiny);
+                if (max_flux < std::fabs(flux0)) {
+                    const double scale = max_flux / std::max(std::fabs(flux0), tiny);
+                    flux0 *= scale;
+                    flux1 *= scale;
+                }
+            }
+        }
+
+        flux_loc[i * 2] = flux0;
+        flux_loc[i * 2 + 1] = flux1;
+        flux_source_right[i * 2 + 1] = static_cast<double>(PRESS[i]) - p_left_hr;
+        flux_source_left[(i + 1) * 2 + 1] = -(static_cast<double>(PRESS[i + 1]) - p_right_hr);
+    }
+
+    for (int j = 1; j <= cell_num; ++j) {
+        const double rain_half = -0.5 * cell_lengths[j] * static_cast<double>(QIN[j]);
+        flux_source_left[j * 2] += rain_half;
+        flux_source_right[j * 2] += rain_half;
     }
 }
 

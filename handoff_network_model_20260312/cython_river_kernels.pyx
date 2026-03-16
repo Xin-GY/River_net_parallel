@@ -130,6 +130,28 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         float* F_C,
     ) except +
 
+    void fill_general_hr_flux_exact_deep_cpp_kernel "rivernet::fill_general_hr_flux_exact_deep"(
+        const TableView* left_tables,
+        const TableView* right_tables,
+        size_t n,
+        double g,
+        double tiny,
+        double roe_entropy_fix,
+        double roe_entropy_fix_factor,
+        const double* river_bed_height,
+        const double* water_depth,
+        const float* S,
+        const float* Q,
+        const float* PRESS,
+        const float* QIN,
+        const double* cell_lengths,
+        double dt,
+        int cell_num,
+        double* flux_loc,
+        double* flux_source_left,
+        double* flux_source_right,
+    ) except +
+
 
 cdef inline double _maxd(double a, double b) noexcept:
     return a if a >= b else b
@@ -276,6 +298,75 @@ cdef class CppUpdateCellPlan:
         return self._views.size()
 
 
+cdef class CppGeneralHrFluxPlan:
+    cdef vector[TableView] _left_views
+    cdef vector[TableView] _right_views
+
+    def __cinit__(self, object left_tables, object right_tables):
+        cdef Py_ssize_t i, n = len(left_tables)
+        cdef CrossSectionTableCython tbl
+        cdef TableView view
+        self._left_views.reserve(<size_t>n)
+        self._right_views.reserve(<size_t>n)
+        for i in range(n):
+            tbl = <CrossSectionTableCython>left_tables[i]
+            view.area_axis = &tbl._area_axis_mv[0]
+            view.depth_a = &tbl._depth_a_mv[0]
+            view.level_a = &tbl._level_a_mv[0]
+            view.DEB_a = &tbl._DEB_a_mv[0]
+            view.width_a = &tbl._width_a_mv[0]
+            view.wetted_a = &tbl._wetted_a_mv[0]
+            view.press_a = &tbl._press_a_mv[0]
+            if tbl._area_axis_wet_mv.shape[0] > 0:
+                view.area_axis_wet = &tbl._area_axis_wet_mv[0]
+                view.width_a_wet = &tbl._width_a_wet_mv[0]
+            else:
+                view.area_axis_wet = NULL
+                view.width_a_wet = NULL
+            view.depth_axis = &tbl._depth_axis_mv[0]
+            view.area_d = &tbl._area_d_mv[0]
+            view.area_len = <size_t>tbl._area_axis_mv.shape[0]
+            view.wet_len = <size_t>tbl._area_axis_wet_mv.shape[0]
+            view.depth_len = <size_t>tbl._depth_axis_mv.shape[0]
+            view.bed_level = tbl._bed_level
+            self._left_views.push_back(view)
+
+            tbl = <CrossSectionTableCython>right_tables[i]
+            view.area_axis = &tbl._area_axis_mv[0]
+            view.depth_a = &tbl._depth_a_mv[0]
+            view.level_a = &tbl._level_a_mv[0]
+            view.DEB_a = &tbl._DEB_a_mv[0]
+            view.width_a = &tbl._width_a_mv[0]
+            view.wetted_a = &tbl._wetted_a_mv[0]
+            view.press_a = &tbl._press_a_mv[0]
+            if tbl._area_axis_wet_mv.shape[0] > 0:
+                view.area_axis_wet = &tbl._area_axis_wet_mv[0]
+                view.width_a_wet = &tbl._width_a_wet_mv[0]
+            else:
+                view.area_axis_wet = NULL
+                view.width_a_wet = NULL
+            view.depth_axis = &tbl._depth_axis_mv[0]
+            view.area_d = &tbl._area_d_mv[0]
+            view.area_len = <size_t>tbl._area_axis_mv.shape[0]
+            view.wet_len = <size_t>tbl._area_axis_wet_mv.shape[0]
+            view.depth_len = <size_t>tbl._depth_axis_mv.shape[0]
+            view.bed_level = tbl._bed_level
+            self._right_views.push_back(view)
+
+    cdef const TableView* left_data(self) noexcept:
+        if self._left_views.size() == 0:
+            return NULL
+        return &self._left_views[0]
+
+    cdef const TableView* right_data(self) noexcept:
+        if self._right_views.size() == 0:
+            return NULL
+        return &self._right_views[0]
+
+    cdef size_t size(self) noexcept:
+        return self._left_views.size()
+
+
 cpdef bint prepare_cpp_update_cell_plan(object river):
     cdef object plan = getattr(river, "_cpp_update_cell_plan", None)
     cdef tuple tables
@@ -292,6 +383,84 @@ cpdef bint prepare_cpp_update_cell_plan(object river):
         return False
     river._cpp_update_cell_plan = CppUpdateCellPlan(tables)
     river._cpp_update_cell_ready = True
+    return True
+
+
+cpdef bint prepare_cpp_general_hr_flux_plan(object river):
+    cdef object plan = getattr(river, "_cpp_general_hr_flux_plan", None)
+    cdef tuple left_tables
+    cdef tuple right_tables
+    if plan is not None and bool(getattr(river, "_cpp_general_hr_flux_ready", False)):
+        return True
+    if not bool(getattr(river, "_general_hr_cython_batch_ready", False)):
+        river._cpp_general_hr_flux_plan = None
+        river._cpp_general_hr_flux_ready = False
+        return False
+    left_tables = river._general_hr_left_tables
+    right_tables = river._general_hr_right_tables
+    if not left_tables or not right_tables:
+        river._cpp_general_hr_flux_plan = None
+        river._cpp_general_hr_flux_ready = False
+        return False
+    river._cpp_general_hr_flux_plan = CppGeneralHrFluxPlan(left_tables, right_tables)
+    river._cpp_general_hr_flux_ready = True
+    return True
+
+
+cpdef bint fill_general_hr_flux_exact_cpp_deep(object river):
+    cdef CppGeneralHrFluxPlan plan
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] river_bed_height_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] water_depth_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] S_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Q_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] PRESS_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] QIN_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] cell_lengths_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_LOC_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_left_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_right_arr
+    cdef int cell_num
+
+    if not prepare_cpp_general_hr_flux_plan(river):
+        return False
+
+    plan = <CppGeneralHrFluxPlan>river._cpp_general_hr_flux_plan
+    cell_num = int(river.cell_num)
+    if cell_num < 0:
+        return False
+
+    river_bed_height_arr = river.river_bed_height
+    water_depth_arr = river.water_depth
+    S_arr = river.S
+    Q_arr = river.Q
+    PRESS_arr = river.PRESS
+    QIN_arr = river.QIN
+    cell_lengths_arr = river._general_hr_cell_length_buf
+    Flux_LOC_arr = river.Flux_LOC
+    Flux_Source_left_arr = river.Flux_Source_left
+    Flux_Source_right_arr = river.Flux_Source_right
+
+    fill_general_hr_flux_exact_deep_cpp_kernel(
+        plan.left_data(),
+        plan.right_data(),
+        plan.size(),
+        float(river.g),
+        float(max(river.S_limit, river.EPSILON)),
+        float(river.roe_entropy_fix),
+        float(river.roe_entropy_fix_factor),
+        &river_bed_height_arr[0],
+        &water_depth_arr[0],
+        &S_arr[0],
+        &Q_arr[0],
+        &PRESS_arr[0],
+        &QIN_arr[0],
+        &cell_lengths_arr[0],
+        float(river.DT),
+        cell_num,
+        &Flux_LOC_arr[0, 0],
+        &Flux_Source_left_arr[0, 0],
+        &Flux_Source_right_arr[0, 0],
+    )
     return True
 
 

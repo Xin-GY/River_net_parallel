@@ -1,0 +1,24 @@
+# cpp pushdown branch layout
+
+- source accepted branch: `feature/cpp-exact-evolve-fullchain-pushdown-next`
+- source accepted commit: `79c6117`
+- continuation branch: `feature/cpp-exact-evolve-flux-residual-fullstep`
+- continuation worktree: `/tmp/feature_cpp_exact_evolve_flux_residual_fullstep`
+- benchmark mode: single-process exact only
+- excluded from source commits:
+  - generated `.c/.cpp/.so` extension artifacts
+  - benchmark summary/perf/compare json files
+  - profile artifacts such as `.prof`
+  - any rejected bridge/dispatch experiments
+- accepted baseline config to reproduce from this branch:
+  - `ISLAM_USE_CPP_EVOLVE=1`
+  - `ISLAM_CPP_THREADS=0`
+  - `ISLAM_USE_CYTHON_NODECHAIN=1`
+  - `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
+  - `ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST=1`
+  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
+  - `ISLAM_CPP_USE_UPDATE_CELL=1`
+  - `ISLAM_CPP_USE_ASSEMBLE=1`
+  - `ISLAM_CPP_USE_ROE_MATRIX=1`
+  - `ISLAM_CPP_USE_FACE_UC=1`
+  - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`

@@ -607,3 +607,32 @@
 - re-profile the accepted exact configuration in this clean continuation branch
 - write the remaining native-gap and hotspot reports against the real accepted path
 - then push the next exact C++ kernel after accepted update-cell, not the rejected assemble experiment
+## 2026-03-16 Stage 1-2: flux-residual-fullstep branch bootstrap and Roe flux deep ownership
+
+- Created clean worktree/branch:
+  - `feature/cpp-exact-evolve-flux-residual-fullstep`
+  - `/tmp/feature_cpp_exact_evolve_flux_residual_fullstep`
+- Rebuilt missing Cython extensions in the new worktree so the accepted exact baseline was actually comparable.
+- Recorded new branch preflight:
+  - `reports/cpp_pushdown_preflight_git_status.txt`
+  - `reports/cpp_pushdown_untracked_inventory.md`
+  - `reports/cpp_pushdown_branch_layout.md`
+- Wrote remaining-gap reports for the accepted exact path:
+  - `reports/evolve_remaining_python_chain_after_faceuc.md`
+  - `reports/evolve_remaining_hotspots_after_faceuc_top10.md`
+  - `reports/evolve_native_gap_ranked_after_faceuc.md`
+- Implemented deeper exact general-HR Roe flux ownership:
+  - prebound native interface plan
+  - deep C++ per-face loop
+  - feature flag `ISLAM_CPP_USE_ROE_FLUX_DEEP=1`
+- Validation:
+  - 10m strict compare: pass
+  - 2h strict compare: pass
+  - 40h strict compare: pass
+- Headline `evolve/model time`:
+  - 10m `0.860548 -> 0.843206 s`
+  - 2h `6.488843 -> 6.374767 s`
+  - 40h `109.425894 -> 106.473473 s`
+- Result:
+  - accepted checkpoint candidate
+  - next biggest remaining resistance is nodechain, not bridge shape
