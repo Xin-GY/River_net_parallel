@@ -879,6 +879,10 @@ class River(Process):
         self.use_cpp_assemble = os.environ.get('ISLAM_CPP_USE_ASSEMBLE', '0') == '1'
         self.use_cpp_roe_matrix = os.environ.get('ISLAM_CPP_USE_ROE_MATRIX', '0') == '1'
         self.use_cpp_face_uc = os.environ.get('ISLAM_CPP_USE_FACE_UC', '0') == '1'
+        self.use_cython_nodechain_prebound_fast = os.environ.get('ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST', '0') == '1'
+        self._stage_boundary_prebound_signature = None
+        self._stage_boundary_prebound_left = None
+        self._stage_boundary_prebound_right = None
         self._general_hr_flux_mass_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_flux_momentum_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_press_left_hr_buf = np.zeros(self.cell_num + 1, dtype=float)
@@ -4019,6 +4023,159 @@ class River(Process):
         ghost_idx = ctx['ghost_idx']
         vector[0] = self.S[ghost_idx] - self.S_old[ghost_idx]
         vector[1] = self.Q[ghost_idx] - self.Q_old[ghost_idx]
+
+    def _stage_boundary_prebound_signature_tuple(self):
+        return (
+            int(self.cell_num),
+            bool(self.enable_boundary_diagnostics),
+            bool(getattr(self, 'bc_use_general_chi', False)),
+            str(getattr(self, 'bc_general_chi_candidate_mode', 'off')).lower(),
+            str(getattr(self, 'bc_general_chi_guard_selector', 'closure_q_delta')).lower(),
+            bool(getattr(self, 'bc_moc_with_source', False)),
+            bool(getattr(self, 'bc_moc_with_source_stage', False)),
+            bool(getattr(self, 'bc_use_order2_extrap_stage', getattr(self, 'bc_use_order2_extrap', False))),
+            str(self.cell_sections[0]),
+            str(self.cell_sections[1]),
+            str(self.cell_sections[2]) if self.cell_num >= 2 else '',
+            str(self.cell_sections[-1]),
+            str(self.cell_sections[-2]),
+            str(self.cell_sections[-3]) if self.cell_num >= 2 else '',
+            bool(getattr(self, 'swap_moc_sign_stage_in', getattr(self, 'swap_moc_sign_stage', getattr(self, 'swap_moc_sign', False)))),
+            bool(getattr(self, 'swap_moc_sign_stage_out', getattr(self, 'swap_moc_sign_stage', getattr(self, 'swap_moc_sign', False)))),
+        )
+
+    def _build_stage_boundary_prebound_context(self, side_txt):
+        if cython_compute_stage_boundary_mainline_fast is None or CrossSectionTableCython is None:
+            return None
+        if self.enable_boundary_diagnostics:
+            return None
+        if not bool(getattr(self, 'bc_use_general_chi', False)):
+            return None
+        if str(getattr(self, 'bc_general_chi_candidate_mode', 'off')).lower() != 'guarded_clamp':
+            return None
+        if str(getattr(self, 'bc_general_chi_guard_selector', 'closure_q_delta')).lower() != 'closure_q_delta':
+            return None
+        if bool(getattr(self, 'bc_moc_with_source', False)) or bool(getattr(self, 'bc_moc_with_source_stage', False)):
+            return None
+        use_o2 = bool(getattr(self, 'bc_use_order2_extrap_stage', getattr(self, 'bc_use_order2_extrap', False))) and self.cell_num >= 3
+        if side_txt == 'left':
+            ghost_idx = 0
+            inner_idx = 1
+            second_idx = 2
+            dry_limit_idx = 1
+            is_left = True
+            swap_moc_sign = bool(getattr(self, 'swap_moc_sign_stage_in', getattr(self, 'swap_moc_sign_stage', getattr(self, 'swap_moc_sign', False))))
+        else:
+            ghost_idx = -1
+            inner_idx = -2
+            second_idx = -3
+            dry_limit_idx = self.cell_num
+            is_left = False
+            swap_moc_sign = bool(getattr(self, 'swap_moc_sign_stage_out', getattr(self, 'swap_moc_sign_stage', getattr(self, 'swap_moc_sign', False))))
+        sec_inner = self.cell_sections[inner_idx]
+        sec_target = self.cell_sections[ghost_idx]
+        tbl_inner = self.cross_section_table.tables.get(sec_inner)
+        tbl_target = self.cross_section_table.tables.get(sec_target)
+        if not isinstance(tbl_inner, CrossSectionTableCython) or not isinstance(tbl_target, CrossSectionTableCython):
+            return None
+        tbl_second = None
+        if use_o2:
+            tbl_second = self.cross_section_table.tables.get(self.cell_sections[second_idx])
+            if not isinstance(tbl_second, CrossSectionTableCython):
+                return None
+        return {
+            'side': side_txt,
+            'is_left': bool(is_left),
+            'ghost_idx': int(ghost_idx),
+            'inner_idx': int(inner_idx),
+            'second_idx': int(second_idx),
+            'dry_limit_idx': int(dry_limit_idx),
+            'use_o2': bool(use_o2),
+            'swap_moc_sign': bool(swap_moc_sign),
+            'tbl_inner': tbl_inner,
+            'tbl_target': tbl_target,
+            'tbl_second': tbl_second,
+            'guard_q_delta': float(max(getattr(self, 'bc_general_chi_guard_q_delta', 0.005), 0.0)),
+            'guard_abs_delta': float(max(getattr(self, 'bc_general_chi_guard_abs_delta', 0.15), 0.0)),
+        }
+
+    def _get_stage_boundary_prebound_context(self, side_txt):
+        signature = self._stage_boundary_prebound_signature_tuple()
+        if signature != self._stage_boundary_prebound_signature:
+            self._stage_boundary_prebound_signature = signature
+            self._stage_boundary_prebound_left = self._build_stage_boundary_prebound_context('left')
+            self._stage_boundary_prebound_right = self._build_stage_boundary_prebound_context('right')
+        return self._stage_boundary_prebound_left if side_txt == 'left' else self._stage_boundary_prebound_right
+
+    def _commit_stage_boundary_state_prebound(self, side_txt, level, Ab, Qb, Tb):
+        if side_txt == 'left':
+            ghost_idx = 0
+            self.S[0] = Ab
+            self.Q[0] = Qb
+            self._refresh_cell_state(0, level_hint=level)
+            self.boundary_face_level_left = float(level)
+            self.boundary_face_area_left = float(Ab)
+            self.boundary_face_discharge_left = float(Qb)
+            self.boundary_face_width_left = float(Tb)
+            if getattr(self, 'Implic_flag', False):
+                self.V0[0] = self.S[ghost_idx] - self.S_old[ghost_idx]
+                self.V0[1] = self.Q[ghost_idx] - self.Q_old[ghost_idx]
+            return
+        ghost_idx = -1
+        self.S[-1] = Ab
+        self.Q[-1] = Qb
+        self._refresh_cell_state(-1, level_hint=level)
+        self.boundary_face_level_right = float(level)
+        self.boundary_face_area_right = float(Ab)
+        self.boundary_face_discharge_right = float(Qb)
+        self.boundary_face_width_right = float(Tb)
+        if getattr(self, 'Implic_flag', False):
+            self.V1[0] = self.S[ghost_idx] - self.S_old[ghost_idx]
+            self.V1[1] = self.Q[ghost_idx] - self.Q_old[ghost_idx]
+
+    def _stage_boundary_fix_level_cython_prebound_fast(self, side_code, level):
+        tinyA = 1.0e-12
+        tinyT = 1.0e-08
+        side_txt = 'left' if int(side_code) == 0 else 'right'
+        ctx = self._get_stage_boundary_prebound_context(side_txt)
+        if ctx is None:
+            return False
+        inner_idx = ctx['inner_idx']
+        use_o2 = bool(ctx['use_o2'])
+        if use_o2:
+            second_idx = ctx['second_idx']
+            A2 = float(max(self.S[second_idx], tinyA))
+            Q2 = float(self.Q[second_idx])
+        else:
+            A2 = 0.0
+            Q2 = 0.0
+        result = cython_compute_stage_boundary_mainline_fast(
+            ctx['tbl_inner'],
+            ctx['tbl_target'],
+            ctx['tbl_second'],
+            bool(ctx['is_left']),
+            float(self.g),
+            float(tinyA),
+            float(tinyT),
+            float(level),
+            float(self.S[inner_idx]),
+            float(self.Q[inner_idx]),
+            float(self.water_depth[inner_idx]),
+            float(self._get_cell_s_limit(ctx['dry_limit_idx'])),
+            float(self.water_depth_limit),
+            float(getattr(self, 'DT', 0.0)),
+            bool(use_o2),
+            float(A2),
+            float(Q2),
+            float(ctx['guard_q_delta']),
+            float(ctx['guard_abs_delta']),
+            bool(ctx['swap_moc_sign']),
+        )
+        if result is None:
+            return False
+        Ab, Tb, Qb = result
+        self._commit_stage_boundary_state_prebound(side_txt, float(level), float(Ab), float(Qb), float(Tb))
+        return True
 
     def _append_stage_boundary_record(self, ctx, target, stabilizer_state):
         # Default runs keep boundary diagnostics disabled. Short-circuit here so

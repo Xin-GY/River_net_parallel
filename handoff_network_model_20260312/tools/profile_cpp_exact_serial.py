@@ -21,6 +21,8 @@ def main() -> int:
     parser.add_argument("--print-progress", action="store_true")
     parser.add_argument("--use-cpp-evolve", action="store_true", default=False)
     parser.add_argument("--use-cython-nodechain", action="store_true", default=False)
+    parser.add_argument("--use-cython-nodechain-direct-fast", action="store_true", default=False)
+    parser.add_argument("--use-cython-nodechain-prebound-fast", action="store_true", default=False)
     parser.add_argument("--use-cython-roe-flux", action="store_true", default=False)
     parser.add_argument("--use-cpp-update-cell", action="store_true", default=False)
     parser.add_argument("--use-cpp-assemble", action="store_true", default=False)
@@ -33,6 +35,8 @@ def main() -> int:
     os.environ["ISLAM_USE_CPP_EVOLVE"] = "1" if args.use_cpp_evolve else "0"
     os.environ["ISLAM_CPP_THREADS"] = "0"
     os.environ["ISLAM_USE_CYTHON_NODECHAIN"] = "1" if args.use_cython_nodechain else "0"
+    os.environ["ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST"] = "1" if args.use_cython_nodechain_direct_fast else "0"
+    os.environ["ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST"] = "1" if args.use_cython_nodechain_prebound_fast else "0"
     os.environ["ISLAM_USE_CYTHON_ROE_FLUX"] = "1" if args.use_cython_roe_flux else "0"
     os.environ["ISLAM_CPP_USE_UPDATE_CELL"] = "1" if args.use_cpp_update_cell else "0"
     os.environ["ISLAM_CPP_USE_ASSEMBLE"] = "1" if args.use_cpp_assemble else "0"
@@ -79,6 +83,8 @@ def main() -> int:
         "step_count": int(net.step_count),
         "use_cpp_evolve": bool(args.use_cpp_evolve),
         "use_cython_nodechain": bool(args.use_cython_nodechain),
+        "use_cython_nodechain_direct_fast": bool(args.use_cython_nodechain_direct_fast),
+        "use_cython_nodechain_prebound_fast": bool(args.use_cython_nodechain_prebound_fast),
         "use_cython_roe_flux": bool(args.use_cython_roe_flux),
         "use_cpp_update_cell": bool(args.use_cpp_update_cell),
         "use_cpp_assemble": bool(args.use_cpp_assemble),

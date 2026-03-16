@@ -362,6 +362,64 @@
   2. deeper `Caculate_Roe_Flux_2` ownership if it still dominates after commit pushdown
   3. only then revisit a fuller native full-step loop
 
+## 2026-03-16 C++ fullchain pushdown nodechain prebound-fast step
+
+### Done
+
+- implemented a deeper exact nodechain fast path behind:
+  - `ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST=1`
+- prebound the left/right stage-boundary direct-fast context on each river:
+  - table refs
+  - indices
+  - guard thresholds
+  - swap-sign flags
+- replaced the old per-call direct-fast shell with a side-code based prebound helper in the nodechain loop
+- moved commit/write-back in this path to side-specific exact helpers, avoiding:
+  - layout dict construction
+  - side string conversion
+  - dynamic boundary-face `setattr` choreography
+- validated the candidate on:
+  - 10m
+  - 2h
+  - 40h
+
+### Findings
+
+- this keeps the same exact numeric closure kernel, but removes a meaningful amount of Python-side wrapper cost around it
+- the gain lands exactly where expected:
+  - `nodechain.apply_and_boundary_closure`
+  - `nodechain.final_apply`
+  - `boundary_updater.total`
+- 40h `nodechain.prebound_fast_hits = 4010220`, so this path is not theoretical; it is the actual hot path
+
+### Results
+
+- current accepted continuation exact config:
+  - `ISLAM_USE_CPP_EVOLVE=1`
+  - `ISLAM_CPP_THREADS=0`
+  - `ISLAM_USE_CYTHON_NODECHAIN=1`
+  - `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
+  - `ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST=1`
+  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
+  - `ISLAM_CPP_USE_UPDATE_CELL=1`
+  - `ISLAM_CPP_USE_ASSEMBLE=1`
+  - `ISLAM_CPP_USE_ROE_MATRIX=1`
+  - `ISLAM_CPP_USE_FACE_UC=1`
+  - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
+- exact evolve/model improvements relative to the Face_U_C continuation baseline:
+  - 10m: `0.927344 s -> 0.860548 s`
+  - 2h: `7.022465 s -> 6.488843 s`
+  - 40h: `115.940719 s -> 109.425894 s`
+- all three compare windows passed exact compare
+
+### Next
+
+- keep this nodechain prebound-fast path as an accepted exact component on this line
+- continue with the next real gaps in this order:
+  1. deeper `Caculate_Roe_Flux_2` ownership / C++ exact pushdown
+  2. nodechain residual/Ac 主体进一步 native 化
+  3. only then revisit a fuller native full-step loop
+
 ## 2026-03-15 Phase 0-2
 
 ### Done

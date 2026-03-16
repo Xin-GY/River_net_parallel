@@ -75,10 +75,12 @@ cpdef bint run_internal_node_iteration_exact(
     cdef int max_iteration = int(net.max_iteration)
     cdef bint perf_enabled = bool(getattr(net, 'perf_profile_enabled', False))
     cdef bint use_direct_fast = bool(getattr(net, 'use_cython_nodechain_direct_fast', False))
+    cdef bint use_prebound_fast = bool(getattr(net, 'use_cython_nodechain_prebound_fast', False))
     cdef double perf_total_start = 0.0
     cdef double perf_stage_start = 0.0
     cdef Py_ssize_t closure_calls = 0
     cdef Py_ssize_t width_lookup_calls = 0
+    cdef Py_ssize_t prebound_fast_hits = 0
     cdef int iter_count = 0
 
     if n_nodes == 0:
@@ -127,6 +129,10 @@ cpdef bint run_internal_node_iteration_exact(
                 closure_calls += 1
                 river = branch_rivers[k]
                 side_code = <int>branch_side_codes[k]
+                if use_prebound_fast:
+                    if river._stage_boundary_fix_level_cython_prebound_fast(side_code, float(levels[i])):
+                        prebound_fast_hits += 1
+                        continue
                 if use_direct_fast:
                     if _apply_stage_boundary_wrapper_bypass(
                         river,
@@ -302,6 +308,10 @@ cpdef bint run_internal_node_iteration_exact(
             closure_calls += 1
             river = branch_rivers[k]
             side_code = <int>branch_side_codes[k]
+            if use_prebound_fast:
+                if river._stage_boundary_fix_level_cython_prebound_fast(side_code, float(levels[i])):
+                    prebound_fast_hits += 1
+                    continue
             if use_direct_fast:
                 if _apply_stage_boundary_wrapper_bypass(
                     river,
@@ -343,6 +353,7 @@ cpdef bint run_internal_node_iteration_exact(
         net._perf_inc('nodechain.boundary_closure_calls', closure_calls)
         net._perf_inc('nodechain.cython_to_python_boundary_calls', closure_calls)
         net._perf_inc('nodechain.cython_to_python_width_calls', width_lookup_calls)
+        net._perf_inc('nodechain.prebound_fast_hits', prebound_fast_hits)
         net._perf_add('nodechain.total', pytime.perf_counter() - perf_total_start)
         net._perf_set_max('nodechain.max_iterations_per_solve', iter_count)
 
