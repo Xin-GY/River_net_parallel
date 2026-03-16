@@ -1,0 +1,1162 @@
+{
+  "baseline_dir": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312/result/cpp_kernelize_next_2h_after_crosssection",
+  "candidate_dir": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312/result/cpp_bridge_directdispatch_2h",
+  "rtol": 1e-12,
+  "atol": 1e-12,
+  "files": [
+    {
+      "file": "boundary_supercritical_counts.csv",
+      "type": "csv",
+      "rows_baseline": 14,
+      "rows_candidate": 14,
+      "columns_baseline": [
+        "river",
+        "supercritical_in_count",
+        "supercritical_out_count"
+      ],
+      "columns_candidate": [
+        "river",
+        "supercritical_in_count",
+        "supercritical_out_count"
+      ],
+      "column_metrics": {
+        "supercritical_in_count": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "supercritical_out_count": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        }
+      },
+      "allclose": true
+    },
+    {
+      "file": "cfl_history.csv",
+      "type": "csv",
+      "rows_baseline": 1483,
+      "rows_candidate": 1483,
+      "columns_baseline": [
+        "time",
+        "river1",
+        "river8",
+        "river2",
+        "river3",
+        "river9",
+        "river4",
+        "river5",
+        "river10",
+        "river6",
+        "river7",
+        "river11",
+        "river12",
+        "river13",
+        "river14",
+        "global_dt"
+      ],
+      "columns_candidate": [
+        "time",
+        "river1",
+        "river8",
+        "river2",
+        "river3",
+        "river9",
+        "river4",
+        "river5",
+        "river10",
+        "river6",
+        "river7",
+        "river11",
+        "river12",
+        "river13",
+        "river14",
+        "global_dt"
+      ],
+      "column_metrics": {
+        "time": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river1": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river8": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river2": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river3": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river9": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river4": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river5": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river10": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river6": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river7": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river11": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river12": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river13": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "river14": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "global_dt": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        }
+      },
+      "allclose": true
+    },
+    {
+      "file": "internal_node_history.csv",
+      "type": "csv",
+      "rows_baseline": 1482,
+      "rows_candidate": 1482,
+      "columns_baseline": [
+        "time",
+        "n8_level",
+        "n8_Qnet",
+        "n8_river1_face_level",
+        "n8_river1_face_Q",
+        "n8_river1_cell_level",
+        "n8_river1_cell_Q",
+        "n8_river2_face_level",
+        "n8_river2_face_Q",
+        "n8_river2_cell_level",
+        "n8_river2_cell_Q",
+        "n8_river8_face_level",
+        "n8_river8_face_Q",
+        "n8_river8_cell_level",
+        "n8_river8_cell_Q",
+        "n9_level",
+        "n9_Qnet",
+        "n9_river3_face_level",
+        "n9_river3_face_Q",
+        "n9_river3_cell_level",
+        "n9_river3_cell_Q",
+        "n9_river4_face_level",
+        "n9_river4_face_Q",
+        "n9_river4_cell_level",
+        "n9_river4_cell_Q",
+        "n9_river9_face_level",
+        "n9_river9_face_Q",
+        "n9_river9_cell_level",
+        "n9_river9_cell_Q",
+        "n10_level",
+        "n10_Qnet",
+        "n10_river5_face_level",
+        "n10_river5_face_Q",
+        "n10_river5_cell_level",
+        "n10_river5_cell_Q",
+        "n10_river6_face_level",
+        "n10_river6_face_Q",
+        "n10_river6_cell_level",
+        "n10_river6_cell_Q",
+        "n10_river7_face_level",
+        "n10_river7_face_Q",
+        "n10_river7_cell_level",
+        "n10_river7_cell_Q",
+        "n10_river10_face_level",
+        "n10_river10_face_Q",
+        "n10_river10_cell_level",
+        "n10_river10_cell_Q",
+        "n11_level",
+        "n11_Qnet",
+        "n11_river8_face_level",
+        "n11_river8_face_Q",
+        "n11_river8_cell_level",
+        "n11_river8_cell_Q",
+        "n11_river9_face_level",
+        "n11_river9_face_Q",
+        "n11_river9_cell_level",
+        "n11_river9_cell_Q",
+        "n11_river11_face_level",
+        "n11_river11_face_Q",
+        "n11_river11_cell_level",
+        "n11_river11_cell_Q",
+        "n11_river12_face_level",
+        "n11_river12_face_Q",
+        "n11_river12_cell_level",
+        "n11_river12_cell_Q",
+        "n12_level",
+        "n12_Qnet",
+        "n12_river10_face_level",
+        "n12_river10_face_Q",
+        "n12_river10_cell_level",
+        "n12_river10_cell_Q",
+        "n12_river11_face_level",
+        "n12_river11_face_Q",
+        "n12_river11_cell_level",
+        "n12_river11_cell_Q",
+        "n12_river13_face_level",
+        "n12_river13_face_Q",
+        "n12_river13_cell_level",
+        "n12_river13_cell_Q",
+        "n13_level",
+        "n13_Qnet",
+        "n13_river12_face_level",
+        "n13_river12_face_Q",
+        "n13_river12_cell_level",
+        "n13_river12_cell_Q",
+        "n13_river13_face_level",
+        "n13_river13_face_Q",
+        "n13_river13_cell_level",
+        "n13_river13_cell_Q",
+        "n13_river14_face_level",
+        "n13_river14_face_Q",
+        "n13_river14_cell_level",
+        "n13_river14_cell_Q"
+      ],
+      "columns_candidate": [
+        "time",
+        "n8_level",
+        "n8_Qnet",
+        "n8_river1_face_level",
+        "n8_river1_face_Q",
+        "n8_river1_cell_level",
+        "n8_river1_cell_Q",
+        "n8_river2_face_level",
+        "n8_river2_face_Q",
+        "n8_river2_cell_level",
+        "n8_river2_cell_Q",
+        "n8_river8_face_level",
+        "n8_river8_face_Q",
+        "n8_river8_cell_level",
+        "n8_river8_cell_Q",
+        "n9_level",
+        "n9_Qnet",
+        "n9_river3_face_level",
+        "n9_river3_face_Q",
+        "n9_river3_cell_level",
+        "n9_river3_cell_Q",
+        "n9_river4_face_level",
+        "n9_river4_face_Q",
+        "n9_river4_cell_level",
+        "n9_river4_cell_Q",
+        "n9_river9_face_level",
+        "n9_river9_face_Q",
+        "n9_river9_cell_level",
+        "n9_river9_cell_Q",
+        "n10_level",
+        "n10_Qnet",
+        "n10_river5_face_level",
+        "n10_river5_face_Q",
+        "n10_river5_cell_level",
+        "n10_river5_cell_Q",
+        "n10_river6_face_level",
+        "n10_river6_face_Q",
+        "n10_river6_cell_level",
+        "n10_river6_cell_Q",
+        "n10_river7_face_level",
+        "n10_river7_face_Q",
+        "n10_river7_cell_level",
+        "n10_river7_cell_Q",
+        "n10_river10_face_level",
+        "n10_river10_face_Q",
+        "n10_river10_cell_level",
+        "n10_river10_cell_Q",
+        "n11_level",
+        "n11_Qnet",
+        "n11_river8_face_level",
+        "n11_river8_face_Q",
+        "n11_river8_cell_level",
+        "n11_river8_cell_Q",
+        "n11_river9_face_level",
+        "n11_river9_face_Q",
+        "n11_river9_cell_level",
+        "n11_river9_cell_Q",
+        "n11_river11_face_level",
+        "n11_river11_face_Q",
+        "n11_river11_cell_level",
+        "n11_river11_cell_Q",
+        "n11_river12_face_level",
+        "n11_river12_face_Q",
+        "n11_river12_cell_level",
+        "n11_river12_cell_Q",
+        "n12_level",
+        "n12_Qnet",
+        "n12_river10_face_level",
+        "n12_river10_face_Q",
+        "n12_river10_cell_level",
+        "n12_river10_cell_Q",
+        "n12_river11_face_level",
+        "n12_river11_face_Q",
+        "n12_river11_cell_level",
+        "n12_river11_cell_Q",
+        "n12_river13_face_level",
+        "n12_river13_face_Q",
+        "n12_river13_cell_level",
+        "n12_river13_cell_Q",
+        "n13_level",
+        "n13_Qnet",
+        "n13_river12_face_level",
+        "n13_river12_face_Q",
+        "n13_river12_cell_level",
+        "n13_river12_cell_Q",
+        "n13_river13_face_level",
+        "n13_river13_face_Q",
+        "n13_river13_cell_level",
+        "n13_river13_cell_Q",
+        "n13_river14_face_level",
+        "n13_river14_face_Q",
+        "n13_river14_cell_level",
+        "n13_river14_cell_Q"
+      ],
+      "column_metrics": {
+        "time": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_Qnet": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river1_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river1_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river1_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river1_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river2_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river2_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river2_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river2_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river8_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river8_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river8_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n8_river8_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_Qnet": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river3_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river3_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river3_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river3_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river4_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river4_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river4_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river4_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river9_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river9_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river9_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n9_river9_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_Qnet": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river5_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river5_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river5_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river5_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river6_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river6_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river6_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river6_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river7_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river7_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river7_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river7_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river10_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river10_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river10_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n10_river10_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_Qnet": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river8_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river8_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river8_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river8_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river9_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river9_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river9_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river9_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river11_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river11_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river11_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river11_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river12_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river12_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river12_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n11_river12_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_Qnet": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river10_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river10_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river10_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river10_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river11_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river11_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river11_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river11_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river13_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river13_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river13_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n12_river13_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_Qnet": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river12_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river12_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river12_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river12_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river13_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river13_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river13_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river13_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river14_face_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river14_face_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river14_cell_level": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        },
+        "n13_river14_cell_Q": {
+          "shape_match": true,
+          "valid_mask_match": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rmse": 0.0,
+          "allclose": true
+        }
+      },
+      "allclose": true
+    }
+  ],
+  "control_points": {},
+  "final_state": {},
+  "allclose": true
+}

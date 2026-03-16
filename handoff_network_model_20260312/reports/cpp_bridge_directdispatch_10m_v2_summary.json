@@ -1,0 +1,11 @@
+{
+  "case_name": "cpp_bridge_directdispatch_10m_v2",
+  "cwd": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312",
+  "output_dir": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312/result/cpp_bridge_directdispatch_10m_v2",
+  "summary_json": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312/reports/cpp_bridge_directdispatch_10m_v2_summary.json",
+  "profile_out": null,
+  "model_time_seconds": 1.4529268741607666,
+  "evolve_wall_time_seconds": 1.4815022139810026,
+  "step_count": 181,
+  "warmup_used": false
+}

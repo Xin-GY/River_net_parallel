@@ -124,6 +124,47 @@
   - reduce per-step Python/Cython/C++ boundary crossings
   - shrink the `call_river_function_by_name` fan-out inside the bridge loop
 
+## 2026-03-16 C++ kernelize-next phase 5 experiment
+
+### Done
+
+- implemented a bridge-local direct-dispatch mode:
+  - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=1`
+- in that mode the bridge loop directly iterates cached `net._river_edges` for:
+  - set-dt
+  - face/U/C
+  - Roe matrix
+  - source
+  - Roe flux
+  - assemble
+  - update cell
+  - save-step result
+  - CFL reduction
+- fixed an exactness bug in the first draft:
+  - direct CFL reduction must preserve the original object-valued `dti`
+  - early `float(...)` coercion caused dt drift
+
+### Findings
+
+- after the dt fix, the direct-dispatch bridge is exact on:
+  - 10m
+  - 2h
+  - 40h
+- short-case gains were real:
+  - 10m: `1.457326 s -> 1.452927 s`
+  - 2h: `11.400661 s -> 11.254503 s`
+- but the full case rejected it:
+  - 40h: `202.210932 s -> 203.544599 s`
+  - net result: `+1.333667 s`, slower than the accepted phase-3 path
+
+### Next
+
+- keep the direct-dispatch bridge as a documented rejected exact experiment
+- return to the accepted phase-3 checkpoint for the branch code path
+- continue future work from the better exact baseline:
+  - nodechain wrapper-bypass accepted
+  - bridge direct-dispatch rejected on full case
+
 ## 2026-03-16 C++ bridge checkpoint
 
 - Added a new `Cython + C++` bridge layer for prepared evolve:

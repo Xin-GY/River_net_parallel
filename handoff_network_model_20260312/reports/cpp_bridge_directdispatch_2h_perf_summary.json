@@ -1,0 +1,15 @@
+{
+  "case_name": "cpp_bridge_directdispatch_2h_perf",
+  "cwd": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312",
+  "output_dir": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312/result/cpp_bridge_directdispatch_2h_perf",
+  "summary_json": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312/reports/cpp_bridge_directdispatch_2h_perf_summary.json",
+  "perf_json": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312/reports/cpp_bridge_directdispatch_2h_perf.json",
+  "profile_out": null,
+  "model_time_seconds": 11.537957668304443,
+  "evolve_wall_time_seconds": 11.739667552988976,
+  "step_count": 1482,
+  "use_cpp_evolve": true,
+  "use_cython_nodechain": true,
+  "use_cython_roe_flux": true,
+  "use_cpp_update_cell": false
+}
