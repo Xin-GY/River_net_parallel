@@ -7,6 +7,7 @@
 import numpy as np
 cimport numpy as cnp
 from libc.math cimport fabs, isnan, sqrt
+import time as pytime
 
 
 cdef inline double _maxd(double a, double b) noexcept:
@@ -50,9 +51,20 @@ cpdef bint run_internal_node_iteration_exact(
     cdef Py_ssize_t ghost_idx, cell_idx
     cdef int side_code
     cdef int max_iteration = int(net.max_iteration)
+    cdef bint perf_enabled = bool(getattr(net, 'perf_profile_enabled', False))
+    cdef double perf_total_start = 0.0
+    cdef double perf_stage_start = 0.0
+    cdef Py_ssize_t closure_calls = 0
+    cdef Py_ssize_t width_lookup_calls = 0
+    cdef int iter_count = 0
 
     if n_nodes == 0:
         return True
+
+    if perf_enabled:
+        perf_total_start = pytime.perf_counter()
+        net._perf_inc('nodechain.solve_calls')
+        net._perf_inc('nodechain.nodes_total', n_nodes)
 
     cdef cnp.ndarray[cnp.float64_t, ndim=1] levels = np.empty(n_nodes, dtype=np.float64)
     cdef cnp.ndarray[cnp.float64_t, ndim=1] residuals = np.empty(n_nodes, dtype=np.float64)
@@ -63,6 +75,8 @@ cpdef bint run_internal_node_iteration_exact(
     cdef cnp.int8_t[:] branch_side_codes = branch_side_codes_arr
 
     # Predictor: exactly the same precedence as the Python path.
+    if perf_enabled:
+        perf_stage_start = pytime.perf_counter()
     for i in range(n_nodes):
         node_name = node_names[i]
         if bool(net.internal_level_predict_from_last) and node_name in level_cache:
@@ -74,14 +88,20 @@ cpdef bint run_internal_node_iteration_exact(
             if isnan(z0):
                 z0 = 0.0
         levels[i] = _maxd(0.0, z0)
+    if perf_enabled:
+        net._perf_add('nodechain.predict', pytime.perf_counter() - perf_stage_start)
 
     for _ in range(max_iteration):
+        iter_count += 1
         # Apply all node levels in the same order as the Python serial path:
         # per-node, incoming branches first, then outgoing branches.
+        if perf_enabled:
+            perf_stage_start = pytime.perf_counter()
         for i in range(n_nodes):
             start = node_offsets[i]
             end = node_offsets[i + 1]
             for k in range(start, end):
+                closure_calls += 1
                 river = branch_rivers[k]
                 side_code = <int>branch_side_codes[k]
                 if side_code == 1:
@@ -104,10 +124,14 @@ cpdef bint run_internal_node_iteration_exact(
                             respect_supercritical=respect_supercritical,
                             stage_on_face=stage_on_face,
                         )
+        if perf_enabled:
+            net._perf_add('nodechain.apply_and_boundary_closure', pytime.perf_counter() - perf_stage_start)
 
         max_abs_q = 0.0
         max_abs_dz = 0.0
 
+        if perf_enabled:
+            perf_stage_start = pytime.perf_counter()
         for i in range(n_nodes):
             pure_q = 0.0
             ac = 0.0
@@ -138,11 +162,13 @@ cpdef bint run_internal_node_iteration_exact(
                             Qv = float(face_q)
                         else:
                             A = _maxd(float(river.S[ghost_idx]), epsA)
+                            width_lookup_calls += 1
                             B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[ghost_idx], A)), epsA)
                             Qv = float(river.Q[ghost_idx])
                         ac += sqrt(g * A * B) - Qv * B / A
                     elif use_ac_v2:
                         A = _maxd(float(river.S[cell_idx]), epsA)
+                        width_lookup_calls += 1
                         B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[cell_idx], A)), epsT)
                         Qv = float(river.Q[cell_idx])
                         u_loc = Qv / A
@@ -152,6 +178,7 @@ cpdef bint run_internal_node_iteration_exact(
                             ac += B * (c_loc - u_loc)
                     else:
                         A = _maxd(float(river.S[ghost_idx]), epsA)
+                        width_lookup_calls += 1
                         B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[ghost_idx], A)), epsA)
                         Qv = float(river.Q[ghost_idx])
                         ac += sqrt(g * A * B) - Qv * B / A
@@ -176,11 +203,13 @@ cpdef bint run_internal_node_iteration_exact(
                             Qv = float(face_q)
                         else:
                             A = _maxd(float(river.S[ghost_idx]), epsA)
+                            width_lookup_calls += 1
                             B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[ghost_idx], A)), epsA)
                             Qv = float(river.Q[ghost_idx])
                         ac += sqrt(g * A * B) + Qv * B / A
                     elif use_ac_v2:
                         A = _maxd(float(river.S[cell_idx]), epsA)
+                        width_lookup_calls += 1
                         B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[cell_idx], A)), epsT)
                         Qv = float(river.Q[cell_idx])
                         u_loc = Qv / A
@@ -190,6 +219,7 @@ cpdef bint run_internal_node_iteration_exact(
                             ac += B * (c_loc + u_loc)
                     else:
                         A = _maxd(float(river.S[ghost_idx]), epsA)
+                        width_lookup_calls += 1
                         B = _maxd(float(river.cross_section_table.get_width_by_area(river.cell_sections[ghost_idx], A)), epsA)
                         Qv = float(river.Q[ghost_idx])
                         ac += sqrt(g * A * B) + Qv * B / A
@@ -198,7 +228,11 @@ cpdef bint run_internal_node_iteration_exact(
             acs[i] = alpha * ac
             if fabs(pure_q) > max_abs_q:
                 max_abs_q = fabs(pure_q)
+        if perf_enabled:
+            net._perf_add('nodechain.residual_and_ac', pytime.perf_counter() - perf_stage_start)
 
+        if perf_enabled:
+            perf_stage_start = pytime.perf_counter()
         for i in range(n_nodes):
             dR_dZ = -acs[i]
             if fabs(dR_dZ) < 1.0e-10:
@@ -218,15 +252,20 @@ cpdef bint run_internal_node_iteration_exact(
         for i in range(n_nodes):
             levels[i] = new_levels[i]
 
+        if perf_enabled:
+            net._perf_add('nodechain.update_and_stopping', pytime.perf_counter() - perf_stage_start)
         if max_abs_dz < 1.0e-4 and max_abs_q < q_limit:
             converged = True
             break
 
     # Final synchronized apply to match the Python path.
+    if perf_enabled:
+        perf_stage_start = pytime.perf_counter()
     for i in range(n_nodes):
         start = node_offsets[i]
         end = node_offsets[i + 1]
         for k in range(start, end):
+            closure_calls += 1
             river = branch_rivers[k]
             side_code = <int>branch_side_codes[k]
             if side_code == 1:
@@ -252,5 +291,14 @@ cpdef bint run_internal_node_iteration_exact(
 
     for i in range(n_nodes):
         level_cache[node_names[i]] = float(levels[i])
+
+    if perf_enabled:
+        net._perf_add('nodechain.final_apply', pytime.perf_counter() - perf_stage_start)
+        net._perf_inc('nodechain.iterations', iter_count)
+        net._perf_inc('nodechain.boundary_closure_calls', closure_calls)
+        net._perf_inc('nodechain.cython_to_python_boundary_calls', closure_calls)
+        net._perf_inc('nodechain.cython_to_python_width_calls', width_lookup_calls)
+        net._perf_add('nodechain.total', pytime.perf_counter() - perf_total_start)
+        net._perf_set_max('nodechain.max_iterations_per_solve', iter_count)
 
     return True

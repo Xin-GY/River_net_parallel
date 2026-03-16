@@ -606,6 +606,9 @@ def configure_net_options(net_obj, export_png=False):
     net_obj.cpp_threads = os.environ.get('ISLAM_CPP_THREADS', '0') == '1'
     net_obj.cpp_n_threads = int(os.environ.get('ISLAM_CPP_N_THREADS', str(os.cpu_count() or 1)))
     net_obj.cpp_write_mode = os.environ.get('ISLAM_CPP_WRITE_MODE', 'buffered_end').strip().lower()
+    net_obj.perf_profile_enabled = os.environ.get('ISLAM_PERF_PROFILE', '0') == '1'
+    if net_obj.perf_profile_enabled and hasattr(net_obj, '_reset_perf_stats'):
+        net_obj._reset_perf_stats()
     net_obj.use_parallel_workers = os.environ.get('ISLAM_USE_PARALLEL', '0') == '1'
     net_obj.parallel_backend = os.environ.get('ISLAM_PARALLEL_BACKEND', 'threads').strip().lower()
     net_obj.parallel_n_workers = int(os.environ.get('ISLAM_N_WORKERS', str(net_obj.parallel_n_workers)))

@@ -158,6 +158,32 @@ class Rivernet():
         self.cpp_n_threads = max((os.cpu_count() or 1), 1)
         self.cpp_write_mode = 'buffered_end'
         self.cpp_threads_last_mode = 'disabled'
+        self.perf_profile_enabled = False
+        self._perf_stats = {}
+
+    def _reset_perf_stats(self):
+        self._perf_stats = {}
+
+    def _perf_add(self, key, value):
+        if not self.perf_profile_enabled:
+            return
+        self._perf_stats[key] = float(self._perf_stats.get(key, 0.0)) + float(value)
+
+    def _perf_inc(self, key, count=1):
+        if not self.perf_profile_enabled:
+            return
+        self._perf_stats[key] = int(self._perf_stats.get(key, 0)) + int(count)
+
+    def _perf_set_max(self, key, value):
+        if not self.perf_profile_enabled:
+            return
+        value = float(value)
+        current = self._perf_stats.get(key)
+        if current is None or value > float(current):
+            self._perf_stats[key] = value
+
+    def export_perf_stats(self):
+        return dict(self._perf_stats)
 
     def _refresh_river_cache(self):
         # Topology is fixed after construction in the current workflow. Cache
@@ -430,6 +456,9 @@ class Rivernet():
 
     # 调用河道指定函数
     def call_river_function_by_name(self, function_name):
+        perf_enabled = bool(self.perf_profile_enabled)
+        if perf_enabled:
+            perf_start = time.perf_counter()
         cached = self._river_method_cache.get(function_name)
         if cached is None:
             cached = []
@@ -447,11 +476,20 @@ class Rivernet():
                     continue
                 cached.append((data['name'], func))
             self._river_method_cache[function_name] = cached
+            if perf_enabled:
+                self._perf_inc(f'river_dispatch.{function_name}.cache_miss_calls')
+        elif perf_enabled:
+            self._perf_inc(f'river_dispatch.{function_name}.cache_hit_calls')
 
         for river_name, func in cached:
             func()
             if self.verbos:
                 print(f'河道 {river_name} 的 {function_name} 函数调用成功')
+        if perf_enabled:
+            elapsed = time.perf_counter() - perf_start
+            self._perf_add(f'river_dispatch.{function_name}.time', elapsed)
+            self._perf_inc(f'river_dispatch.{function_name}.calls')
+            self._perf_inc(f'river_dispatch.{function_name}.river_invocations', len(cached))
 
     # 设置边界条件
     def set_boundary(self, node: str, btype: str, data=None):
@@ -680,10 +718,16 @@ class Rivernet():
     # 更新边界条件
     def Update_boundary_conditions(self):
         # 更新外部边界条件
+        perf_enabled = bool(self.perf_profile_enabled)
+        if perf_enabled:
+            t0 = time.perf_counter()
         self.Update_external_boundary_conditions_V2()
 
         # 更新内部边界条件
         self.Update_internal_boundary_conditions()
+        if perf_enabled:
+            self._perf_add('boundary_updater.total', time.perf_counter() - t0)
+            self._perf_inc('boundary_updater.calls')
 
     # 更新外部边界条件
     '''
@@ -714,6 +758,9 @@ class Rivernet():
     '''
 
     def Update_external_boundary_conditions_V2(self):
+        perf_enabled = bool(self.perf_profile_enabled)
+        if perf_enabled:
+            t0 = time.perf_counter()
         if self.verbos: print('更新外部入流边界')
         for n in self.external_in_nodes:
             btype, value = self.get_boundary_value(n, self.current_sim_time)
@@ -736,6 +783,9 @@ class Rivernet():
                             stage_on_face=self.external_bc_stage_on_face
                         )
             if self.verbos: print(r.model_name, n, btype, value)
+        if perf_enabled:
+            self._perf_add('boundary_updater.external', time.perf_counter() - t0)
+            self._perf_inc('boundary_updater.external.calls')
 
         if self.verbos: print('更新外部出流边界')
         for n in self.external_out_nodes:
@@ -894,10 +944,19 @@ class Rivernet():
 
     # 更新内部边界条件
     def Update_internal_boundary_conditions(self):
+        perf_enabled = bool(self.perf_profile_enabled)
+        if perf_enabled:
+            t0 = time.perf_counter()
         if self.verbos: print('\n更新内部边界条件...')
         if not self.internal_nodes:
+            if perf_enabled:
+                self._perf_add('nodechain.total', time.perf_counter() - t0)
+                self._perf_inc('nodechain.solve_calls')
             return
         if self._try_update_internal_boundary_conditions_cython():
+            if perf_enabled:
+                self._perf_add('nodechain.total', time.perf_counter() - t0)
+                self._perf_inc('nodechain.solve_calls')
             return
 
         # 预测步：优先采用上一时刻收敛水位，缺失时回退到真实格平均水位
@@ -1015,6 +1074,9 @@ class Rivernet():
                 print(f'内部边界迭代达到上限 {self.max_iteration} 次，max|Qnet|={max_abs_q:.4e}')
             for n in self.internal_nodes:
                 print(f'节点 {n} 最终水位: {node_levels[n]:.4f} 米')
+        if perf_enabled:
+            self._perf_add('nodechain.total', time.perf_counter() - t0)
+            self._perf_inc('nodechain.solve_calls')
 
 
     # 计算节点处真实网格的平均水位
@@ -1218,6 +1280,9 @@ class Rivernet():
         建议把 Kj 迁移到“动量方程的局部损失源项”中（不改边界 level），
         但本函数已修正号向避免“加能量”导致的水位/流量整体偏高与轻微震荡。
         """
+        perf_enabled = bool(self.perf_profile_enabled)
+        if perf_enabled:
+            t0 = time.perf_counter()
         g = getattr(self, "g", 9.81)
         epsA = 1.0e-12
 
@@ -1288,6 +1353,9 @@ class Rivernet():
                         respect_supercritical=self.internal_bc_respect_supercritical,
                         stage_on_face=self.internal_bc_stage_on_face
                     )
+        if perf_enabled:
+            self._perf_add('nodechain.apply_level_v4', time.perf_counter() - t0)
+            self._perf_inc('nodechain.apply_level_v4.calls')
 
 
 

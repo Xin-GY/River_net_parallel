@@ -107,12 +107,16 @@ cdef class CppOutputBuffer:
 def run_cpp_network_evolve_serial(object net, object yield_step):
     cdef bint yield_flag = False
     cdef bint finish_flag = False
+    cdef bint perf_enabled = bool(getattr(net, 'perf_profile_enabled', False))
     cdef list emitted_times = []
+    cdef double perf_t0
 
     net.sub_step_start_time = pytime.time()
     net.caculation_start_time = pytime.time()
 
     while net.current_sim_time < net.total_sim_time:
+        if perf_enabled:
+            net._perf_inc('bridge.step_iterations')
         net.Set_global_time_step(net.DT)
         net.current_sim_time += net.DT
         net.step_count += 1
@@ -121,25 +125,96 @@ def run_cpp_network_evolve_serial(object net, object yield_step):
         net.sub_step_max_dt = max(net.sub_step_max_dt, net.DT)
         net.sub_step_min_dt = min(net.sub_step_min_dt, net.DT)
 
+        if perf_enabled:
+            perf_t0 = pytime.perf_counter()
         net.Update_boundary_conditions()
+        if perf_enabled:
+            net._perf_add('bridge.crossing.Update_boundary_conditions.time', pytime.perf_counter() - perf_t0)
+            net._perf_inc('bridge.crossing.Update_boundary_conditions.calls')
+            net._perf_inc('bridge.python_crossings')
         if bool(net.save_outputs) and bool(net.internal_nodes):
+            if perf_enabled:
+                perf_t0 = pytime.perf_counter()
             net._record_internal_node_history_current_state()
+            if perf_enabled:
+                net._perf_add('bridge.crossing._record_internal_node_history_current_state.time', pytime.perf_counter() - perf_t0)
+                net._perf_inc('bridge.crossing._record_internal_node_history_current_state.calls')
+                net._perf_inc('bridge.python_crossings')
 
+        if perf_enabled:
+            perf_t0 = pytime.perf_counter()
         net.Caculate_face_U_C_net()
+        if perf_enabled:
+            net._perf_add('river_step.face_uc', pytime.perf_counter() - perf_t0)
+            net._perf_inc('river_step.face_uc.calls')
+            net._perf_inc('bridge.crossing.Caculate_face_U_C_net.calls')
+            net._perf_inc('bridge.python_crossings')
+        if perf_enabled:
+            perf_t0 = pytime.perf_counter()
         net.Caculate_Roe_matrix_net()
+        if perf_enabled:
+            net._perf_add('river_step.roe_matrix', pytime.perf_counter() - perf_t0)
+            net._perf_inc('river_step.roe_matrix.calls')
+            net._perf_inc('bridge.crossing.Caculate_Roe_matrix_net.calls')
+            net._perf_inc('bridge.python_crossings')
+        if perf_enabled:
+            perf_t0 = pytime.perf_counter()
         net.Caculate_Source_term_net()
+        if perf_enabled:
+            net._perf_add('river_step.source', pytime.perf_counter() - perf_t0)
+            net._perf_inc('river_step.source.calls')
+            net._perf_inc('bridge.crossing.Caculate_Source_term_net.calls')
+            net._perf_inc('bridge.python_crossings')
+        if perf_enabled:
+            perf_t0 = pytime.perf_counter()
         net.Caculate_Roe_flux_net()
+        if perf_enabled:
+            net._perf_add('river_step.flux', pytime.perf_counter() - perf_t0)
+            net._perf_inc('river_step.flux.calls')
+            net._perf_inc('bridge.crossing.Caculate_Roe_flux_net.calls')
+            net._perf_inc('bridge.python_crossings')
 
         if bool(net.use_implicit_branch_update):
+            if perf_enabled:
+                perf_t0 = pytime.perf_counter()
             net.Caculate_impli_trans_coefficient_net()
+            if perf_enabled:
+                net._perf_add('river_step.impli_coeff', pytime.perf_counter() - perf_t0)
+                net._perf_inc('bridge.crossing.Caculate_impli_trans_coefficient_net.calls')
+                net._perf_inc('bridge.python_crossings')
+                perf_t0 = pytime.perf_counter()
             net.Assemble_flux_impli_net()
+            if perf_enabled:
+                net._perf_add('river_step.assemble_impli', pytime.perf_counter() - perf_t0)
+                net._perf_inc('bridge.crossing.Assemble_flux_impli_net.calls')
+                net._perf_inc('bridge.python_crossings')
         else:
+            if perf_enabled:
+                perf_t0 = pytime.perf_counter()
             net.Assemble_flux_net()
+            if perf_enabled:
+                net._perf_add('river_step.assemble', pytime.perf_counter() - perf_t0)
+                net._perf_inc('river_step.assemble.calls')
+                net._perf_inc('bridge.crossing.Assemble_flux_net.calls')
+                net._perf_inc('bridge.python_crossings')
 
+        if perf_enabled:
+            perf_t0 = pytime.perf_counter()
         net.Update_cell_property_net()
+        if perf_enabled:
+            net._perf_add('river_step.update_cell', pytime.perf_counter() - perf_t0)
+            net._perf_inc('river_step.update_cell.calls')
+            net._perf_inc('bridge.crossing.Update_cell_property_net.calls')
+            net._perf_inc('bridge.python_crossings')
 
         if bool(net.save_outputs):
+            if perf_enabled:
+                perf_t0 = pytime.perf_counter()
             net.Save_step_result_net()
+            if perf_enabled:
+                net._perf_add('bridge.crossing.Save_step_result_net.time', pytime.perf_counter() - perf_t0)
+                net._perf_inc('bridge.crossing.Save_step_result_net.calls')
+                net._perf_inc('bridge.python_crossings')
 
         if yield_flag:
             net.sub_step_caculation_time_using = pytime.time() - net.sub_step_start_time
@@ -154,7 +229,14 @@ def run_cpp_network_evolve_serial(object net, object yield_step):
         if finish_flag:
             break
 
+        if perf_enabled:
+            perf_t0 = pytime.perf_counter()
         net.Caculate_global_CFL()
+        if perf_enabled:
+            net._perf_add('dt_update.global_cfl', pytime.perf_counter() - perf_t0)
+            net._perf_inc('dt_update.global_cfl.calls')
+            net._perf_inc('bridge.crossing.Caculate_global_CFL.calls')
+            net._perf_inc('bridge.python_crossings')
         if net.current_sim_time + net.cfl_allowed_dt > net.total_sim_time + 1.0e-5:
             net.DT = net.total_sim_time - net.current_sim_time
         elif net.sub_step_time + net.cfl_allowed_dt > yield_step + 1.0e-5:

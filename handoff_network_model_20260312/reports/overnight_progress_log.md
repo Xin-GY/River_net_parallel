@@ -40,6 +40,51 @@
 - then start the first true native kernelization step:
   - internal node exact chain in C++
 
+## 2026-03-16 C++ kernelize-next phase 2
+
+### Done
+
+- rebuilt the missing local `cython_cross_section` extension in this worktree
+- reran the single-process exact baseline after that rebuild for:
+  - 10m
+  - 2h
+  - 40h
+- added a branch-local profiling tool:
+  - `tools/profile_cpp_exact_serial.py`
+- added safe perf counters for:
+  - boundary updater
+  - nodechain sub-stages
+  - river-step sub-stages
+  - bridge crossing counts
+- wrote corrected baseline and hotspot reports:
+  - `cpp_exact_serial_baseline.md`
+  - `cpp_hotspots_top10.md`
+
+### Findings
+
+- several early runs on this branch were invalid because the worktree was missing the compiled `cython_cross_section` extension
+- after the rebuild, the corrected evolve-only baselines are:
+  - 10m: `1.459050 s`
+  - 2h: `12.330136 s`
+  - 40h: `206.306033 s`
+- the bridge-only line is therefore still effectively flat versus `835cf1f`
+- corrected 2h profiling confirms the current Top 3 domains are:
+  1. boundary updater / internal node chain
+  2. Roe flux
+  3. update cell
+- the main reason bridge gains remain tiny is now explicit:
+  - `14820` Python/Cython/C++ crossings in 2h
+  - `336020` boundary-closure calls
+  - `306380` width lookups inside nodechain residual/Ac work
+
+### Next
+
+- checkpoint the safe profiling/reporting infrastructure without mixing in the unvalidated direct-fast nodechain prototype
+- then move to phase 3:
+  - deeper native nodechain kernelization
+  - first on 10m/2h exact compare
+  - then on 40h evolve-only timing
+
 ## 2026-03-16 C++ bridge checkpoint
 
 - Added a new `Cython + C++` bridge layer for prepared evolve:

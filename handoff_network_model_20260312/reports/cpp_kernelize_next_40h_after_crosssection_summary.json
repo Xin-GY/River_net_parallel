@@ -1,0 +1,11 @@
+{
+  "case_name": "cpp_kernelize_next_40h_after_crosssection",
+  "cwd": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312",
+  "output_dir": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312/result/cpp_kernelize_next_40h_after_crosssection",
+  "summary_json": "/tmp/feature_cpp_exact_evolve_kernelize_next/handoff_network_model_20260312/reports/cpp_kernelize_next_40h_after_crosssection_summary.json",
+  "profile_out": null,
+  "model_time_seconds": 206.30603313446045,
+  "evolve_wall_time_seconds": 210.42496387299616,
+  "step_count": 29783,
+  "warmup_used": false
+}

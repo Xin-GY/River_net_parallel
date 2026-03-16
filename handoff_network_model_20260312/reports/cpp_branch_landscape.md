@@ -23,6 +23,25 @@
     - bridge gain is only about `0.84 s` on 40h evolve time
     - true numeric work is still not deeply native
 
+## Current Active Continuation
+
+- `feature/cpp-exact-evolve-kernelize-next @ 33374dc + worktree changes`
+  - continuation branch opened from `835cf1f`
+  - purpose:
+    - keep the bridge exact
+    - add safe profiling
+    - identify the real native-kernel targets before deeper C++ work
+  - current status:
+    - phase-1 call-chain/dataflow reports are complete
+    - corrected 10m / 2h / 40h single-process exact baselines are now available
+    - corrected Top 3 domains are:
+      1. boundary updater / internal node chain
+      2. Roe flux
+      3. update cell
+  - active caution:
+    - there is an unvalidated direct-fast nodechain prototype in the worktree
+    - it should not be mixed into the safe profiling checkpoint
+
 ## Preserved Experimental Lines
 
 - `fast-mode-30s`
