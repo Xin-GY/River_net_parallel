@@ -1,0 +1,20 @@
+Source worktree inspected before creating this branch:
+- path: /tmp/feature_cpp_exact_evolve_fullchain
+- branch: feature/cpp-exact-evolve-fullchain
+- head: 835cf1f6a2ed91e121af1adcf2a87a37e069f291
+
+Observed untracked items in source worktree:
+?? handoff_network_model_20260312/cython_cpp_bridge.cpp
+?? handoff_network_model_20260312/cython_cpp_bridge.cpython-311-x86_64-linux-gnu.so
+?? handoff_network_model_20260312/cython_node_iteration.c
+?? handoff_network_model_20260312/cython_node_iteration.cpython-311-x86_64-linux-gnu.so
+?? handoff_network_model_20260312/cython_river_kernels.c
+?? handoff_network_model_20260312/cython_river_kernels.cpython-311-x86_64-linux-gnu.so
+?? handoff_network_model_20260312/reports/cpp_branch_python_serial_10m_summary.json
+?? handoff_network_model_20260312/reports/cpp_bridge_explicitkernels_vs_cython_serial_2h.json
+?? handoff_network_model_20260312/reports/cpp_bridge_vs_branch_python_10m.json
+?? handoff_network_model_20260312/reports/cpp_evolve_serial_10m_compare_vs_accepted.json
+?? handoff_network_model_20260312/reports/cpp_evolve_serial_10m_retry_summary.json
+?? handoff_network_model_20260312/reports/cpp_evolve_serial_10m_summary.json
+?? handoff_network_model_20260312/reports/cpp_evolve_serial_2h_explicitkernels_summary.json
+?? handoff_network_model_20260312/reports/cpp_evolve_serial_40h_explicitkernels_v1_vs_accepted40h.json
