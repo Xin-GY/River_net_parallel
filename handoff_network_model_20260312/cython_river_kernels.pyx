@@ -116,6 +116,20 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double* Vactor2_T,
     ) except +
 
+    void compute_face_uc_exact_cpp_kernel "rivernet::compute_face_uc_exact"(
+        size_t n,
+        double eps,
+        double s_limit_default,
+        int use_section_area_threshold,
+        const float* S,
+        const float* U,
+        const float* C,
+        const float* PRESS,
+        const double* cell_s_limit,
+        float* F_U,
+        float* F_C,
+    ) except +
+
 
 cdef inline double _maxd(double a, double b) noexcept:
     return a if a >= b else b
@@ -500,6 +514,44 @@ cpdef bint roe_matrix_exact_cpp(object river):
         'lambda2_min': float(stats.lambda2_min),
         'lambda2_max': float(stats.lambda2_max),
     }
+    return True
+
+
+cpdef bint face_uc_exact_cpp(object river):
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] S_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] U_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] C_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] PRESS_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] F_U_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] F_C_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] cell_s_limit_arr
+    cdef int N
+
+    N = int(river.cell_num) + 1
+    if N <= 0:
+        return True
+
+    S_arr = river.S
+    U_arr = river.U
+    C_arr = river.C
+    PRESS_arr = river.PRESS
+    F_U_arr = river.F_U
+    F_C_arr = river.F_C
+    cell_s_limit_arr = river._cell_s_limit_arr
+
+    compute_face_uc_exact_cpp_kernel(
+        <size_t>N,
+        float(river.EPSILON),
+        float(river.S_limit),
+        1 if bool(river.fix_06_section_area_threshold) else 0,
+        &S_arr[0],
+        &U_arr[0],
+        &C_arr[0],
+        &PRESS_arr[0],
+        &cell_s_limit_arr[0],
+        &F_U_arr[0],
+        &F_C_arr[0],
+    )
     return True
 
 

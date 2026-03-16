@@ -78,23 +78,25 @@
 - `ISLAM_USE_CYTHON_ROE_FLUX=1`
 - `ISLAM_CPP_USE_UPDATE_CELL=1`
 - `ISLAM_CPP_USE_ASSEMBLE=1`
+- `ISLAM_CPP_USE_ROE_MATRIX=1`
+- `ISLAM_CPP_USE_FACE_UC=1`
 - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
 
 Validated no-profile spot checks in this clean continuation worktree:
 
 - 10m:
-  - `0.997237 s`
+  - `0.927344 s`
 - 2h:
-  - `7.561386 s`
+  - `7.022465 s`
 - 40h:
-  - `124.534376 s`
+  - `115.940719 s`
 
 ## next optimization direction
 
 1. native-ize nodechain state commit and post-node write-back
 2. revisit remaining river-step kernels in current hotspot order:
    - `Caculate_Roe_Flux_2`
-   - `Caculate_face_U_C`
+   - source / fullstep tail
 3. only after the above, revisit a fuller native full-step loop
 
 ## branch-local accepted delta vs phase-3 source baseline
@@ -141,6 +143,21 @@ Validated exact results relative to the assemble continuation baseline:
   - `8.403064 s -> 7.561386 s`
 - 40h:
   - `142.210454 s -> 124.534376 s`
+
+All three validation windows pass exact compare.
+
+The next newly validated exact addition on this continuation branch is:
+
+- `ISLAM_CPP_USE_FACE_UC=1`
+
+Validated exact results relative to the Roe-matrix continuation baseline:
+
+- 10m:
+  - `0.997237 s -> 0.927344 s`
+- 2h:
+  - `7.561386 s -> 7.022465 s`
+- 40h:
+  - `124.534376 s -> 115.940719 s`
 
 All three validation windows pass exact compare.
 

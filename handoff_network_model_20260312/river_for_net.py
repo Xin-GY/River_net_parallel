@@ -41,6 +41,7 @@ try:
         prepare_cpp_update_cell_plan as prepare_cpp_update_cell_plan,
         assemble_flux_poststep_exact_cpp as cpp_assemble_flux_poststep_exact,
         roe_matrix_exact_cpp as cpp_roe_matrix_exact,
+        face_uc_exact_cpp as cpp_face_uc_exact,
     )
 except Exception:
     cython_fill_general_hr_flux_exact = None
@@ -49,6 +50,7 @@ except Exception:
     prepare_cpp_update_cell_plan = None
     cpp_assemble_flux_poststep_exact = None
     cpp_roe_matrix_exact = None
+    cpp_face_uc_exact = None
 try:
     from cython_cpp_bridge import CppOutputBuffer
 except Exception:
@@ -876,6 +878,7 @@ class River(Process):
         self.use_cython_update_cell = os.environ.get('ISLAM_CPP_USE_UPDATE_CELL', default_update_flag) == '1'
         self.use_cpp_assemble = os.environ.get('ISLAM_CPP_USE_ASSEMBLE', '0') == '1'
         self.use_cpp_roe_matrix = os.environ.get('ISLAM_CPP_USE_ROE_MATRIX', '0') == '1'
+        self.use_cpp_face_uc = os.environ.get('ISLAM_CPP_USE_FACE_UC', '0') == '1'
         self._general_hr_flux_mass_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_flux_momentum_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_press_left_hr_buf = np.zeros(self.cell_num + 1, dtype=float)
@@ -1822,6 +1825,9 @@ class River(Process):
         self.water_depth[-1] = self.water_depth[-2]
 
     def Caculate_face_U_C(self):
+        if bool(getattr(self, 'use_cpp_face_uc', False)) and cpp_face_uc_exact is not None:
+            if cpp_face_uc_exact(self):
+                return
         N = self.cell_num + 1
         if self.fix_06_section_area_threshold:
             cell_limits = np.array([self._get_cell_s_limit(i) for i in range(self.cell_num + 2)], dtype=float)

@@ -305,6 +305,63 @@
   2. deeper `Caculate_Roe_Flux_2`
   3. `Caculate_face_U_C`
 
+## 2026-03-16 C++ fullchain pushdown Face_U_C step
+
+### Done
+
+- implemented an exact native `Caculate_face_U_C` kernel behind:
+  - `ISLAM_CPP_USE_FACE_UC=1`
+- moved the whole interface loop for:
+  - `sqrt(max(S, limit))`
+  - weighted `F_U`
+  - pressure-ratio / average `F_C`
+  - one-side-dry / both-dry branches
+  into:
+  - `cpp/river_kernels.hpp`
+  - `cpp/river_kernels.cpp`
+  - `cython_river_kernels.pyx`
+  - `river_for_net.py`
+- updated `tools/profile_cpp_exact_serial.py` so this kernel can be benchmarked and compared independently
+- validated the candidate on:
+  - 10m
+  - 2h
+  - 40h
+
+### Findings
+
+- this kernel only became exact after preserving the Python path's mixed dtype behavior:
+  - `cell_limits` must stay `float64`
+  - `sqrt_left/right`, `fu`, `fc` must be evaluated in `double`
+  - write-back to `F_U/F_C` happens as `float32`
+- with that rule in place, the whole `face_uc` interface loop becomes a low-risk nativeization target and no longer needs Python per-face dispatch
+
+### Results
+
+- current accepted continuation exact config:
+  - `ISLAM_USE_CPP_EVOLVE=1`
+  - `ISLAM_CPP_THREADS=0`
+  - `ISLAM_USE_CYTHON_NODECHAIN=1`
+  - `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
+  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
+  - `ISLAM_CPP_USE_UPDATE_CELL=1`
+  - `ISLAM_CPP_USE_ASSEMBLE=1`
+  - `ISLAM_CPP_USE_ROE_MATRIX=1`
+  - `ISLAM_CPP_USE_FACE_UC=1`
+  - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
+- exact evolve/model improvements relative to the Roe-matrix continuation baseline:
+  - 10m: `0.997237 s -> 0.927344 s`
+  - 2h: `7.561386 s -> 7.022465 s`
+  - 40h: `124.534376 s -> 115.940719 s`
+- all three compare windows passed exact compare
+
+### Next
+
+- keep `Caculate_face_U_C` as an accepted exact kernel on this line
+- continue with the next real gaps in this order:
+  1. nodechain state commit / final apply native 化
+  2. deeper `Caculate_Roe_Flux_2` ownership if it still dominates after commit pushdown
+  3. only then revisit a fuller native full-step loop
+
 ## 2026-03-15 Phase 0-2
 
 ### Done

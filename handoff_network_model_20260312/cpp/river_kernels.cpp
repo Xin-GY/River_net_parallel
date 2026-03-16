@@ -464,4 +464,63 @@ RoeMatrixStats compute_roe_matrix_exact(
     return stats;
 }
 
+void compute_face_uc_exact(
+    std::size_t n,
+    double eps,
+    double s_limit_default,
+    int use_section_area_threshold,
+    const float* S,
+    const float* U,
+    const float* C,
+    const float* PRESS,
+    const double* cell_s_limit,
+    float* F_U,
+    float* F_C
+) {
+    const bool use_threshold = use_section_area_threshold != 0;
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const double limit_left = use_threshold ? cell_s_limit[i] : s_limit_default;
+        const double limit_right = use_threshold ? cell_s_limit[i + 1] : s_limit_default;
+
+        const double sqrt_left = std::sqrt(std::max(static_cast<double>(S[i]), limit_left));
+        const double sqrt_right = std::sqrt(std::max(static_cast<double>(S[i + 1]), limit_right));
+        const double denom = sqrt_left + sqrt_right;
+        const double fu = (static_cast<double>(U[i]) * sqrt_left + static_cast<double>(U[i + 1]) * sqrt_right) / denom;
+
+        const double diff_s = std::fabs(sqrt_left - sqrt_right);
+        double fc;
+        if (diff_s <= 0.001) {
+            fc = 0.5 * (static_cast<double>(C[i]) + static_cast<double>(C[i + 1]));
+        } else {
+            double ratio = 0.0;
+            const double s_diff = static_cast<double>(S[i]) - static_cast<double>(S[i + 1]);
+            ratio = (static_cast<double>(PRESS[i]) - static_cast<double>(PRESS[i + 1])) / s_diff;
+            ratio = std::max(ratio, eps);
+            fc = std::sqrt(ratio);
+        }
+
+        const bool dry_left = static_cast<double>(S[i]) <= limit_left;
+        const bool dry_right = static_cast<double>(S[i + 1]) <= limit_right;
+        const bool one_side_dry = dry_left != dry_right;
+        const bool both_dry = dry_left && dry_right;
+
+        if (one_side_dry) {
+            if (dry_left) {
+                F_U[i] = U[i + 1];
+                F_C[i] = C[i + 1];
+            } else {
+                F_U[i] = U[i];
+                F_C[i] = C[i];
+            }
+        } else if (both_dry) {
+            F_U[i] = 0.0f;
+            F_C[i] = static_cast<float>(eps);
+        } else {
+            F_U[i] = static_cast<float>(fu);
+            F_C[i] = static_cast<float>(fc);
+        }
+    }
+}
+
 }  // namespace rivernet

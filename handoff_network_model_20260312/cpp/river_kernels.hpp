@@ -121,4 +121,18 @@ RoeMatrixStats compute_roe_matrix_exact(
     double* Vactor2_T
 );
 
+void compute_face_uc_exact(
+    std::size_t n,
+    double eps,
+    double s_limit_default,
+    int use_section_area_threshold,
+    const float* S,
+    const float* U,
+    const float* C,
+    const float* PRESS,
+    const double* cell_s_limit,
+    float* F_U,
+    float* F_C
+);
+
 }  // namespace rivernet
