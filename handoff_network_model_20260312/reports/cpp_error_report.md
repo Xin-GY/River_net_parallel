@@ -1,43 +1,44 @@
-# C++ After Global CFL Error Report
+# CPP Error Report
 
-## Scope
+## Summary
 
-Candidate under validation:
+`assemble_deep_v2` is exact relative to the accepted global-CFL baseline outputs.
 
-- accepted exact checkpoint `9a7c094`
-- plus `ISLAM_CPP_USE_GLOBAL_CFL_DEEP=1`
+All three gates pass:
 
-Baseline for exact compare:
+- 10m: pass
+- 2h: pass
+- 40h: pass
 
-- `/tmp/feature_cpp_exact_accepted_reaudit_next/handoff_network_model_20260312/result/accepted_reaudit_rectdeep_{10m,2h,40h}`
+## 10m
 
-## Compare Results
+- `allclose = true`
+- `cfl_history.csv` rows: `182 / 182`
+- `internal_node_history.csv` rows: `181 / 181`
+- first diff: none
+- `global_dt max_abs = 0.0`
 
-| Case | Compare report | allclose | `cfl_history.csv` | `internal_node_history.csv` | First diff |
-| --- | --- | --- | --- | --- | --- |
-| 10m | `reports/global_cfl_deep_10m_compare.json` | `true` | `182 == 182` | `181 == 181` | none |
-| 2h | `reports/global_cfl_deep_2h_compare.json` | `true` | `1483 == 1483` | `1482 == 1482` | none |
-| 40h | `reports/global_cfl_deep_40h_compare.json` | `true` | `29784 == 29784` | `29783 == 29783` | none |
+## 2h
 
-## Key Exactness Result
+- `allclose = true`
+- `cfl_history.csv` rows: `1483 / 1483`
+- `internal_node_history.csv` rows: `1482 / 1482`
+- first diff: none
+- `global_dt max_abs = 0.0`
 
-The deep global-CFL path is exact on all three gate cases:
+## 40h
 
-- 10m
-- 2h
-- 40h
+- `allclose = true`
+- `cfl_history.csv` rows: `29784 / 29784`
+- `internal_node_history.csv` rows: `29783 / 29783`
+- first diff: none
+- `global_dt max_abs = 0.0`
 
-No drift was observed in:
+## Conclusion
+
+The deeper assemble ownership push does not introduce any observed drift in:
 
 - `cfl_history.csv`
 - `internal_node_history.csv`
-- saved river outputs
-- final state and control-point files included by `compare_results.py`
-
-The most exact-sensitive field in this round was:
-
-- `cfl_history.csv:global_dt`
-
-and its 40h max abs diff remained:
-
-- `0.0`
+- control outputs
+- final 40h state files

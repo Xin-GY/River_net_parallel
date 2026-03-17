@@ -1,42 +1,34 @@
-# C++ After Global CFL Benchmark Matrix
+# CPP Benchmark Matrix
 
-## Timing Policy
+## Historical Accepted Gate
 
-- headline metric: `evolve/model time`
-- initialization excluded
-- single-process exact only for accepted status
+- source branch: `feature/cpp-exact-accepted-after-global-cfl`
+- source commit: `689ae0b`
 
-## Variants
+| case | model/evolve time (s) |
+| --- | ---: |
+| 10m | `0.709517` |
+| 2h | `4.607920` |
+| 40h | `60.743103` |
 
-### Accepted historical checkpoint
+## Fresh Replay On This Branch Before V2
 
-- source checkpoint: `9a7c094`
-- config:
-  - accepted exact flags from `feature/cpp-exact-accepted-reaudit-next`
-  - `ISLAM_CPP_USE_GLOBAL_CFL_DEEP=0`
+| case | model/evolve time (s) | wall (s) | strict compare |
+| --- | ---: | ---: | --- |
+| 10m | `0.731429` | `0.764190` | pass |
+| 2h | `5.815933` | `6.124383` | pass |
+| 40h | `50.941080` | `55.618210` | pass |
 
-### Fresh replay on this branch
+## Assemble Deep V2 Candidate
 
-- same code and same flags as `9a7c094`
-- rebuilt in the clean continuation worktree
+| case | model/evolve time (s) | wall (s) | strict compare |
+| --- | ---: | ---: | --- |
+| 10m | `0.768293` | `0.801901` | pass |
+| 2h | `5.329252` | `5.646228` | pass |
+| 40h | `47.053824` | `51.715103` | pass |
 
-### New candidate
+## Gate Outcome
 
-- fresh replay plus:
-  - `ISLAM_CPP_USE_GLOBAL_CFL_DEEP=1`
-
-## Results
-
-| Variant | 10m evolve (s) | 2h evolve (s) | 40h evolve (s) | 40h wall (s) | Strict compare |
-| --- | ---: | ---: | ---: | ---: | --- |
-| Accepted historical `9a7c094` | `0.912919` | `6.680291` | `65.237010` | `69.804079` | yes |
-| Fresh replay | `1.039685` | `7.261597` | `69.479726` | `74.814494` | yes |
-| Candidate `+ ISLAM_CPP_USE_GLOBAL_CFL_DEEP=1` | `0.709517` | `4.607920` | `60.743103` | `65.648969` | yes |
-
-## Acceptance
-
-The new candidate is accepted for this line because:
-
-- 10m / 2h / 40h strict compare all pass
-- 40h exact `evolve/model time` improves clearly:
-  - `65.237010 s -> 60.743103 s`
+- historical accepted 40h gate: `60.743103 s`
+- candidate 40h: `47.053824 s`
+- accepted-gate result: **pass**

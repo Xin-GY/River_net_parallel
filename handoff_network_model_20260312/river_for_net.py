@@ -43,6 +43,7 @@ try:
         prepare_cpp_update_cell_plan as prepare_cpp_update_cell_plan,
         prepare_cpp_general_hr_flux_plan as prepare_cpp_general_hr_flux_plan,
         assemble_flux_poststep_exact_cpp as cpp_assemble_flux_poststep_exact,
+        assemble_flux_exact_deep_cpp as cpp_assemble_flux_exact_deep,
         roe_matrix_exact_cpp as cpp_roe_matrix_exact,
         face_uc_exact_cpp as cpp_face_uc_exact,
     )
@@ -55,6 +56,7 @@ except Exception:
     prepare_cpp_update_cell_plan = None
     prepare_cpp_general_hr_flux_plan = None
     cpp_assemble_flux_poststep_exact = None
+    cpp_assemble_flux_exact_deep = None
     cpp_roe_matrix_exact = None
     cpp_face_uc_exact = None
 try:
@@ -887,6 +889,7 @@ class River(Process):
         default_update_flag = os.environ.get('ISLAM_USE_CYTHON_UPDATE_CELL', '0')
         self.use_cython_update_cell = os.environ.get('ISLAM_CPP_USE_UPDATE_CELL', default_update_flag) == '1'
         self.use_cpp_assemble = os.environ.get('ISLAM_CPP_USE_ASSEMBLE', '0') == '1'
+        self.use_cpp_assemble_deep = os.environ.get('ISLAM_CPP_USE_ASSEMBLE_DEEP', '0') == '1'
         self.use_cpp_roe_matrix = os.environ.get('ISLAM_CPP_USE_ROE_MATRIX', '0') == '1'
         self.use_cpp_face_uc = os.environ.get('ISLAM_CPP_USE_FACE_UC', '0') == '1'
         self.use_cython_nodechain_prebound_fast = os.environ.get('ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST', '0') == '1'
@@ -2925,6 +2928,9 @@ class River(Process):
         # Conservative owner only: apply explicit flux increment, friction substep,
         # and post-update dry admissibility on S/Q. Final derived-state refresh is
         # intentionally delegated to Update_cell_proprity2() / _refresh_cell_state().
+        if bool(getattr(self, 'use_cpp_assemble_deep', False)) and cpp_assemble_flux_exact_deep is not None:
+            if cpp_assemble_flux_exact_deep(self):
+                return
         self._apply_explicit_conservative_increment()
         if bool(getattr(self, 'use_cpp_assemble', False)) and cpp_assemble_flux_poststep_exact is not None:
             if cpp_assemble_flux_poststep_exact(self):

@@ -1,67 +1,47 @@
-# Overnight Hand Off
+# Overnight Hand-Off
 
-## Branch
+## Branch State
 
-- branch: `feature/cpp-exact-accepted-after-global-cfl`
-- start checkpoint: `feature/cpp-exact-accepted-reaudit-next@9a7c094`
-- new accepted commit candidate from this round: pending current branch head
+- branch: `feature/cpp-exact-after-globalcfl-assemble-reaudit-v2`
+- source accepted checkpoint: `689ae0b`
+- source branch: `feature/cpp-exact-accepted-after-global-cfl`
 
-## What this round did
+## What Landed
 
-- created a clean continuation branch from `9a7c094`
-- reran the accepted exact path on 10m / 2h / 40h to recheck the current ownership gap
-- confirmed `global CFL / dt reduction` was still the highest-confidence next move outside the rejected nodechain-tail family
-- implemented a serial native deep path behind:
-  - `ISLAM_CPP_USE_GLOBAL_CFL_DEEP=1`
-- validated it on:
-  - 10m
-  - 2h
-  - 40h
+This branch re-runs the assemble deep ownership push on top of the accepted global-CFL baseline, rather than using the older preserved prototype as a benchmark reference.
 
-## Result
+Landed code path:
 
-The new serial native global-CFL path is:
+- `ISLAM_CPP_USE_ASSEMBLE_DEEP=1`
 
-- exact
-- faster than the accepted baseline
-
-40h exact result:
-
-- accepted historical baseline: `65.23701047897339 s`
-- new candidate: `60.74310255050659 s`
-
-## Exactness
+## Outcome
 
 - 10m strict compare: pass
 - 2h strict compare: pass
 - 40h strict compare: pass
-- `cfl_history.csv`: exact, same row count, no `global_dt` diff
-- `internal_node_history.csv`: exact, same row count
+- 40h compare: `allclose = true`
 
-## What was deliberately not done
+Performance:
 
-- no Python-level multi-process / multi-thread benchmark
-- no FAST_MODE
-- no approximation
-- no refresh-deep reopen
-- no residual / Jacobian deep reopen
-- no fullstep / dispatch reshape
-- no external-boundary-deep logic
-- no `-march=native`
+- accepted source gate: `60.74310255050659 s`
+- new candidate: `47.05382442474365 s`
 
-## Threading status
+## Why It Works
 
-This branch does **not** upgrade to a threaded accepted path.
+- the deep assemble kernel now owns conservative flux increment, Manning post-step, conservative dry admissibility, and stage-local write-back
+- the old global-CFL ownership bottleneck is already removed in the source baseline
+- the local assemble reduction survives end-to-end on the new baseline
 
-Reason:
+## What Did Not Change
 
-- serial native already reduced `dt_update.global_cfl` to `0.728253 s`
-- the stage is no longer large enough to justify a deterministic thread experiment inside the same round
+- no refresh-deep logic
+- no residual/Jacobian reopening
+- no fullstep/dispatch reshaping
+- no external-boundary-deep code
+- no threaded implementation
 
-## Recommended next step
+## Suggested Next Round
 
-- treat this serial global-CFL deep path as the new accepted exact checkpoint for the branch family
-- if exact-only work continues, do a fresh audit from this new baseline before choosing the next single point
-- likely next point:
-  - `Assemble_Flux_2` deeper ownership re-audit on top of the new baseline
-  - unless a materially new, non-refresh-like nodechain ownership route is found
+1. treat this branch as the new accepted exact candidate
+2. only then re-audit the new Top 1 blocker on top of this branch
+3. if deterministic C++ threads are explored later, start with assemble, not global CFL

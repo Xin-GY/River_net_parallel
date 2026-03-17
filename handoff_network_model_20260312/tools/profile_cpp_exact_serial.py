@@ -30,6 +30,7 @@ def main() -> int:
     parser.add_argument("--use-cpp-roe-flux-rect-deep", action="store_true", default=False)
     parser.add_argument("--use-cpp-update-cell", action="store_true", default=False)
     parser.add_argument("--use-cpp-assemble", action="store_true", default=False)
+    parser.add_argument("--use-cpp-assemble-deep", action="store_true", default=False)
     parser.add_argument("--use-cpp-roe-matrix", action="store_true", default=False)
     parser.add_argument("--use-cpp-face-uc", action="store_true", default=False)
     parser.add_argument("--use-cpp-global-cfl-deep", action="store_true", default=False)
@@ -49,6 +50,7 @@ def main() -> int:
     os.environ["ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP"] = "1" if args.use_cpp_roe_flux_rect_deep else "0"
     os.environ["ISLAM_CPP_USE_UPDATE_CELL"] = "1" if args.use_cpp_update_cell else "0"
     os.environ["ISLAM_CPP_USE_ASSEMBLE"] = "1" if args.use_cpp_assemble else "0"
+    os.environ["ISLAM_CPP_USE_ASSEMBLE_DEEP"] = "1" if args.use_cpp_assemble_deep else "0"
     os.environ["ISLAM_CPP_USE_ROE_MATRIX"] = "1" if args.use_cpp_roe_matrix else "0"
     os.environ["ISLAM_CPP_USE_FACE_UC"] = "1" if args.use_cpp_face_uc else "0"
     os.environ["ISLAM_CPP_USE_GLOBAL_CFL_DEEP"] = "1" if args.use_cpp_global_cfl_deep else "0"
@@ -102,6 +104,7 @@ def main() -> int:
         "use_cpp_roe_flux_rect_deep": bool(args.use_cpp_roe_flux_rect_deep),
         "use_cpp_update_cell": bool(args.use_cpp_update_cell),
         "use_cpp_assemble": bool(args.use_cpp_assemble),
+        "use_cpp_assemble_deep": bool(args.use_cpp_assemble_deep),
         "use_cpp_roe_matrix": bool(args.use_cpp_roe_matrix),
         "use_cpp_face_uc": bool(args.use_cpp_face_uc),
         "use_cpp_global_cfl_deep": bool(args.use_cpp_global_cfl_deep),
