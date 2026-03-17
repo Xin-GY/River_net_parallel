@@ -90,6 +90,29 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double friction_min_depth,
     ) except +
 
+    AssemblePostStepStats assemble_flux_exact_deep_cpp_kernel "rivernet::assemble_flux_exact_deep"(
+        const TableView* tables,
+        size_t n,
+        const double* flux_loc,
+        const double* flux_source_left,
+        const double* flux_source_right,
+        const double* flux_source_center,
+        const double* flux_friction_left,
+        const double* flux_friction_right,
+        double* flux,
+        float* S,
+        float* Q,
+        const double* water_depth,
+        const double* cell_s_limit,
+        uint8_t* forced_dry_recorded,
+        const float* cell_lengths,
+        double g,
+        double dt,
+        double eps,
+        double water_depth_limit,
+        double friction_min_depth,
+    ) except +
+
     RoeMatrixStats compute_roe_matrix_exact_cpp_kernel "rivernet::compute_roe_matrix_exact"(
         size_t n,
         float eps,
@@ -673,6 +696,72 @@ cpdef bint assemble_flux_poststep_exact_cpp(object river):
         &water_depth_arr[0],
         &cell_s_limit_arr[0],
         &forced_dry_flags[0],
+        float(river.g),
+        float(river.DT),
+        float(river.EPSILON),
+        float(river.water_depth_limit),
+        float(getattr(river, "friction_min_depth", 0.0)),
+    )
+    river.current_forced_dry_count += int(stats.forced_dry_increment)
+    river.total_forced_dry_count += int(stats.forced_dry_increment)
+    return True
+
+
+cpdef bint assemble_flux_exact_deep_cpp(object river):
+    cdef CppUpdateCellPlan plan
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_LOC_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_left_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_right_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_center_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Friction_left_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Friction_right_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] S_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Q_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] water_depth_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] cell_s_limit_arr
+    cdef cnp.ndarray[cnp.uint8_t, ndim=1] forced_dry_flags
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] cell_lengths_arr
+    cdef AssemblePostStepStats stats
+
+    if not bool(getattr(river, "FRTIMP", False)):
+        return False
+    if str(getattr(river, "friction_model", "manning")).lower() != "manning":
+        return False
+    if not prepare_cpp_update_cell_plan(river):
+        return False
+
+    plan = <CppUpdateCellPlan>river._cpp_update_cell_plan
+    Flux_LOC_arr = river.Flux_LOC
+    Flux_Source_left_arr = river.Flux_Source_left
+    Flux_Source_right_arr = river.Flux_Source_right
+    Flux_Source_center_arr = river.Flux_Source_center
+    Flux_Friction_left_arr = river.Flux_Friction_left
+    Flux_Friction_right_arr = river.Flux_Friction_right
+    Flux_arr = river.Flux
+    S_arr = river.S[1:river.cell_num + 1]
+    Q_arr = river.Q[1:river.cell_num + 1]
+    water_depth_arr = river.water_depth[1:river.cell_num + 1]
+    cell_s_limit_arr = river._cell_s_limit_arr[1:river.cell_num + 1]
+    forced_dry_flags = river._forced_dry_recorded[1:river.cell_num + 1].view(np.uint8)
+    cell_lengths_arr = river.cell_lengths[1:river.cell_num + 1]
+
+    stats = assemble_flux_exact_deep_cpp_kernel(
+        plan.data() + 1,
+        river.cell_num,
+        &Flux_LOC_arr[0, 0],
+        &Flux_Source_left_arr[0, 0],
+        &Flux_Source_right_arr[0, 0],
+        &Flux_Source_center_arr[0, 0],
+        &Flux_Friction_left_arr[0, 0],
+        &Flux_Friction_right_arr[0, 0],
+        &Flux_arr[0, 0],
+        &S_arr[0],
+        &Q_arr[0],
+        &water_depth_arr[0],
+        &cell_s_limit_arr[0],
+        &forced_dry_flags[0],
+        &cell_lengths_arr[0],
         float(river.g),
         float(river.DT),
         float(river.EPSILON),

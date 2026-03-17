@@ -95,6 +95,29 @@ AssemblePostStepStats apply_explicit_manning_poststep_exact(
     double friction_min_depth
 );
 
+AssemblePostStepStats assemble_flux_exact_deep(
+    const TableView* tables,
+    std::size_t n,
+    const double* flux_loc,
+    const double* flux_source_left,
+    const double* flux_source_right,
+    const double* flux_source_center,
+    const double* flux_friction_left,
+    const double* flux_friction_right,
+    double* flux,
+    float* S,
+    float* Q,
+    const double* water_depth,
+    const double* cell_s_limit,
+    std::uint8_t* forced_dry_recorded,
+    const float* cell_lengths,
+    double g,
+    double dt,
+    double eps,
+    double water_depth_limit,
+    double friction_min_depth
+);
+
 RoeMatrixStats compute_roe_matrix_exact(
     std::size_t n,
     float eps,
