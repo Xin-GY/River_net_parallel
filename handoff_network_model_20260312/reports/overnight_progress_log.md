@@ -191,7 +191,68 @@
   - delta: `-0.842722 s`
 - Next step:
   - move real numerical work, not only orchestration, from Python/Cython into C++ runtime kernels
-  - start with the node iteration chain and then the river-step kernels
+- start with the node iteration chain and then the river-step kernels
+
+## 2026-03-16 Nodecommit refresh stage 3 recheck
+
+### Done
+
+- preserved the rejected `_refresh_cell_state` deeper-ownership experiment in the source worktree:
+  - `/tmp/feature_cpp_exact_evolve_nodecommit_refresh`
+- saved the tracked-source diff snapshot:
+  - `cpp_nodechain_refresh_deep_experiment.diff`
+- wrote explicit stage-3 no-go reports:
+  - `cpp_nodechain_refresh_deep_plan.md`
+  - `cpp_nodechain_refresh_deep_impl.md`
+  - `cpp_nodechain_refresh_deep_before_after.md`
+- created a clean continuation worktree from the accepted checkpoint:
+  - branch `feature/cpp-exact-evolve-nodecommit-refresh-next`
+  - start commit `9535623`
+
+### Findings
+
+- the inline Cython refresh attempt was fast but not exact
+- the conservative single-cell C++ refresh attempt restored exactness, but was much slower:
+  - 10m: `0.667691 s -> 1.058903 s`
+  - 2h: `5.103571 s -> 8.042586 s`
+- the C++ build shape around `cython_node_iteration` appears to be part of that slowdown:
+  - accepted-path 10m after that build-shape change rose to `1.091276 s`
+- conclusion:
+  - `_refresh_cell_state` deeper ownership is a no-go in its current implementations
+
+### Next
+
+- stay on the clean `9535623` accepted baseline
+- re-check whether residual/Jacobian is still worth any work at all
+- re-check whether fullstep is now justified, or still premature
+- only continue along a path that has a credible 40h upside
+
+## 2026-03-16 Nodecommit refresh rechecks
+
+### Done
+
+- rechecked residual / Ac / Jacobian value after the accepted deep-commit checkpoint
+- rechecked whether fullstep native-loop work is justified after the accepted deep-commit checkpoint
+- wrote:
+  - `nodechain_residual_recheck_after_commit_refresh.md`
+  - `fullstep_recheck_after_nodecommit_refresh.md`
+
+### Findings
+
+- residual / Ac is no longer worth immediate work:
+  - 40h: `0.211224 s`
+  - 2h: `0.021313 s`
+- fullstep native-loop work is still premature:
+  - crossing cost exists
+  - but the larger remaining 40h exact blockers are still flux and nodechain ownership
+  - previous fullstep-shape experiments already regressed 40h
+
+### Next
+
+- keep the accepted `9535623` code path clean
+- if we continue performance work from this line, prefer:
+  1. branch-safe build/layout evaluation
+  2. a higher-confidence exact ownership push only where 40h profile says it is still first-order
 
 ## 2026-03-16 C++ fullchain pushdown continuation
 
