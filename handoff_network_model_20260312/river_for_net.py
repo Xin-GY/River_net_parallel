@@ -39,12 +39,14 @@ try:
         update_cell_properties_exact as cython_update_cell_properties_exact,
         update_cell_properties_exact_cpp as cpp_update_cell_properties_exact,
         prepare_cpp_update_cell_plan as prepare_cpp_update_cell_plan,
+        assemble_flux_poststep_exact_cpp as cpp_assemble_flux_poststep_exact,
     )
 except Exception:
     cython_fill_general_hr_flux_exact = None
     cython_update_cell_properties_exact = None
     cpp_update_cell_properties_exact = None
     prepare_cpp_update_cell_plan = None
+    cpp_assemble_flux_poststep_exact = None
 try:
     from cython_cpp_bridge import CppOutputBuffer
 except Exception:
@@ -870,6 +872,7 @@ class River(Process):
         self.use_cython_roe_flux = os.environ.get('ISLAM_USE_CYTHON_ROE_FLUX', default_roe_flag) == '1'
         default_update_flag = os.environ.get('ISLAM_USE_CYTHON_UPDATE_CELL', '0')
         self.use_cython_update_cell = os.environ.get('ISLAM_CPP_USE_UPDATE_CELL', default_update_flag) == '1'
+        self.use_cpp_assemble = os.environ.get('ISLAM_CPP_USE_ASSEMBLE', '0') == '1'
         self._general_hr_flux_mass_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_flux_momentum_buf = np.zeros(self.cell_num + 1, dtype=float)
         self._general_hr_press_left_hr_buf = np.zeros(self.cell_num + 1, dtype=float)
@@ -2884,6 +2887,9 @@ class River(Process):
         # and post-update dry admissibility on S/Q. Final derived-state refresh is
         # intentionally delegated to Update_cell_proprity2() / _refresh_cell_state().
         self._apply_explicit_conservative_increment()
+        if bool(getattr(self, 'use_cpp_assemble', False)) and cpp_assemble_flux_poststep_exact is not None:
+            if cpp_assemble_flux_poststep_exact(self):
+                return
         self._apply_explicit_friction_substep()
         self._enforce_explicit_conservative_admissibility()
 

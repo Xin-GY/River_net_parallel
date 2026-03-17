@@ -1,356 +1,77 @@
-# Overnight Progress Log
+## 2026-03-16 phase 0/1 start
 
-## 2026-03-16 C++ kernelize-next phase 1
+- 从 `feature/cpp-exact-evolve-kernelize-next@a67a12e` 新开 `feature/cpp-exact-evolve-fullchain-pushdown`。
+- 保留旧工作树 `/tmp/feature_cpp_exact_evolve_kernelize_next` 作为 accepted phase-3 与历史实验的冻结副本。
+- 记录了 source worktree 的 git status 和未跟踪中间产物；本轮明确不把这些编译/benchmark 产物混入 commit。
+- 重新确认当前 accepted exact 配置与收益来源：
+  - 真正 accepted 的收益来自 nodechain wrapper-bypass
+  - direct-dispatch 继续保持 rejected 文档状态
+- 输出了剩余 native gap 报告，结论是：
+  - bridge 只有轻微收益，因为每步主链仍大量回调 Python `_net()` 包装器
+  - 当前最值得优先 native 化的是 `Update_cell_proprity2`
+  - `Assemble_Flux_2` 与 nodechain commit 是下一梯队
 
-### Done
+下一步：
+- 直接实现 `Update_cell_proprity2` 的 C++ exact kernel
+- 先做 10m / 2h compare 和阶段耗时对比，再决定是否推进 40h
 
-- created clean continuation branch:
-  - `feature/cpp-exact-evolve-kernelize-next`
-- created isolated worktree:
-  - `/tmp/feature_cpp_exact_evolve_kernelize_next`
-- recorded preservation / branch-layout reports for the source bridge line
-- mapped the current exact evolve chain again from the new branch’s actual code, not from older notes
-- wrote C++-focused phase-1 reports:
-  - `cpp_evolve_call_chain.md`
-  - `cpp_nodechain_math_and_dataflow.md`
-  - `cpp_riverstep_math_and_dataflow.md`
-  - `cpp_data_layout_and_boundary_crossings.md`
+## 2026-03-16 phase 2
 
-### Findings
-
-- the current bridge is real, but it is still mostly a compiled loop shell
-- the exact nodechain remains object-heavy:
-  - Cython shell
-  - Python river objects
-  - Python boundary-closure methods
-  - Python-backed section-table lookups
-- the network step still dispatches six river phases from Python via `call_river_function_by_name`
-- the real blocker is now clear:
-  - too many Python/Cython/C++ crossings
-  - too much state still owned by Python objects
-- this explains why 40h evolve improved by only about `0.84 s`
-
-### Next
-
-- establish the current branch’s single-process exact evolve-only baseline for:
-  - 10m
-  - 2h
-  - 40h
-- generate Top 10 hotspots and identify the real Top 3 on this branch
-- then start the first true native kernelization step:
-  - internal node exact chain in C++
-
-## 2026-03-16 C++ kernelize-next phase 2
-
-### Done
-
-- rebuilt the missing local `cython_cross_section` extension in this worktree
-- reran the single-process exact baseline after that rebuild for:
-  - 10m
-  - 2h
-  - 40h
-- added a branch-local profiling tool:
-  - `tools/profile_cpp_exact_serial.py`
-- added safe perf counters for:
-  - boundary updater
-  - nodechain sub-stages
-  - river-step sub-stages
-  - bridge crossing counts
-- wrote corrected baseline and hotspot reports:
-  - `cpp_exact_serial_baseline.md`
-  - `cpp_hotspots_top10.md`
-
-### Findings
-
-- several early runs on this branch were invalid because the worktree was missing the compiled `cython_cross_section` extension
-- after the rebuild, the corrected evolve-only baselines are:
-  - 10m: `1.459050 s`
-  - 2h: `12.330136 s`
-  - 40h: `206.306033 s`
-- the bridge-only line is therefore still effectively flat versus `835cf1f`
-- corrected 2h profiling confirms the current Top 3 domains are:
-  1. boundary updater / internal node chain
-  2. Roe flux
-  3. update cell
-- the main reason bridge gains remain tiny is now explicit:
-  - `14820` Python/Cython/C++ crossings in 2h
-  - `336020` boundary-closure calls
-  - `306380` width lookups inside nodechain residual/Ac work
-
-### Next
-
-- checkpoint the safe profiling/reporting infrastructure without mixing in the unvalidated direct-fast nodechain prototype
-- then move to phase 3:
-  - deeper native nodechain kernelization
-  - first on 10m/2h exact compare
-  - then on 40h evolve-only timing
-
-## 2026-03-16 C++ kernelize-next phase 3
-
-### Done
-
-- tested a deeper direct stage-boundary numeric closure prototype inside `cython_node_iteration.pyx`
-- rejected that prototype after a reproducible 10m segmentation fault
-- tested direct table-ref width lookup inside nodechain residual/Ac assembly
-- rejected that prototype after exact compare showed small but real drift
-- implemented a safer exact wrapper-bypass nodechain path:
-  - `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
-  - the nodechain loop now tries `river._stage_boundary_fix_level_cython_fast(...)` directly
-  - if that fast exact closure rejects, the original Python wrapper path is preserved
-- validated the accepted wrapper-bypass candidate on:
-  - 10m
-  - 2h
-  - 40h
-
-### Findings
-
-- the two deeper prototypes were useful for scoping risk:
-  - direct numeric closure was unstable
-  - direct width-ref lookup was numerically non-exact
-- the accepted wrapper-bypass cut stays exact and still gives a measurable full-case gain
-- evolve/model time improved:
-  - 10m: `1.459050 s -> 1.457326 s`
-  - 2h: `12.330136 s -> 11.400661 s`
-  - 40h: `206.306033 s -> 202.210932 s`
-- corrected 2h perf also improved the nodechain shell:
-  - `boundary_updater.total`: `4.076405 s -> 3.969430 s`
-  - `nodechain.apply_and_boundary_closure`: `2.771246 s -> 2.681397 s`
-  - `nodechain.final_apply`: `0.261257 s -> 0.253436 s`
-
-### Next
-
-- checkpoint the accepted wrapper-bypass nodechain implementation
-- then continue to phase 5 style work:
-  - reduce per-step Python/Cython/C++ boundary crossings
-  - shrink the `call_river_function_by_name` fan-out inside the bridge loop
-
-## 2026-03-16 C++ kernelize-next phase 5 experiment
-
-### Done
-
-- implemented a bridge-local direct-dispatch mode:
-  - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=1`
-- in that mode the bridge loop directly iterates cached `net._river_edges` for:
-  - set-dt
-  - face/U/C
-  - Roe matrix
-  - source
-  - Roe flux
-  - assemble
-  - update cell
-  - save-step result
-  - CFL reduction
-- fixed an exactness bug in the first draft:
-  - direct CFL reduction must preserve the original object-valued `dti`
-  - early `float(...)` coercion caused dt drift
-
-### Findings
-
-- after the dt fix, the direct-dispatch bridge is exact on:
-  - 10m
-  - 2h
-  - 40h
-- short-case gains were real:
-  - 10m: `1.457326 s -> 1.452927 s`
-  - 2h: `11.400661 s -> 11.254503 s`
-- but the full case rejected it:
-  - 40h: `202.210932 s -> 203.544599 s`
-  - net result: `+1.333667 s`, slower than the accepted phase-3 path
-
-### Next
-
-- keep the direct-dispatch bridge as a documented rejected exact experiment
-- return to the accepted phase-3 checkpoint for the branch code path
-- continue future work from the better exact baseline:
-  - nodechain wrapper-bypass accepted
-  - bridge direct-dispatch rejected on full case
-
-## 2026-03-16 C++ bridge checkpoint
-
-- Added a new `Cython + C++` bridge layer for prepared evolve:
-  - `cython_cpp_bridge.pyx`
-  - `cpp/output_buffer.hpp/.cpp`
-  - `cpp/evolve_core.hpp/.cpp`
-  - `build_cpp_exact_kernels.py`
-- Wired `Rivernet` so prepared evolve can route through:
-  - `ISLAM_USE_CPP_EVOLVE=1`
-  - `ISLAM_CPP_THREADS=0/1`
-- Added a C++ output buffer path in `river_for_net.py` so the runtime can accumulate snapshots in native storage and only materialize them back into Python/xarray at finalize time.
-- Updated `Islam.run_prepared_evolve(...)` so the evolve-only benchmark path actually exercises the new bridge.
-- Found and fixed a long-run exactness issue:
-  - the first bridge draft cast step-time scalars through `float(...)` each loop
-  - this produced small 2-hour drift
-  - the bridge now preserves the original Python-object arithmetic order for time-step updates and CFL/yield-step checks
-- Validation status:
-  - 10-minute exact compare: pass
-  - 2-hour exact compare: pass
-  - 40-hour exact compare against same-branch exact serial: pass
-- Current measured evolve-only speed:
-  - `40h cython exact serial`: `206.436461 s`
-  - `40h cpp bridge`: `205.593739 s`
-  - delta: `-0.842722 s`
-- Next step:
-  - move real numerical work, not only orchestration, from Python/Cython into C++ runtime kernels
-  - start with the node iteration chain and then the river-step kernels
-
-## 2026-03-15 Phase 0-2
-
-### Done
-
-- preserved the current FAST experimental line before opening the Cython branch
-- recorded preflight git status and diff artifacts on the FAST worktree
-- created preservation branch:
-  - `backup/pre-cython-branch-20260315-224054`
-- created untracked artifact snapshot:
-  - `/tmp/pre_cython_branch_20260315-224054_untracked_snapshot.tar.gz`
-- created clean isolated worktree:
-  - `/tmp/feature_cython_exact_nodechain_top3`
-- created branch:
-  - `feature/cython-exact-nodechain-top3`
-- confirmed this branch starts from clean accepted baseline `dea3202`
-- wrote branch layout report
-- mapped the serial internal-node iteration chain and documented:
-  - call chain
-  - math/state semantics
-  - data layout / Python object costs
-  - exact Cythonization plan
-
-### Findings
-
-- the serial internal-node solve is orchestrated from `Rivernet.Update_internal_boundary_conditions`
-- the accepted baseline already hits `_stage_boundary_fix_level_cython_fast` for the low-level exact stage-boundary closure path when flags allow it
-- the remaining serial nodechain cost is therefore likely dominated by:
-  - network-level node/branch traversal
-  - Python dict / tuple / string overhead
-  - repeated method dispatch
-- this supports the planned exact Cython strategy:
-  - integerize and compile the nodechain shell first
-  - then profile serial `Evolve` and Cythonize the remaining Top 3 outer loops
-
-### Next
-
-- Phase 3: establish single-process Python baseline
-- run serial-only profiling on 10-minute and long case
-- generate hotspot Top 3 report
-- then implement `cython_node_iteration.pyx`
-
-## 2026-03-15 Phase 3
-
-### Done
-
-- added evolve-only benchmark/profiling infrastructure:
-  - `tools/run_serial_case.py`
-  - `tools/summarize_cprofile.py`
-  - `tools/profile_islam_evolve_only.py`
-- refactored `Islam.py` so benchmark tooling can import and run:
-  - `build_net(...)`
-  - `maybe_run_warmup(...)`
-  - `prepare_net_for_evolve(...)`
-  - `run_prepared_evolve(...)`
-  - `run_main_case(...)`
-  - `main()`
-- copied missing `bound/` input files into the new worktree so the clean branch is runnable
-- ran evolve-only serial baseline for:
-  - 10-minute case
-  - 2-hour representative long case
-- generated serial baseline and hotspot reports
-
-### Findings
-
-- once initialization is excluded, the hotspot picture is clean and stable
-- confirmed Top 3 on the single-process exact line:
-  1. internal node iteration chain
-  2. `Caculate_Roe_Flux_2`
-  3. `Update_cell_proprity2`
-- `Assemble_Flux_2` is important but ranks behind `Update_cell_proprity2`
-- nodechain remains the dominant exact serial cost by a wide margin
-
-### Next
-
-- Phase 4: implement `cython_node_iteration.pyx`
-- keep exact semantics and single-process execution
-- then reprofile and move to the remaining Top 3 kernels
-
-## 2026-03-16 Phase 4-5
-
-### Done
-
-- implemented exact single-process nodechain kernel:
-  - `cython_node_iteration.pyx`
-- added exact build entry for branch-local kernels:
-  - `build_cython_exact_kernels.py`
-- wired nodechain runtime flag:
-  - `ISLAM_USE_CYTHON_NODECHAIN`
-- implemented river-side Cython kernels in:
+- 新增了 `Update_cell_proprity2` 的 C++ exact-intent kernel：
+  - `cpp/river_kernels.cpp`
   - `cython_river_kernels.pyx`
-- wired exact Roe-flux batch flag:
-  - `ISLAM_USE_CYTHON_ROE_FLUX`
-- wired exact update-cell flag:
-  - `ISLAM_USE_CYTHON_UPDATE_CELL`
-- confirmed the accepted exact candidate on short and medium cases is:
-  - `nodechain + Roe flux`
-- documented implementation split and local-kernel before/after numbers
+  - `river_for_net.py`
+- 为了让 per-cell table view 能安全共享到 Cython/C++，补齐了：
+  - `cython_cross_section.pxd`
+  - `cython_cross_section.pyx` / `.pxd` 同步
+- 第一轮 smoke 先撞到了 `CrossSectionTableCython` ABI mismatch，已修正。
+- 正确的 10m absolute end time 已校正为 `2024-01-01 00:10:00`；之前用 `10:10:00` 跑成了 2h10m，已作废。
+- 当前 `Update_cell_proprity2` C++ candidate 的事实结论：
+  - 10m evolve/model: `1.457326 s -> 1.232814 s`
+  - 步数保持 `181`
+  - exact compare 未通过
+  - 漂移签名与历史 Cython update-cell 实验一致：
+    - `cfl_history time max_abs = 6.103515625e-05`
+    - `internal_node_history.csv:n13_river14_face_Q max_abs = 0.0012717474781922533`
+- 当前判断：
+  - 这条 kernel 有明显性能潜力
+  - 但还不能进入 accepted exact 配置
+  - 下一步要么继续定位这条 kernel 的 exact gap，要么先去推进下一个可验证的 native gap
 
-### Findings
+## 2026-03-16 phase 2 accepted fix
 
-- nodechain Cython path is exact on 10-minute and 2-hour cases
-- nodechain standalone gain is modest:
-  - about `1.03x`
-- Roe-flux Cython path is the dominant serial win once the real hit-path is active
-- best current exact candidate is:
-  - `ISLAM_USE_CYTHON_NODECHAIN=1`
-  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
-  - `ISLAM_USE_CYTHON_UPDATE_CELL=0`
-- this candidate is exact on:
-  - 10-minute case
-  - 2-hour case
-- `Update_cell_proprity2` Cython kernel is fast but still drifts, so it remains feature-flagged and excluded from the exact candidate
+- 通过单步局部对照确认：
+  - 新 C++ update-cell candidate 与旧 Cython candidate 逐点一致
+  - 真正的 exact gap 根因不是 wrapper，而是普通湿单元分支里 `U/C/FR` 的舍入语义
+- 具体修复：
+  - 普通湿单元 `U/C/FR` 改为匹配 Python reference path 的 `numpy.float32` 运算链
+  - near-dry branch 保持原 Python reference 的 double-style geometry chain
+- 重新验证后：
+  - 10m compare：通过
+  - 2h compare：通过
+  - 40h compare：通过
+- 新的 accepted exact 结果：
+  - 10m: `1.457326 s -> 1.259714 s`
+  - 2h: `11.400661 s -> 10.262386 s`
+  - 40h: `202.210932 s -> 177.525983 s`
+- 当前判断：
+  - `ISLAM_CPP_USE_UPDATE_CELL=1` 已可升级为本分支 accepted exact 配置组成部分
+  - 这一轮收益主要来自把 `Update_cell_proprity2` 的 per-cell 主循环彻底 native 化
 
-### Next
+## 2026-03-16 phase 3 first attempt
 
-- finish the 40-hour no-profile single-process exact candidate run for:
-  - `nodechain + Roe flux`
-- compare it against:
-  - `result/serial_python_40h_noprof`
-- then write:
-  - `cython_error_report.md`
-  - `cython_speed_report.md`
-  - `final_benchmark_matrix.md`
-  - `final_cython_branch_recommendation.md`
-  - `overnight_hand_off.md`
-
-## 2026-03-16 Phase 6-7
-
-### Done
-
-- completed the 40-hour no-profile exact-candidate run:
-  - `reports/cython_nodechain_roe_40h_exact_summary.json`
-- completed strict 40-hour compare:
-  - `reports/cython_nodechain_roe_40h_exact_compare.json`
-- completed a 2-hour profiled run for the accepted exact candidate:
-  - `reports/cython_nodechain_roe_2h_profile_hit_v3_summary.json`
-  - `reports/cython_nodechain_roe_2h_profile_hit_v3_profile_summary.json`
-- updated the validation, speed, benchmark-matrix, recommendation, and hand-off reports
-
-### Findings
-
-- accepted exact candidate on this branch:
-  - `ISLAM_USE_CYTHON_NODECHAIN=1`
-  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
-  - `ISLAM_USE_CYTHON_UPDATE_CELL=0`
-- 40-hour evolve/model time:
-  - `562.262618 s -> 213.933772 s`
-  - speedup `2.628x`
-- 40-hour evolve wall:
-  - `565.037927 s -> 217.559511 s`
-  - speedup `2.597x`
-- 40-hour step count is unchanged:
-  - `29783 -> 29783`
-- strict compare remains clean:
-  - `allclose = true`
-- update-cell kernel still drifts and remains excluded from the exact candidate
-
-### Next
-
-- clean up and stage the accepted exact-Cython work for a checkpoint commit
-- keep generated build artifacts and failed experimental paths out of the final commit
+- 开始推进 `Assemble_Flux_2` 的下一层 native pushdown：
+  - 保留 NumPy `conservative increment`
+  - 仅把 `manning/FRTIMP` 的 friction substep 和最终 dry-admissibility 做成 C++ exact-intent kernel
+- 10m short run 速度很好：
+  - `1.259714 s -> 1.099834 s`
+- 但 10m exact compare 未通过：
+  - 第一处分叉出现在 `time ~= 198.622894 s`
+  - `cfl_history.csv` 首次出现 `1.5e-05` 量级时间偏差
+  - `internal_node_history.csv` 随后出现 `1e-5 ~ 1e-3` 量级的流量漂移
+- 额外定位结果：
+  - step-1 单步局部对照是逐点一致的
+  - 漂移是多步推进后才出现，不是首步立即分叉
+- 当前判断：
+  - 这条 `Assemble` kernel 还有性能潜力，但还不能进入 accepted exact 配置
+  - 下一步应继续抓“首个分叉步”的局部 conservative/friction 状态差异，而不是直接推 2h/40h
