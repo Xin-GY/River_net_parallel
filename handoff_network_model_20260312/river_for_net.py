@@ -37,6 +37,7 @@ try:
     from cython_river_kernels import (
         fill_general_hr_flux_exact as cython_fill_general_hr_flux_exact,
         fill_general_hr_flux_exact_cpp_deep as cpp_fill_general_hr_flux_exact_deep,
+        fill_rectangular_hr_flux_exact_cpp_deep as cpp_fill_rectangular_hr_flux_exact_deep,
         update_cell_properties_exact as cython_update_cell_properties_exact,
         update_cell_properties_exact_cpp as cpp_update_cell_properties_exact,
         prepare_cpp_update_cell_plan as prepare_cpp_update_cell_plan,
@@ -48,6 +49,7 @@ try:
 except Exception:
     cython_fill_general_hr_flux_exact = None
     cpp_fill_general_hr_flux_exact_deep = None
+    cpp_fill_rectangular_hr_flux_exact_deep = None
     cython_update_cell_properties_exact = None
     cpp_update_cell_properties_exact = None
     prepare_cpp_update_cell_plan = None
@@ -881,6 +883,7 @@ class River(Process):
         default_roe_flag = '1' if os.environ.get('ISLAM_USE_CPP_EVOLVE', '0') == '1' else '0'
         self.use_cython_roe_flux = os.environ.get('ISLAM_USE_CYTHON_ROE_FLUX', default_roe_flag) == '1'
         self.use_cpp_roe_flux_deep = os.environ.get('ISLAM_CPP_USE_ROE_FLUX_DEEP', '0') == '1'
+        self.use_cpp_roe_flux_rect_deep = os.environ.get('ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP', '0') == '1'
         default_update_flag = os.environ.get('ISLAM_USE_CYTHON_UPDATE_CELL', '0')
         self.use_cython_update_cell = os.environ.get('ISLAM_CPP_USE_UPDATE_CELL', default_update_flag) == '1'
         self.use_cpp_assemble = os.environ.get('ISLAM_CPP_USE_ASSEMBLE', '0') == '1'
@@ -2723,6 +2726,12 @@ class River(Process):
         return state['flux'], corr_left, corr_right, details
 
     def _caculate_roe_flux_rectangular_hr(self):
+        if (
+            bool(getattr(self, 'use_cpp_roe_flux_rect_deep', False))
+            and cpp_fill_rectangular_hr_flux_exact_deep is not None
+        ):
+            if cpp_fill_rectangular_hr_flux_exact_deep(self):
+                return
         self.Flux_LOC.fill(0.0)
         self.Flux_Source_left.fill(0.0)
         self.Flux_Source_right.fill(0.0)

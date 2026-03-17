@@ -1,73 +1,39 @@
-# C++ Evolve Bridge Error Report
+# C++ Accepted Reaudit Error Report
 
 ## Scope
 
-This report validates the current `cpp bridge` path against the same-branch single-process exact serial route, using explicit exact kernel flags:
+Candidate under validation:
 
-- `ISLAM_USE_CYTHON_NODECHAIN=1`
-- `ISLAM_USE_CYTHON_ROE_FLUX=1`
-- `ISLAM_USE_CYTHON_UPDATE_CELL=0`
+- accepted exact checkpoint `9535623`
+- plus `ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP=1`
 
-The bridge route adds:
+Baseline for exact compare:
 
-- `ISLAM_USE_CPP_EVOLVE=1`
-- `ISLAM_CPP_THREADS=0`
+- `/tmp/feature_cpp_exact_evolve_nodecommit_refresh/handoff_network_model_20260312/result/cpp_nodecommit_deepcommit_{10m,2h,40h}`
 
-## Root Cause Found During Validation
+## Compare Results
 
-The first bridge draft introduced small long-run drift because the Cython bridge converted per-step time values through `float(...)` on every iteration. That changed the exact scalar update path enough to show up after 2 hours.
+| Case | Compare report | allclose | max_abs | max_rel |
+| --- | --- | --- | ---: | ---: |
+| 10m | `reports/accepted_reaudit_rectdeep_10m_compare.json` | `true` | `0.0` | `0.0` |
+| 2h | `reports/accepted_reaudit_rectdeep_2h_compare.json` | `true` | `0.0` | `0.0` |
+| 40h | `reports/accepted_reaudit_rectdeep_40h_compare.json` | `true` | `0.0` | `0.0` |
 
-The bridge was corrected to preserve the original Python-object arithmetic order for:
+## Result
 
-- `current_sim_time`
-- `DT`
-- `sub_step_time`
-- CFL/yield-step boundary checks
+The new rectangular Roe-flux deep path is exact on all three gate cases:
 
-After that change, the exact compare returned to fully clean.
+- 10m
+- 2h
+- 40h
 
-## 10-Minute Compare
+No drift was observed in:
 
-- baseline:
-  - `result/cython_exact_serial_10m_recheck`
-- candidate:
-  - `result/cpp_evolve_serial_10m_explicitkernels`
-- report:
-  - `reports/cpp_bridge_explicitkernels_vs_cython_serial_10m.json`
-- result:
-  - `allclose = true`
+- `cfl_history.csv`
+- `internal_node_history.csv`
+- saved river outputs
+- final state and control-point files included by `compare_results.py`
 
-## 2-Hour Compare
+## Interpretation
 
-- baseline:
-  - `result/cython_exact_serial_2h_recheck`
-- candidate:
-  - `result/cpp_evolve_serial_2h_explicitkernels_v2`
-- report:
-  - `reports/cpp_bridge_explicitkernels_vs_cython_serial_2h_v2.json`
-- result:
-  - `allclose = true`
-
-## 40-Hour Compare
-
-- baseline:
-  - `result/cython_exact_serial_40h_recheck`
-- candidate:
-  - `result/cpp_evolve_serial_40h_explicitkernels_v1`
-- report:
-  - `reports/cpp_bridge_explicitkernels_vs_cython_serial_40h.json`
-- result:
-  - `allclose = true`
-
-## Notes On Accepted-Baseline Compare
-
-Direct directory compare against the historical accepted 40-hour output tree is not a clean gate for this branch because the saved output cadence differs, especially in `internal_node_history.csv` row counts.
-
-For exactness on this branch, the correct gate is:
-
-- same branch
-- same kernel set
-- same output schedule
-- only toggle `ISLAM_USE_CPP_EVOLVE`
-
-Under that gate, the bridge is currently exact.
+This round did not introduce a “short-case fast but long-case drift” problem. The path is exact and safe to consider for accepted status.

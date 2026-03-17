@@ -142,6 +142,11 @@ inline bool is_cell_dry(
     return false;
 }
 
+inline double rectangular_pressure(double g, double width, double depth) noexcept {
+    const double h = (depth > 0.0) ? depth : 0.0;
+    return 0.5 * g * width * h * h;
+}
+
 }  // namespace
 
 UpdateCellStats update_cell_properties_exact(
@@ -720,6 +725,161 @@ void fill_general_hr_flux_exact_deep(
         const double rain_half = -0.5 * cell_lengths[j] * static_cast<double>(QIN[j]);
         flux_source_left[j * 2] += rain_half;
         flux_source_right[j * 2] += rain_half;
+    }
+}
+
+void fill_rectangular_hr_flux_exact_deep(
+    std::size_t n,
+    double g,
+    double tiny,
+    double width,
+    double roe_entropy_fix,
+    double roe_entropy_fix_factor,
+    const double* river_bed_height,
+    const double* water_depth,
+    const float* S,
+    const float* Q,
+    const float* PRESS,
+    const float* QIN,
+    const float* cell_lengths,
+    double* flux_loc,
+    double* flux_source_left,
+    double* flux_source_right,
+    double* flux_source_center,
+    double* flux_friction_left,
+    double* flux_friction_right,
+    double* cell_press_source
+) {
+    if (n == 0) {
+        return;
+    }
+
+    const std::size_t cell_num = n - 1;
+
+    std::fill(flux_loc, flux_loc + n * 2, 0.0);
+    std::fill(flux_source_center, flux_source_center + n * 2, 0.0);
+    std::fill(cell_press_source, cell_press_source + n * 2, 0.0);
+    std::fill(flux_source_left, flux_source_left + (n + 1) * 2, 0.0);
+    std::fill(flux_source_right, flux_source_right + (n + 1) * 2, 0.0);
+    std::fill(flux_friction_left, flux_friction_left + (n + 1) * 2, 0.0);
+    std::fill(flux_friction_right, flux_friction_right + (n + 1) * 2, 0.0);
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const double z_left = river_bed_height[i];
+        const double z_right = river_bed_height[i + 1];
+        const double h_left_center = std::max(water_depth[i], 0.0);
+        const double h_right_center = std::max(water_depth[i + 1], 0.0);
+        const double eta_left = z_left + h_left_center;
+        const double eta_right = z_right + h_right_center;
+        const double q_left_center = static_cast<double>(Q[i]);
+        const double q_right_center = static_cast<double>(Q[i + 1]);
+        double u_left = 0.0;
+        double u_right = 0.0;
+        if (h_left_center > tiny && static_cast<double>(S[i]) > tiny) {
+            u_left = q_left_center / static_cast<double>(S[i]);
+        }
+        if (h_right_center > tiny && static_cast<double>(S[i + 1]) > tiny) {
+            u_right = q_right_center / static_cast<double>(S[i + 1]);
+        }
+
+        const double z_face = (z_left >= z_right) ? z_left : z_right;
+        const double h_left_hr = std::max(eta_left - z_face, 0.0);
+        const double h_right_hr = std::max(eta_right - z_face, 0.0);
+        const double a_left = width * h_left_hr;
+        const double a_right = width * h_right_hr;
+        double q_left = q_left_center;
+        double q_right = q_right_center;
+        double flux0 = 0.0;
+        double flux1 = 0.0;
+
+        if (a_left <= tiny && a_right <= tiny) {
+            flux0 = 0.0;
+            flux1 = 0.0;
+        } else if (a_right <= tiny) {
+            const double c_left = std::sqrt(g * std::max(h_left_hr, 0.0));
+            const double left_flux0 = q_left;
+            const double left_flux1 = q_left * u_left + rectangular_pressure(g, width, h_left_hr);
+            if (u_left - c_left >= 0.0) {
+                flux0 = left_flux0;
+                flux1 = left_flux1;
+            } else if (u_left + 2.0 * c_left <= 0.0) {
+                flux0 = 0.0;
+                flux1 = 0.0;
+            } else {
+                const double c_star = std::max((u_left + 2.0 * c_left) / 3.0, 0.0);
+                const double h_star = (c_star * c_star) / g;
+                const double u_star = c_star;
+                const double q_star = width * h_star * u_star;
+                flux0 = q_star;
+                flux1 = q_star * u_star + rectangular_pressure(g, width, h_star);
+            }
+        } else if (a_left <= tiny) {
+            const double c_right = std::sqrt(g * std::max(h_right_hr, 0.0));
+            const double right_flux0 = q_right;
+            const double right_flux1 = q_right * u_right + rectangular_pressure(g, width, h_right_hr);
+            if (u_right + c_right <= 0.0) {
+                flux0 = right_flux0;
+                flux1 = right_flux1;
+            } else if (u_right - 2.0 * c_right >= 0.0) {
+                flux0 = 0.0;
+                flux1 = 0.0;
+            } else {
+                const double c_star = std::max((2.0 * c_right - u_right) / 3.0, 0.0);
+                const double h_star = (c_star * c_star) / g;
+                const double u_star = -c_star;
+                const double q_star = width * h_star * u_star;
+                flux0 = q_star;
+                flux1 = q_star * u_star + rectangular_pressure(g, width, h_star);
+            }
+        } else {
+            q_left = a_left * u_left;
+            q_right = a_right * u_right;
+            const double f_left0 = q_left;
+            const double f_left1 = q_left * u_left + rectangular_pressure(g, width, h_left_hr);
+            const double f_right0 = q_right;
+            const double f_right1 = q_right * u_right + rectangular_pressure(g, width, h_right_hr);
+            const double sqrt_hl = std::sqrt(std::max(h_left_hr, 0.0));
+            const double sqrt_hr = std::sqrt(std::max(h_right_hr, 0.0));
+            const double denom = sqrt_hl + sqrt_hr;
+            double u_roe = 0.0;
+            if (denom > tiny) {
+                u_roe = (u_left * sqrt_hl + u_right * sqrt_hr) / denom;
+            }
+            const double c_roe = std::sqrt(g * 0.5 * std::max(h_left_hr + h_right_hr, 0.0));
+            if (c_roe <= tiny) {
+                flux0 = 0.5 * (f_left0 + f_right0);
+                flux1 = 0.5 * (f_left1 + f_right1);
+            } else {
+                const double dh = h_right_hr - h_left_hr;
+                const double dq = q_right - q_left;
+                const double alpha1 = ((u_roe + c_roe) * dh - dq) / (2.0 * c_roe);
+                const double alpha2 = (dq - (u_roe - c_roe) * dh) / (2.0 * c_roe);
+                const double lam1 = u_roe - c_roe;
+                const double lam2 = u_roe + c_roe;
+                const double abs1 = roe_abs_with_fix(lam1, c_roe, roe_entropy_fix, roe_entropy_fix_factor);
+                const double abs2 = roe_abs_with_fix(lam2, c_roe, roe_entropy_fix, roe_entropy_fix_factor);
+                flux0 = 0.5 * (f_left0 + f_right0) - 0.5 * (abs1 * alpha1 + abs2 * alpha2);
+                flux1 = 0.5 * (f_left1 + f_right1) - 0.5 * (
+                    abs1 * alpha1 * (u_roe - c_roe) + abs2 * alpha2 * (u_roe + c_roe)
+                );
+            }
+        }
+
+        const double corr_left = rectangular_pressure(g, width, std::max(h_left_center, 0.0)) - rectangular_pressure(g, width, h_left_hr);
+        const double corr_right = rectangular_pressure(g, width, std::max(h_right_center, 0.0)) - rectangular_pressure(g, width, h_right_hr);
+
+        flux_loc[i * 2] = flux0;
+        flux_loc[i * 2 + 1] = flux1;
+        flux_source_right[i * 2 + 1] = corr_left;
+        flux_source_left[(i + 1) * 2 + 1] = -corr_right;
+    }
+
+    for (std::size_t j = 1; j <= cell_num; ++j) {
+        if (std::fabs(static_cast<double>(QIN[j])) > 0.0) {
+            const double rain_half = -0.5 * cell_lengths[j] * static_cast<double>(QIN[j]);
+            flux_source_left[j * 2] += rain_half;
+            flux_source_right[j * 2] += rain_half;
+        }
     }
 }
 

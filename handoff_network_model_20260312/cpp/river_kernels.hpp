@@ -157,4 +157,27 @@ void fill_general_hr_flux_exact_deep(
     double* flux_source_right
 );
 
+void fill_rectangular_hr_flux_exact_deep(
+    std::size_t n,
+    double g,
+    double tiny,
+    double width,
+    double roe_entropy_fix,
+    double roe_entropy_fix_factor,
+    const double* river_bed_height,
+    const double* water_depth,
+    const float* S,
+    const float* Q,
+    const float* PRESS,
+    const float* QIN,
+    const float* cell_lengths,
+    double* flux_loc,
+    double* flux_source_left,
+    double* flux_source_right,
+    double* flux_source_center,
+    double* flux_friction_left,
+    double* flux_friction_right,
+    double* cell_press_source
+);
+
 }  // namespace rivernet

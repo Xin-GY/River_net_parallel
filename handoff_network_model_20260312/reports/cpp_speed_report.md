@@ -1,73 +1,50 @@
-# C++ Evolve Bridge Speed Report
+# C++ Accepted Reaudit Speed Report
 
 ## Scope
 
-- branch: `feature/cpp-exact-evolve-fullchain`
+- branch: `feature/cpp-exact-accepted-reaudit-next`
 - timing policy: `evolve/model time` only
-- initialization, Fine, section-table construction, coordinate conversion, and final write-out are excluded from the headline timing
-- comparison target in this report:
-  - single-process `cython exact serial`
-  - single-process `cpp bridge + explicit cython nodechain/roe kernels`
+- initialization is excluded
+- only single-process exact runs are considered
 
-## Runtime Flags
+## Candidate
 
-- exact serial baseline:
-  - `ISLAM_USE_CPP_EVOLVE=0`
-  - `ISLAM_USE_CYTHON_NODECHAIN=1`
-  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
-  - `ISLAM_USE_CYTHON_UPDATE_CELL=0`
-- cpp bridge candidate:
-  - `ISLAM_USE_CPP_EVOLVE=1`
-  - `ISLAM_CPP_THREADS=0`
-  - `ISLAM_USE_CYTHON_NODECHAIN=1`
-  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
-  - `ISLAM_USE_CYTHON_UPDATE_CELL=0`
+Accepted exact checkpoint `9535623`, plus:
 
-## 10-Minute Case
+- `ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP=1`
 
-- `cython exact serial`
-  - model/evolve: `1.471941 s`
-  - wall: `1.501918 s`
-  - steps: `181`
-- `cpp bridge`
-  - model/evolve: `1.466367 s`
-  - wall: `1.494968 s`
-  - steps: `181`
-- delta vs exact serial:
-  - model/evolve: `-0.005574 s`
-  - wall: `-0.006950 s`
+## Historical Accepted Baseline vs New Candidate
 
-## 2-Hour Case
+| Case | Accepted `9535623` evolve (s) | New candidate evolve (s) | Speedup |
+| --- | ---: | ---: | ---: |
+| 10m | 0.667691 | 0.912919 | 0.73x |
+| 2h | 5.103571 | 6.680291 | 0.76x |
+| 40h | 91.329929 | 65.237010 | 1.40x |
 
-- `cython exact serial`
-  - model/evolve: `11.697025 s`
-  - wall: `11.899289 s`
-  - steps: `1482`
-- `cpp bridge`
-  - model/evolve: `11.385013 s`
-  - wall: `11.582971 s`
-  - steps: `1482`
-- delta vs exact serial:
-  - model/evolve: `-0.312012 s`
-  - wall: `-0.316318 s`
+## Fresh Reaudit Replay vs New Candidate
 
-## 40-Hour Full Case
+The clean replay of `9535623` in this worktree was slower than the historical accepted branch record, but the new candidate still improved it strongly:
 
-- `cython exact serial`
-  - model/evolve: `206.436461 s`
-  - wall: `210.395574 s`
-  - steps: `29783`
-- `cpp bridge`
-  - model/evolve: `205.593739 s`
-  - wall: `209.546805 s`
-  - steps: `29783`
-- delta vs exact serial:
-  - model/evolve: `-0.842722 s`
-  - wall: `-0.848769 s`
+| Case | Fresh replay evolve (s) | New candidate evolve (s) | Speedup |
+| --- | ---: | ---: | ---: |
+| 10m | 1.233370 | 0.912919 | 1.35x |
+| 2h | 9.695405 | 6.680291 | 1.45x |
+| 40h | 101.177666 | 65.237010 | 1.55x |
 
-## Interpretation
+## 40h Substage Delta
 
-- The current `cpp bridge` is not yet the full C++ numerical core; it is an exact compiled orchestrator plus C++ output buffer that reuses the validated cython exact kernels already present on this branch.
-- Even at this partial stage, the bridge is not neutral: it shows a small but repeatable evolve-time win on 10-minute, 2-hour, and 40-hour cases.
-- The next meaningful step is no longer “prove the bridge can run”; that is now done.
-- The next meaningful step is to migrate actual river-step kernels and node-coupling compute from Python/Cython orchestration into C++ runtime kernels, then re-measure against this checkpoint.
+Relative to the fresh replay:
+
+- `river_step.flux`: `42.333267 s -> 4.547068 s`
+- `river_step.assemble`: `7.132460 s -> 6.854175 s`
+- `river_step.update_cell`: `4.027083 s -> 3.574104 s`
+- `nodechain.total`: `38.318935 s -> 41.519373 s`
+
+## Conclusion
+
+This round is accepted on the full-case gate because:
+
+- strict compare passes on 10m / 2h / 40h
+- 40h `evolve/model time` drops from `91.329929 s` to `65.237010 s`
+
+The gain is a real ownership push in the rectangular Roe-flux path, not a dispatch-shape effect.

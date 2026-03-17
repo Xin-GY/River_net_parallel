@@ -806,3 +806,78 @@
 - checkpoint this path as the new accepted exact candidate on the continuation line
 - move to `_refresh_cell_state` deeper native ownership next
 - only revisit residual/Jacobian if the post-refresh profile says it is worth it
+
+## 2026-03-17 Accepted Reaudit Stage 0-2: fresh hotspot audit from `9535623`
+
+### Done
+
+- created clean continuation branch/worktree from the accepted exact checkpoint:
+  - `feature/cpp-exact-accepted-reaudit-next`
+  - `/tmp/feature_cpp_exact_accepted_reaudit_next`
+- recorded re-audit preflight:
+  - `reports/accepted_reaudit_preflight_git_status.txt`
+  - `reports/accepted_reaudit_branch_layout.md`
+- rebuilt local extensions in the new worktree
+- reran accepted exact audit cases from the worktree root:
+  - 10m
+  - 2h
+  - 40h
+- reran strict compare for all three cases
+- wrote accepted-path audit reports:
+  - `accepted_exact_fresh_hotspots_top10.md`
+  - `accepted_exact_first_order_blockers.md`
+  - `accepted_exact_native_gap_map.md`
+  - `accepted_exact_single_next_move.md`
+
+### Findings
+
+- the clean re-audit replay of `9535623` came out slower than the historical accepted branch record, but the blocker ordering stayed consistent
+- the accepted exact path's first-order blocker is not refresh, residual/Jacobian, fullstep, build flags, or dispatch shape
+- the actual first-order blocker is the remaining Python ownership in the **rectangular Roe flux** path
+- the accepted general-HR deep kernel is already in place; the rectangular path is the non-redundant gap
+
+### Next
+
+- implement only one direction:
+  - deeper exact native ownership for the rectangular Roe-flux path
+- do not reopen refresh/fullstep/build-flag/dispatch routes on this line
+
+## 2026-03-17 Accepted Reaudit Stage 3-4: deep rectangular Roe flux ownership
+
+### Done
+
+- added a new exact native kernel for the rectangular HR Roe-flux path
+- added a narrow feature flag:
+  - `ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP=1`
+- kept the explicit TVD-limiter path on Python fallback
+- validated the new path on:
+  - 10m
+  - 2h
+  - 40h
+- wrote implementation/final reports:
+  - `cpp_roe_flux_rect_deep_plan.md`
+  - `cpp_roe_flux_rect_deep_impl.md`
+  - `cpp_roe_flux_rect_deep_before_after.md`
+  - `cpp_error_report.md`
+  - `cpp_speed_report.md`
+  - `cpp_benchmark_matrix.md`
+  - `final_cpp_accepted_reaudit_recommendation.md`
+  - `overnight_hand_off.md`
+
+### Findings
+
+- 10m strict compare: pass
+- 2h strict compare: pass
+- 40h strict compare: pass
+- 40h `allclose`: `true`
+- full-case gate improved clearly:
+  - `91.329929 s -> 65.237010 s`
+- the gain is real ownership pushdown:
+  - `river_step.flux`: `39.820271 s -> 4.547068 s` against the accepted historical checkpoint
+- bridge/python crossing count stayed unchanged, so the win is not a dispatch-shape artifact
+
+### Next
+
+- treat this as the new accepted exact candidate for the branch family
+- if we continue, start from a new fresh audit on the `65.237010 s` baseline
+- do not reopen refresh/fullstep/build-flag/dispatch routes unless the new audit proves they became first-order again

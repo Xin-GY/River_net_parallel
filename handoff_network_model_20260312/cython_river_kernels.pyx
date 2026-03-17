@@ -152,6 +152,29 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double* flux_source_right,
     ) except +
 
+    void fill_rectangular_hr_flux_exact_deep_cpp_kernel "rivernet::fill_rectangular_hr_flux_exact_deep"(
+        size_t n,
+        double g,
+        double tiny,
+        double width,
+        double roe_entropy_fix,
+        double roe_entropy_fix_factor,
+        const double* river_bed_height,
+        const double* water_depth,
+        const float* S,
+        const float* Q,
+        const float* PRESS,
+        const float* QIN,
+        const float* cell_lengths,
+        double* flux_loc,
+        double* flux_source_left,
+        double* flux_source_right,
+        double* flux_source_center,
+        double* flux_friction_left,
+        double* flux_friction_right,
+        double* cell_press_source,
+    ) except +
+
 
 cdef inline double _maxd(double a, double b) noexcept:
     return a if a >= b else b
@@ -460,6 +483,78 @@ cpdef bint fill_general_hr_flux_exact_cpp_deep(object river):
         &Flux_LOC_arr[0, 0],
         &Flux_Source_left_arr[0, 0],
         &Flux_Source_right_arr[0, 0],
+    )
+    return True
+
+
+cpdef bint fill_rectangular_hr_flux_exact_cpp_deep(object river):
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] river_bed_height_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] water_depth_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] S_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Q_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] PRESS_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] QIN_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] cell_lengths_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_LOC_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_left_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_right_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_center_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Friction_left_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Friction_right_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] cell_press_source_arr
+    cdef int cell_num
+    cdef double width
+
+    if bool(getattr(river, "use_explicit_tvd_limiter", False)):
+        return False
+    if not bool(getattr(river, "use_rectangular_hr_flux", False)):
+        return False
+    if getattr(river, "constant_rectangular_width", None) is None:
+        return False
+
+    cell_num = int(river.cell_num)
+    if cell_num < 0:
+        return False
+    width = float(river.constant_rectangular_width)
+    if width <= 0.0:
+        return False
+
+    river_bed_height_arr = river.river_bed_height
+    water_depth_arr = river.water_depth
+    S_arr = river.S
+    Q_arr = river.Q
+    PRESS_arr = river.PRESS
+    QIN_arr = river.QIN
+    cell_lengths_arr = river.cell_lengths
+    Flux_LOC_arr = river.Flux_LOC
+    Flux_Source_left_arr = river.Flux_Source_left
+    Flux_Source_right_arr = river.Flux_Source_right
+    Flux_Source_center_arr = river.Flux_Source_center
+    Flux_Friction_left_arr = river.Flux_Friction_left
+    Flux_Friction_right_arr = river.Flux_Friction_right
+    cell_press_source_arr = river.cell_press_source
+
+    fill_rectangular_hr_flux_exact_deep_cpp_kernel(
+        <size_t>(cell_num + 1),
+        float(river.g),
+        float(max(river.S_limit, river.EPSILON)),
+        width,
+        float(river.roe_entropy_fix),
+        float(river.roe_entropy_fix_factor),
+        &river_bed_height_arr[0],
+        &water_depth_arr[0],
+        &S_arr[0],
+        &Q_arr[0],
+        &PRESS_arr[0],
+        &QIN_arr[0],
+        &cell_lengths_arr[0],
+        &Flux_LOC_arr[0, 0],
+        &Flux_Source_left_arr[0, 0],
+        &Flux_Source_right_arr[0, 0],
+        &Flux_Source_center_arr[0, 0],
+        &Flux_Friction_left_arr[0, 0],
+        &Flux_Friction_right_arr[0, 0],
+        &cell_press_source_arr[0, 0],
     )
     return True
 
