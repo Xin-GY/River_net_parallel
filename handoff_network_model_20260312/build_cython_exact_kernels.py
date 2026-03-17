@@ -1,9 +1,20 @@
+import os
 from pathlib import Path
 
 from setuptools import Extension, setup
 
 import numpy as np
 from Cython.Build import cythonize
+
+
+def build_flags(*extra):
+    flags = ["-O3"]
+    if os.getenv("ISLAM_BUILD_USE_NDEBUG", "0") == "1":
+        flags.append("-DNDEBUG")
+    if os.getenv("ISLAM_BUILD_USE_MARCH_NATIVE", "0") == "1":
+        flags.append("-march=native")
+    flags.extend(extra)
+    return flags
 
 
 def existing_extensions():
@@ -15,7 +26,7 @@ def existing_extensions():
                 name="cython_node_iteration",
                 sources=["cython_node_iteration.pyx"],
                 include_dirs=[np.get_include()],
-                extra_compile_args=["-O3"],
+                extra_compile_args=build_flags(),
             )
         )
     if (root / "cython_river_kernels.pyx").exists():
@@ -25,7 +36,7 @@ def existing_extensions():
                 sources=["cython_river_kernels.pyx", "cpp/river_kernels.cpp"],
                 include_dirs=[np.get_include(), str(root)],
                 language="c++",
-                extra_compile_args=["-O3", "-std=c++17"],
+                extra_compile_args=build_flags("-std=c++17"),
             )
         )
     return specs

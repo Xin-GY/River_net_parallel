@@ -254,6 +254,36 @@
   1. branch-safe build/layout evaluation
   2. a higher-confidence exact ownership push only where 40h profile says it is still first-order
 
+## 2026-03-17 Build flags recheck
+
+### Done
+
+- added opt-in build-flag controls to:
+  - `build_cython_cross_section.py`
+  - `build_cython_exact_kernels.py`
+  - `build_cpp_exact_kernels.py`
+- evaluated the accepted exact path with:
+  - `ISLAM_BUILD_USE_NDEBUG=1`
+  - `ISLAM_BUILD_USE_MARCH_NATIVE=1`
+- wrote:
+  - `cpp_build_flags_eval_v3.md`
+  - `cpp_memory_layout_eval_v3.md`
+
+### Findings
+
+- this toolchain already injects `-DNDEBUG`, so the effective new flag was `-march=native`
+- `-march=native` is not acceptable for this exact branch:
+  - 10m steps: `181 -> 7494`
+  - 2h steps: `1482 -> 8823`
+  - strict compare failed decisively
+- no 40h run was justified after those failures
+
+### Next
+
+- keep `9535623` as the accepted exact baseline
+- stop extending rejected refresh/fullstep/native-flags paths
+- if exact-only work continues, restart from a fresh hotspot audit on the accepted baseline
+
 ## 2026-03-16 C++ fullchain pushdown continuation
 
 ### Done

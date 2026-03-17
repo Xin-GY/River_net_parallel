@@ -1,90 +1,67 @@
 # Overnight Hand-off
 
-## Branch / Worktree
+## Branches / worktrees
 
-- branch:
-  - `feature/cpp-exact-evolve-kernelize-next`
-- worktree:
-  - `/tmp/feature_cpp_exact_evolve_kernelize_next`
+- preserved experiment worktree:
+  - `/tmp/feature_cpp_exact_evolve_nodecommit_refresh`
+  - contains the rejected refresh-deep experiment and its diff snapshot
+- clean continuation worktree:
+  - `/tmp/feature_cpp_exact_evolve_nodecommit_refresh_next`
+  - branch: `feature/cpp-exact-evolve-nodecommit-refresh-next`
+  - starts from accepted checkpoint `9535623`
 
-## Accepted Code Checkpoints
+## Accepted code state
 
-- `13b80ca`
-  - corrected single-process exact baseline profiling and hotspot reports
-- `2931bda`
-  - accepted exact nodechain wrapper-bypass
-- `535fb8a`
-  - documentation of the exact direct-dispatch bridge experiment
+Best accepted exact checkpoint remains:
 
-## Current Recommended Exact Configuration
+- `9535623` `perf: deepen exact nodechain commit ownership (+0.8% 40h evolve)`
 
-- `ISLAM_USE_CPP_EVOLVE=1`
-- `ISLAM_CPP_THREADS=0`
-- `ISLAM_USE_CYTHON_NODECHAIN=1`
-- `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
-- `ISLAM_USE_CYTHON_ROE_FLUX=1`
-- `ISLAM_CPP_USE_UPDATE_CELL=0`
-- `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
+Accepted exact 40h evolve/model time:
 
-## Current Best 40h Result On This Branch
+- `91.32992911338806 s`
 
-- evolve/model:
-  - `202.210932 s`
-- evolve wall:
-  - `206.131686 s`
-- strict compare:
-  - pass
+## What this continuation branch added
 
-## Documented But Rejected Experiment
+- explicit no-go documentation for:
+  - refresh-deep experiments
+  - residual/Jacobian recheck
+  - fullstep recheck
+- opt-in build flag support for:
+  - `ISLAM_BUILD_USE_NDEBUG`
+  - `ISLAM_BUILD_USE_MARCH_NATIVE`
+- explicit rejection evidence for `-march=native` on the exact path
 
-- direct-dispatch bridge:
-  - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=1`
-- exact:
-  - yes
-- short-case result:
-  - faster
-- 40h result:
-  - `203.544599 s`
-- disposition:
-  - rejected as default exact path because it is slower than the accepted phase-3 configuration
+## What is experimental only
 
-## Important Reports
+- inline Cython refresh-deep implementation:
+  - fast
+  - not exact
+- single-cell C++ exact refresh:
+  - exact on 10m/2h
+  - slower than accepted path
+- `-march=native` build:
+  - not exact
+  - rejected
 
-- baseline and hotspots:
-  - `reports/cpp_exact_serial_baseline.md`
-  - `reports/cpp_hotspots_top10.md`
-- accepted nodechain improvement:
-  - `reports/cpp_nodechain_kernel_plan.md`
-  - `reports/cpp_nodechain_impl.md`
-  - `reports/cpp_nodechain_before_after.md`
-- documented direct-dispatch experiment:
-  - `reports/cpp_fullchain_native_loop_plan.md`
-  - `reports/cpp_fullchain_native_loop_impl.md`
-  - `reports/cpp_boundary_crossing_before_after.md`
-- overall recommendation:
-  - `reports/cpp_benchmark_matrix.md`
-  - `reports/final_cpp_branch_recommendation.md`
+## Key report paths
 
-## Uncommitted / Generated Artifacts
+- refresh-deep plan:
+  - [cpp_nodechain_refresh_deep_plan.md](/tmp/feature_cpp_exact_evolve_nodecommit_refresh_next/handoff_network_model_20260312/reports/cpp_nodechain_refresh_deep_plan.md)
+- refresh-deep implementation notes:
+  - [cpp_nodechain_refresh_deep_impl.md](/tmp/feature_cpp_exact_evolve_nodecommit_refresh_next/handoff_network_model_20260312/reports/cpp_nodechain_refresh_deep_impl.md)
+- refresh-deep before/after:
+  - [cpp_nodechain_refresh_deep_before_after.md](/tmp/feature_cpp_exact_evolve_nodecommit_refresh_next/handoff_network_model_20260312/reports/cpp_nodechain_refresh_deep_before_after.md)
+- residual recheck:
+  - [nodechain_residual_recheck_after_commit_refresh.md](/tmp/feature_cpp_exact_evolve_nodecommit_refresh_next/handoff_network_model_20260312/reports/nodechain_residual_recheck_after_commit_refresh.md)
+- fullstep recheck:
+  - [fullstep_recheck_after_nodecommit_refresh.md](/tmp/feature_cpp_exact_evolve_nodecommit_refresh_next/handoff_network_model_20260312/reports/fullstep_recheck_after_nodecommit_refresh.md)
+- build flags evaluation:
+  - [cpp_build_flags_eval_v3.md](/tmp/feature_cpp_exact_evolve_nodecommit_refresh_next/handoff_network_model_20260312/reports/cpp_build_flags_eval_v3.md)
+- final recommendation:
+  - [final_cpp_nodecommit_refresh_recommendation.md](/tmp/feature_cpp_exact_evolve_nodecommit_refresh_next/handoff_network_model_20260312/reports/final_cpp_nodecommit_refresh_recommendation.md)
 
-The worktree still contains untracked generated files that were intentionally not committed:
+## Recommended next move
 
-- compiled extension outputs:
-  - `cython_cpp_bridge.cpp`
-  - `cython_cpp_bridge.cpython-311-*.so`
-  - `cython_node_iteration.c`
-  - `cython_node_iteration.cpython-311-*.so`
-  - `cython_river_kernels.c`
-  - `cython_river_kernels.cpython-311-*.so`
-- invalid or intermediate benchmark artifacts from discarded runs
-- raw experiment outputs that are useful for local inspection but not part of the accepted git history
+Do not keep digging on this branch family blindly.
 
-## Recommended Next Move
-
-Continue from the accepted phase-3 exact baseline on this branch, not from the rejected direct-dispatch path.
-
-The next best target is:
-
-1. native exact work on `Update_cell_proprity2`
-2. then deeper native ownership of nodechain state commit
-3. then a true native river-step workspace to cut Python object dependence inside the step loop
+If we continue exact-only work, the next step should come from a fresh hotspot audit on the still-accepted exact path, not from extending any of the rejected refresh/fullstep/build-flag experiments recorded here.
