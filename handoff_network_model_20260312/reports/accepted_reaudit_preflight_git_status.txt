@@ -1,0 +1,9 @@
+## feature/cpp-exact-accepted-reaudit-next
+
+- worktree: `/tmp/feature_cpp_exact_accepted_reaudit_next`
+- start commit: `9535623`
+- preflight intent:
+  - carry only accepted exact code
+  - exclude generated build artifacts and benchmark outputs
+- benchmark rule:
+  - run from worktree root
