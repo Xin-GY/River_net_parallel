@@ -352,6 +352,123 @@ AssemblePostStepStats apply_explicit_manning_poststep_exact(
     return stats;
 }
 
+AssemblePostStepStats assemble_flux_exact_deep(
+    const TableView* tables,
+    std::size_t n,
+    const double* flux_loc,
+    const double* flux_source_left,
+    const double* flux_source_right,
+    const double* flux_source_center,
+    const double* flux_friction_left,
+    const double* flux_friction_right,
+    double* flux,
+    float* S,
+    float* Q,
+    const double* water_depth,
+    const double* cell_s_limit,
+    std::uint8_t* forced_dry_recorded,
+    const float* cell_lengths,
+    double g,
+    double dt,
+    double eps,
+    double water_depth_limit,
+    double friction_min_depth
+) {
+    AssemblePostStepStats stats{};
+    const float g_f = static_cast<float>(g);
+    const float dt_f = static_cast<float>(dt);
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::size_t left_face = 2 * i;
+        const std::size_t right_face = 2 * (i + 1);
+        const std::size_t cell = 2 * (i + 1);
+        const float length_i = cell_lengths[i];
+        const float dt_over_length = dt_f / length_i;
+        const double flux_mass =
+            flux_loc[right_face] - flux_loc[left_face]
+            + flux_source_right[cell]
+            + flux_source_left[cell]
+            + flux_friction_left[cell]
+            + flux_friction_right[cell];
+        const double flux_momentum =
+            flux_loc[right_face + 1] - flux_loc[left_face + 1]
+            + flux_source_center[cell + 1]
+            + flux_source_right[cell + 1]
+            + flux_source_left[cell + 1]
+            + flux_friction_left[cell + 1]
+            + flux_friction_right[cell + 1];
+        flux[cell] = flux_mass;
+        flux[cell + 1] = flux_momentum;
+        S[i] = static_cast<float>(static_cast<double>(S[i]) - flux_mass * dt_over_length);
+        Q[i] = static_cast<float>(static_cast<double>(Q[i]) - flux_momentum * dt_over_length);
+    }
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const TableView& tbl = tables[i];
+        const double prev_s = static_cast<double>(S[i]);
+        const double prev_depth = water_depth[i];
+        const float area_pos = std::max(S[i], 0.0f);
+        const double depth_i = table_depth_by_area(tbl, static_cast<double>(area_pos));
+        const double s_limit = cell_s_limit[i];
+
+        if (is_cell_dry(static_cast<double>(S[i]), depth_i, static_cast<double>(Q[i]), s_limit, g, eps, water_depth_limit)) {
+            if (forced_dry_recorded[i] == 0 && (prev_s > s_limit || prev_depth > water_depth_limit)) {
+                forced_dry_recorded[i] = 1;
+                stats.forced_dry_increment += 1;
+            }
+            S[i] = 0.0f;
+            Q[i] = 0.0f;
+        } else {
+            float coef = 0.0f;
+            if (!(friction_min_depth > 0.0 && depth_i <= friction_min_depth)) {
+                const double deb = table_deb_by_area(tbl, static_cast<double>(S[i]));
+                const float num1 = g_f * dt_f;
+                const float num2 = num1 * S[i];
+                const float den = static_cast<float>(deb * deb);
+                coef = num2 / den;
+            }
+            const float abs_q = std::fabs(Q[i]);
+            const float mult1 = 4.0f * coef;
+            const float mult2 = mult1 * abs_q;
+            const float delta = 1.0f + mult2;
+            if (coef > 1.0e-06f) {
+                const float root = std::sqrt(delta);
+                const float denom = 2.0f * coef;
+                if (Q[i] > 0.0f) {
+                    const float numer = -1.0f + root;
+                    Q[i] = numer / denom;
+                } else {
+                    const float numer = 1.0f - root;
+                    Q[i] = numer / denom;
+                }
+            } else {
+                const float mult3 = coef * Q[i];
+                const float factor = 1.0f - mult3;
+                Q[i] = Q[i] * factor;
+            }
+        }
+    }
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const TableView& tbl = tables[i];
+        const double prev_s = static_cast<double>(S[i]);
+        const double prev_depth = water_depth[i];
+        const float area_pos = std::max(S[i], 0.0f);
+        const double depth_i = table_depth_by_area(tbl, static_cast<double>(area_pos));
+        const double s_limit = cell_s_limit[i];
+        if (is_cell_dry(static_cast<double>(S[i]), depth_i, static_cast<double>(Q[i]), s_limit, g, eps, water_depth_limit)) {
+            if (forced_dry_recorded[i] == 0 && (prev_s > s_limit || prev_depth > water_depth_limit)) {
+                forced_dry_recorded[i] = 1;
+                stats.forced_dry_increment += 1;
+            }
+            S[i] = 0.0f;
+            Q[i] = 0.0f;
+        }
+    }
+
+    return stats;
+}
+
 RoeMatrixStats compute_roe_matrix_exact(
     std::size_t n,
     float eps,

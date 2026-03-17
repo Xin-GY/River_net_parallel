@@ -3,92 +3,83 @@
 ## Branch / Worktree
 
 - branch:
-  - `feature/cpp-exact-accepted-reaudit-next`
+  - `feature/cpp-exact-accepted-after-assemble-reaudit`
 - worktree:
-  - `/tmp/feature_cpp_exact_accepted_reaudit_next`
+  - `/tmp/feature_cpp_exact_accepted_after_assemble_reaudit`
 - start checkpoint:
-  - `9535623`
+  - `feature/cpp-exact-accepted-reaudit-next@9a7c094`
 
-## What This Round Did
+## What this round did
 
-- reran a clean accepted exact audit from `9535623`
-- wrote a fresh blocker map for the still-accepted path
-- selected only one next move:
-  - deeper exact native ownership for the rectangular Roe-flux path
-- implemented and validated that one move
+- created a clean continuation from the current accepted exact baseline
+- reran the accepted exact configuration on:
+  - 10m
+  - 2h
+  - 40h
+- confirmed exact replay against the stored accepted rectdeep outputs
+- rechecked assemble-only ownership priority
+- implemented one isolated feature flag:
+  - `ISLAM_CPP_USE_ASSEMBLE_DEEP=1`
+- validated that candidate on:
+  - 10m
+  - 2h
+  - 40h
 
-## New Accepted Exact Candidate
+## Current result
 
-Recommended config:
-
-- `ISLAM_USE_CPP_EVOLVE=1`
-- `ISLAM_CPP_THREADS=0`
-- `ISLAM_USE_CYTHON_NODECHAIN=1`
-- `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
-- `ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST=1`
-- `ISLAM_CPP_USE_NODECHAIN_DEEP_APPLY=1`
-- `ISLAM_CPP_USE_NODECHAIN_COMMIT_DEEP=1`
-- `ISLAM_USE_CYTHON_ROE_FLUX=1`
-- `ISLAM_CPP_USE_ROE_FLUX_DEEP=1`
-- `ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP=1`
-- `ISLAM_CPP_USE_UPDATE_CELL=1`
-- `ISLAM_CPP_USE_ASSEMBLE=1`
-- `ISLAM_CPP_USE_ROE_MATRIX=1`
-- `ISLAM_CPP_USE_FACE_UC=1`
-- `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
-- `ISLAM_CPP_USE_NODECHAIN_REFRESH_DEEP=0`
-
-## Accepted Outcome
-
-- 10m strict compare: pass
-- 2h strict compare: pass
-- 40h strict compare: pass
+- exactness:
+  - 10m pass
+  - 2h pass
+  - 40h pass
 - 40h `allclose`: `true`
 - 40h `evolve/model time`:
-  - `91.329929 s -> 65.237010 s`
+  - accepted baseline `9a7c094`: `65.23701047897339 s`
+  - candidate with `ISLAM_CPP_USE_ASSEMBLE_DEEP=1`: `68.21299862861633 s`
 
-## Key Reports
+## Recommendation
 
-- fresh audit:
-  - `reports/accepted_exact_fresh_hotspots_top10.md`
-  - `reports/accepted_exact_first_order_blockers.md`
-  - `reports/accepted_exact_native_gap_map.md`
-  - `reports/accepted_exact_single_next_move.md`
+- do **not** upgrade this path as the new accepted exact baseline
+- keep the deeper assemble path as a preserved exact prototype behind its feature flag
+
+## Why it failed the acceptance gate
+
+- assemble itself improved strongly:
+  - `7.977036 s -> 3.346388 s`
+- but the raw first-order cost still sits in:
+  - `boundary_updater / nodechain`
+- and `dt_update.global_cfl` got slightly worse, leaving the end-to-end 40h result slower than `9a7c094`
+
+## Key reports
+
+- preflight / audit:
+  - `reports/accepted_after_assemble_preflight_git_status.txt`
+  - `reports/accepted_after_assemble_branch_layout.md`
+  - `reports/accepted_after_assemble_hotspot_recheck.md`
 - implementation:
-  - `reports/cpp_roe_flux_rect_deep_plan.md`
-  - `reports/cpp_roe_flux_rect_deep_impl.md`
-  - `reports/cpp_roe_flux_rect_deep_before_after.md`
+  - `reports/assemble_deep_plan.md`
+  - `reports/assemble_deep_impl.md`
+  - `reports/assemble_deep_before_after.md`
+- compare:
+  - `reports/assemble_deep_10m_compare.md`
+  - `reports/assemble_deep_2h_compare.md`
+  - `reports/assemble_deep_40h_compare.md`
 - final:
   - `reports/cpp_error_report.md`
   - `reports/cpp_speed_report.md`
   - `reports/cpp_benchmark_matrix.md`
-  - `reports/final_cpp_accepted_reaudit_recommendation.md`
+  - `reports/final_cpp_after_assemble_recommendation.md`
 
-## What Not To Reopen
+## Next exact-only move
 
-Still rejected:
+If the exact line continues from the still-accepted baseline `9a7c094`, the best next single point is:
 
-- refresh deep
-- residual/Jacobian deep
-- fullstep loop
-- build-flag experiments
+- `global CFL / dt reduction ownership`
+
+## Do not reopen
+
+- refresh-deep old variants
+- residual / Jacobian deep push
+- fullstep / dispatch reshaping
+- external-boundary-deep exact
 - `-march=native`
-- dispatch / bridge reshaping
-
-## Most Likely Next Blocker
-
-After this round, the largest remaining first-order blocker is back to:
-
-- `boundary_updater / nodechain`
-
-But the previously rejected refresh-deep shapes should not be retried blindly. The next round should start from a fresh audit on this new `65.237010 s` baseline.
-
-## Excluded From Commit
-
-Do not stage:
-
-- generated `*.so`
-- generated `*.c` / `*.cpp`
-- `result/*`
-- compare/perf/summary json outputs
-- any local `bound` symlink or copied case-input mirror
+- FAST / multi-process / multi-thread benchmark routes

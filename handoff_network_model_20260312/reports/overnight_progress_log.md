@@ -881,3 +881,88 @@
 - treat this as the new accepted exact candidate for the branch family
 - if we continue, start from a new fresh audit on the `65.237010 s` baseline
 - do not reopen refresh/fullstep/build-flag/dispatch routes unless the new audit proves they became first-order again
+
+## 2026-03-17 Accepted After Assemble Stage 0-1: clean continuation and assemble-only audit
+
+### Done
+
+- created a clean continuation branch/worktree from:
+  - `feature/cpp-exact-accepted-reaudit-next@9a7c094`
+  - `/tmp/feature_cpp_exact_accepted_after_assemble_reaudit`
+- recorded preflight and branch layout:
+  - `accepted_after_assemble_preflight_git_status.txt`
+  - `accepted_after_assemble_branch_layout.md`
+- rebuilt the local exact extensions in the clean worktree
+- reran the accepted exact configuration from the worktree root on:
+  - 10m
+  - 2h
+  - 40h
+- reran strict compare on all three cases against the stored accepted rectdeep outputs
+- wrote the assemble-only audit report:
+  - `accepted_after_assemble_hotspot_recheck.md`
+
+### Findings
+
+- the accepted exact replay is slower than the historical `9a7c094` timing record in this clean worktree, but it remains exact
+- replay strict compare passes on:
+  - 10m
+  - 2h
+  - 40h
+- current 40h accepted-exact replay still shows:
+  - `river_step.assemble = 7.977036 s`
+  - `dt_update.global_cfl = 4.706568 s`
+  - `river_step.update_cell = 4.373534 s`
+  - `river_step.source = 2.105420 s`
+- assemble remains the highest-confidence next stage outside the already-accepted nodechain / Roe-flux gains
+
+### Next
+
+- implement only `Assemble_Flux_2` deeper ownership pushdown
+- keep the new path behind a feature flag
+- stop immediately if 10m or 2h strict compare fails
+
+## 2026-03-17 Accepted After Assemble Stage 2-4: assemble deep ownership validation
+
+### Done
+
+- added a new isolated exact flag:
+  - `ISLAM_CPP_USE_ASSEMBLE_DEEP=1`
+- pushed the whole assemble post-flux stage deeper into native ownership:
+  - conservative flux increment
+  - exact Manning post-step
+  - conservative dry admissibility
+  - stage-local write-back
+- validated the candidate on:
+  - 10m
+  - 2h
+  - 40h
+- wrote implementation/final reports:
+  - `assemble_deep_plan.md`
+  - `assemble_deep_impl.md`
+  - `assemble_deep_before_after.md`
+  - `assemble_deep_10m_compare.md`
+  - `assemble_deep_2h_compare.md`
+  - `assemble_deep_40h_compare.md`
+  - `cpp_error_report.md`
+  - `cpp_speed_report.md`
+  - `cpp_benchmark_matrix.md`
+  - `final_cpp_after_assemble_recommendation.md`
+  - `overnight_hand_off.md`
+
+### Findings
+
+- 10m strict compare: pass
+- 2h strict compare: pass
+- 40h strict compare: pass
+- 40h `allclose`: `true`
+- stage-local win is real:
+  - `river_step.assemble = 7.977036 s -> 3.346388 s`
+- but the accepted full-case gate still fails:
+  - accepted historical `9a7c094`: `65.237010 s`
+  - candidate: `68.212999 s`
+
+### Next
+
+- do not upgrade this branch as the new accepted exact baseline
+- preserve this deeper assemble path as an exact prototype
+- if exact-only optimization resumes from `9a7c094`, re-audit `global CFL / dt reduction ownership` next

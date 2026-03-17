@@ -1,4 +1,4 @@
-# C++ Accepted Reaudit Benchmark Matrix
+# Assemble Deep Exact Benchmark Matrix
 
 ## Timing Policy
 
@@ -8,45 +8,36 @@
 
 ## Variants
 
-### Accepted historical checkpoint
+### Accepted exact baseline
 
-- source checkpoint: `9535623`
+- branch/checkpoint: `feature/cpp-exact-accepted-reaudit-next@9a7c094`
 - config:
-  - `ISLAM_USE_CPP_EVOLVE=1`
-  - `ISLAM_CPP_THREADS=0`
-  - `ISLAM_USE_CYTHON_NODECHAIN=1`
-  - `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
-  - `ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST=1`
-  - `ISLAM_CPP_USE_NODECHAIN_DEEP_APPLY=1`
-  - `ISLAM_CPP_USE_NODECHAIN_COMMIT_DEEP=1`
-  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
-  - `ISLAM_CPP_USE_ROE_FLUX_DEEP=1`
-  - `ISLAM_CPP_USE_UPDATE_CELL=1`
-  - `ISLAM_CPP_USE_ASSEMBLE=1`
-  - `ISLAM_CPP_USE_ROE_MATRIX=1`
-  - `ISLAM_CPP_USE_FACE_UC=1`
-  - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
+  - accepted exact flags
+  - `ISLAM_CPP_USE_ASSEMBLE_DEEP=0`
 
-### Fresh re-audit replay
+### Fresh replay on this branch
 
-- same code and same flags as `9535623`
-- rebuilt in the clean re-audit worktree
+- same code as `9a7c094`
+- replayed in the clean continuation worktree
 
-### New candidate
+### Candidate
 
-- fresh re-audit replay plus:
-  - `ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP=1`
+- fresh replay plus:
+  - `ISLAM_CPP_USE_ASSEMBLE_DEEP=1`
 
 ## Results
 
 | Variant | 10m evolve (s) | 2h evolve (s) | 40h evolve (s) | 40h wall (s) | Strict compare |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Accepted historical checkpoint `9535623` | 0.667691 | 5.103571 | 91.329929 | 95.239897 | yes |
-| Fresh re-audit replay | 1.233370 | 9.695405 | 101.177666 | 105.312057 | yes |
-| New candidate with deep rectangular Roe flux | 0.912919 | 6.680291 | 65.237010 | 69.804079 | yes |
+| Accepted historical `9a7c094` | `0.912919` | `6.680291` | `65.237010` | `69.804079` | yes |
+| Fresh replay | `0.926752` | `7.167058` | `74.175709` | `78.970642` | yes |
+| Candidate `+ ISLAM_CPP_USE_ASSEMBLE_DEEP=1` | `0.965080` | `6.509730` | `68.212999` | `74.039133` | yes |
 
-## Acceptance
+## Gate Verdict
 
-The new candidate is accepted for this line because the gate metric improves clearly:
+- exactness gate: pass
+- performance gate against accepted baseline: fail
 
-- `91.329929 s -> 65.237010 s` on 40h exact
+Reason:
+
+- `68.212999 s` is still slower than the accepted exact reference `65.237010 s`

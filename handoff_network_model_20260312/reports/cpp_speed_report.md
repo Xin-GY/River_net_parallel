@@ -1,50 +1,42 @@
-# C++ Accepted Reaudit Speed Report
+# Assemble Deep Exact Speed Report
 
 ## Scope
 
-- branch: `feature/cpp-exact-accepted-reaudit-next`
+- branch: `feature/cpp-exact-accepted-after-assemble-reaudit`
 - timing policy: `evolve/model time` only
-- initialization is excluded
-- only single-process exact runs are considered
+- initialization excluded
+- single-process exact only
 
-## Candidate
+## Historical Accepted Baseline vs Candidate
 
-Accepted exact checkpoint `9535623`, plus:
-
-- `ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP=1`
-
-## Historical Accepted Baseline vs New Candidate
-
-| Case | Accepted `9535623` evolve (s) | New candidate evolve (s) | Speedup |
+| Case | Accepted `9a7c094` evolve (s) | Candidate evolve (s) | Speedup |
 | --- | ---: | ---: | ---: |
-| 10m | 0.667691 | 0.912919 | 0.73x |
-| 2h | 5.103571 | 6.680291 | 0.76x |
-| 40h | 91.329929 | 65.237010 | 1.40x |
+| 10m | `0.912919` | `0.965080` | `0.95x` |
+| 2h | `6.680291` | `6.509730` | `1.03x` |
+| 40h | `65.237010` | `68.212999` | `0.96x` |
 
-## Fresh Reaudit Replay vs New Candidate
+## Fresh Replay vs Candidate
 
-The clean replay of `9535623` in this worktree was slower than the historical accepted branch record, but the new candidate still improved it strongly:
-
-| Case | Fresh replay evolve (s) | New candidate evolve (s) | Speedup |
+| Case | Fresh accepted replay evolve (s) | Candidate evolve (s) | Speedup |
 | --- | ---: | ---: | ---: |
-| 10m | 1.233370 | 0.912919 | 1.35x |
-| 2h | 9.695405 | 6.680291 | 1.45x |
-| 40h | 101.177666 | 65.237010 | 1.55x |
+| 10m | `0.926752` | `0.965080` | `0.96x` |
+| 2h | `7.167058` | `6.509730` | `1.10x` |
+| 40h | `74.175709` | `68.212999` | `1.09x` |
 
-## 40h Substage Delta
+## 40h Substage Delta vs Fresh Replay
 
-Relative to the fresh replay:
-
-- `river_step.flux`: `42.333267 s -> 4.547068 s`
-- `river_step.assemble`: `7.132460 s -> 6.854175 s`
-- `river_step.update_cell`: `4.027083 s -> 3.574104 s`
-- `nodechain.total`: `38.318935 s -> 41.519373 s`
+- `river_step.assemble`: `7.977036 s -> 3.346388 s`
+- `river_step.update_cell`: `4.373534 s -> 3.793455 s`
+- `river_step.source`: `2.105420 s -> 2.077177 s`
+- `dt_update.global_cfl`: `4.706568 s -> 4.983562 s`
+- `boundary_updater.total`: `41.971656 s -> 41.342280 s`
+- `nodechain.total`: `43.545678 s -> 43.746039 s`
 
 ## Conclusion
 
-This round is accepted on the full-case gate because:
+This path improves the clean replay and does cut the assemble stage substantially, but it does **not** beat the accepted historical exact baseline on the 40h gate.
 
-- strict compare passes on 10m / 2h / 40h
-- 40h `evolve/model time` drops from `91.329929 s` to `65.237010 s`
+- accepted gate target: `< 65.23701047897339 s`
+- candidate result: `68.21299862861633 s`
 
-The gain is a real ownership push in the rectangular Roe-flux path, not a dispatch-shape effect.
+So this round is a preserved exact prototype, not a new accepted checkpoint.
