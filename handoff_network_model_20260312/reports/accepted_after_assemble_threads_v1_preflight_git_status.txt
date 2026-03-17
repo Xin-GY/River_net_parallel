@@ -1,0 +1,24 @@
+Branch: feature/cpp-exact-after-assemble-threads-v1
+HEAD: 445c2c9524b99547ace72a30ec50e530398c31b9
+Source checkpoint: 445c2c9
+Source subject: perf: deepen exact assemble ownership on global-cfl baseline (+22.5% 40h evolve)
+
+Tracked status:
+  clean
+
+Ignored/generated local artifacts currently present:
+  bound/Islam_Q_In.csv.interp_cache.meta.json
+  bound/Islam_Q_In.csv.interp_cache.npz
+  bound/Islam_level_out.csv.interp_cache.meta.json
+  bound/Islam_level_out.csv.interp_cache.npz
+  handoff_network_model_20260312/__pycache__/
+  handoff_network_model_20260312/build/
+  handoff_network_model_20260312/cython_cpp_bridge.cpp
+  handoff_network_model_20260312/cython_cpp_bridge.cpython-311-x86_64-linux-gnu.so
+  handoff_network_model_20260312/cython_cross_section.c
+  handoff_network_model_20260312/cython_cross_section.cpython-311-x86_64-linux-gnu.so
+  handoff_network_model_20260312/cython_node_iteration.c
+  handoff_network_model_20260312/cython_node_iteration.cpython-311-x86_64-linux-gnu.so
+  handoff_network_model_20260312/cython_river_kernels.cpp
+  handoff_network_model_20260312/cython_river_kernels.cpython-311-x86_64-linux-gnu.so
+  handoff_network_model_20260312/tool_fun/__pycache__/

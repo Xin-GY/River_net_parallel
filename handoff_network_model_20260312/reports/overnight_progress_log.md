@@ -1,18 +1,23 @@
 # Overnight Progress Log
 
-## 2026-03-17
+## Phase 0
 
-- created `feature/cpp-exact-after-globalcfl-assemble-reaudit-v2` from accepted exact candidate `689ae0b`
-- created clean worktree at `/tmp/feature_cpp_exact_after_globalcfl_assemble_reaudit_v2`
-- recorded preflight git status and branch layout
-- rebuilt Cython/C++ extensions in the new worktree
-- replayed accepted exact config for 10m, 2h, and 40h
-- verified strict compare passes against `/tmp/feature_cpp_exact_accepted_after_global_cfl` outputs for all three cases
-- wrote `accepted_after_globalcfl_assemble_v2_hotspot_recheck.md`
-- conclusion from the fresh audit: `Assemble_Flux_2` remains the single highest-confidence next move on top of `689ae0b`
-- ported assemble deep ownership logic from the preserved prototype into the `689ae0b` baseline without mixing refresh/fullstep/external-boundary paths
-- rebuilt Cython/C++ river kernels
-- ran `assemble_deep_v2` exact gate for 10m / 2h / 40h
-- strict compare passed for all three cases
-- 40h model time improved from `50.941080 s` fresh replay / `60.743103 s` historical accepted gate to `47.053824 s`
-- threads were rechecked conceptually only; no threaded implementation was added in this round
+- created branch `feature/cpp-exact-after-assemble-threads-v1`
+- created worktree `/tmp/feature_cpp_exact_after_assemble_threads_v1`
+- recorded preflight status and branch layout
+
+## Phase 1
+
+- rebuilt `cython_cross_section`, `cython_node_iteration`, `cython_river_kernels`, and `cython_cpp_bridge`
+- re-ran accepted-path fresh replay:
+  - 10m: `0.422322 s`
+  - 2h: `6.124065 s`
+  - 40h: `53.855951 s`
+- audited deep assemble threading feasibility
+- concluded no-go for first-batch deterministic assemble threads under the current scope
+
+## Stop Condition
+
+- assemble remains the cleanest threading-shaped stage
+- but its current grain size is too small to justify a first deterministic C++ threading implementation
+- the round stops before implementation
