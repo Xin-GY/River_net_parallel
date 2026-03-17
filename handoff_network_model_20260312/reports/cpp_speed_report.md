@@ -1,50 +1,60 @@
-# C++ Accepted Reaudit Speed Report
+# C++ After Global CFL Speed Report
 
 ## Scope
 
-- branch: `feature/cpp-exact-accepted-reaudit-next`
+- branch: `feature/cpp-exact-accepted-after-global-cfl`
 - timing policy: `evolve/model time` only
 - initialization is excluded
-- only single-process exact runs are considered
+- only single-process exact serial runs are accepted in this round
 
 ## Candidate
 
-Accepted exact checkpoint `9535623`, plus:
+Accepted exact checkpoint `9a7c094`, plus:
 
-- `ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP=1`
+- `ISLAM_CPP_USE_GLOBAL_CFL_DEEP=1`
 
 ## Historical Accepted Baseline vs New Candidate
 
-| Case | Accepted `9535623` evolve (s) | New candidate evolve (s) | Speedup |
-| --- | ---: | ---: | ---: |
-| 10m | 0.667691 | 0.912919 | 0.73x |
-| 2h | 5.103571 | 6.680291 | 0.76x |
-| 40h | 91.329929 | 65.237010 | 1.40x |
+Historical accepted reference from the source branch:
 
-## Fresh Reaudit Replay vs New Candidate
+- 40h accepted exact `evolve/model time = 65.23701047897339 s`
 
-The clean replay of `9535623` in this worktree was slower than the historical accepted branch record, but the new candidate still improved it strongly:
+New candidate:
+
+- 40h exact `evolve/model time = 60.74310255050659 s`
+
+Speedup:
+
+- `65.237010 / 60.743103 = 1.074x`
+- absolute gain: `4.493908 s`
+
+## Fresh Replay vs New Candidate
+
+The clean replay of `9a7c094` in this worktree was slower than the historical accepted record, but the new candidate still improved it strongly:
 
 | Case | Fresh replay evolve (s) | New candidate evolve (s) | Speedup |
 | --- | ---: | ---: | ---: |
-| 10m | 1.233370 | 0.912919 | 1.35x |
-| 2h | 9.695405 | 6.680291 | 1.45x |
-| 40h | 101.177666 | 65.237010 | 1.55x |
+| 10m | `1.039685` | `0.709517` | `1.47x` |
+| 2h | `7.261597` | `4.607920` | `1.58x` |
+| 40h | `69.479726` | `60.743103` | `1.14x` |
 
 ## 40h Substage Delta
 
 Relative to the fresh replay:
 
-- `river_step.flux`: `42.333267 s -> 4.547068 s`
-- `river_step.assemble`: `7.132460 s -> 6.854175 s`
-- `river_step.update_cell`: `4.027083 s -> 3.574104 s`
-- `nodechain.total`: `38.318935 s -> 41.519373 s`
+- `dt_update.global_cfl`: `4.258397 s -> 0.728253 s`
+- `boundary_updater.total`: `41.504179 s -> 38.832676 s`
+- `nodechain.total`: `44.730091 s -> 41.198503 s`
+- `river_step.assemble`: `7.260691 s -> 6.546105 s`
+- `river_step.update_cell`: `3.738485 s -> 3.354221 s`
+- `river_step.source`: `2.064564 s -> 1.958426 s`
 
-## Conclusion
+## Thread Trial Recheck
 
-This round is accepted on the full-case gate because:
+This round did **not** continue into C++ native threads.
 
-- strict compare passes on 10m / 2h / 40h
-- 40h `evolve/model time` drops from `91.329929 s` to `65.237010 s`
+Reason:
 
-The gain is a real ownership push in the rectangular Roe-flux path, not a dispatch-shape effect.
+- the serial native path already cut `dt_update.global_cfl` down to `0.728253 s`
+- after that reduction, `global CFL / dt reduction` is no longer large enough to justify a thread experiment as the next move in the same round
+- keeping the accepted path serial avoids adding a second acceptance dimension after the serial gate already passed cleanly

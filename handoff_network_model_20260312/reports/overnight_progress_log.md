@@ -218,6 +218,51 @@
 - the accepted exact kernel now preserves the required staging for:
   - `g * DT * S`
   - `deb * deb`
+
+## 2026-03-17 Accepted after global CFL
+
+### Done
+
+- created a clean continuation branch from:
+  - `feature/cpp-exact-accepted-reaudit-next@9a7c094`
+- recorded the new branch layout and preflight state
+- reran the accepted exact path on:
+  - 10m
+  - 2h
+  - 40h
+- rechecked the current ownership gap and confirmed:
+  - `global CFL / dt reduction` was still the highest-confidence next move outside the rejected nodechain-tail family
+- implemented a serial native deep path behind:
+  - `ISLAM_CPP_USE_GLOBAL_CFL_DEEP=1`
+- validated the deep path on:
+  - 10m strict compare
+  - 2h strict compare
+  - 40h strict compare
+
+### Findings
+
+- the accepted exact replay in this clean worktree measured:
+  - 10m: `1.039685 s`
+  - 2h: `7.261597 s`
+  - 40h: `69.479726 s`
+- fresh 40h recheck showed:
+  - `dt_update.global_cfl = 4.258397 s`
+  - `river_step.assemble = 7.260691 s`
+  - `river_step.update_cell = 3.738485 s`
+  - `river_step.source = 2.064564 s`
+- the deep global-CFL path reduced that stage to:
+  - `0.728253 s`
+- 40h exact evolve/model time improved to:
+  - `60.743103 s`
+- all three exact gates passed, including:
+  - exact `cfl_history.csv`
+  - exact `internal_node_history.csv`
+
+### Next
+
+- upgrade this serial global-CFL deep path as the new accepted exact checkpoint for the branch family
+- do not continue into C++ threads in the same round:
+  - serial already collapsed the stage cost enough that a thread experiment is no longer the best next use of time
   - float32/float64 interaction in the coefficient calculation
 - after `Update_cell_proprity2` and `Assemble_Flux_2` are both native, the remaining fullchain gaps become much clearer:
   - nodechain state commit / final apply

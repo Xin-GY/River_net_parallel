@@ -1,94 +1,67 @@
-# Overnight Hand-off
+# Overnight Hand Off
 
-## Branch / Worktree
+## Branch
 
-- branch:
-  - `feature/cpp-exact-accepted-reaudit-next`
-- worktree:
-  - `/tmp/feature_cpp_exact_accepted_reaudit_next`
-- start checkpoint:
-  - `9535623`
+- branch: `feature/cpp-exact-accepted-after-global-cfl`
+- start checkpoint: `feature/cpp-exact-accepted-reaudit-next@9a7c094`
+- new accepted commit candidate from this round: pending current branch head
 
-## What This Round Did
+## What this round did
 
-- reran a clean accepted exact audit from `9535623`
-- wrote a fresh blocker map for the still-accepted path
-- selected only one next move:
-  - deeper exact native ownership for the rectangular Roe-flux path
-- implemented and validated that one move
+- created a clean continuation branch from `9a7c094`
+- reran the accepted exact path on 10m / 2h / 40h to recheck the current ownership gap
+- confirmed `global CFL / dt reduction` was still the highest-confidence next move outside the rejected nodechain-tail family
+- implemented a serial native deep path behind:
+  - `ISLAM_CPP_USE_GLOBAL_CFL_DEEP=1`
+- validated it on:
+  - 10m
+  - 2h
+  - 40h
 
-## New Accepted Exact Candidate
+## Result
 
-Recommended config:
+The new serial native global-CFL path is:
 
-- `ISLAM_USE_CPP_EVOLVE=1`
-- `ISLAM_CPP_THREADS=0`
-- `ISLAM_USE_CYTHON_NODECHAIN=1`
-- `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
-- `ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST=1`
-- `ISLAM_CPP_USE_NODECHAIN_DEEP_APPLY=1`
-- `ISLAM_CPP_USE_NODECHAIN_COMMIT_DEEP=1`
-- `ISLAM_USE_CYTHON_ROE_FLUX=1`
-- `ISLAM_CPP_USE_ROE_FLUX_DEEP=1`
-- `ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP=1`
-- `ISLAM_CPP_USE_UPDATE_CELL=1`
-- `ISLAM_CPP_USE_ASSEMBLE=1`
-- `ISLAM_CPP_USE_ROE_MATRIX=1`
-- `ISLAM_CPP_USE_FACE_UC=1`
-- `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
-- `ISLAM_CPP_USE_NODECHAIN_REFRESH_DEEP=0`
+- exact
+- faster than the accepted baseline
 
-## Accepted Outcome
+40h exact result:
+
+- accepted historical baseline: `65.23701047897339 s`
+- new candidate: `60.74310255050659 s`
+
+## Exactness
 
 - 10m strict compare: pass
 - 2h strict compare: pass
 - 40h strict compare: pass
-- 40h `allclose`: `true`
-- 40h `evolve/model time`:
-  - `91.329929 s -> 65.237010 s`
+- `cfl_history.csv`: exact, same row count, no `global_dt` diff
+- `internal_node_history.csv`: exact, same row count
 
-## Key Reports
+## What was deliberately not done
 
-- fresh audit:
-  - `reports/accepted_exact_fresh_hotspots_top10.md`
-  - `reports/accepted_exact_first_order_blockers.md`
-  - `reports/accepted_exact_native_gap_map.md`
-  - `reports/accepted_exact_single_next_move.md`
-- implementation:
-  - `reports/cpp_roe_flux_rect_deep_plan.md`
-  - `reports/cpp_roe_flux_rect_deep_impl.md`
-  - `reports/cpp_roe_flux_rect_deep_before_after.md`
-- final:
-  - `reports/cpp_error_report.md`
-  - `reports/cpp_speed_report.md`
-  - `reports/cpp_benchmark_matrix.md`
-  - `reports/final_cpp_accepted_reaudit_recommendation.md`
+- no Python-level multi-process / multi-thread benchmark
+- no FAST_MODE
+- no approximation
+- no refresh-deep reopen
+- no residual / Jacobian deep reopen
+- no fullstep / dispatch reshape
+- no external-boundary-deep logic
+- no `-march=native`
 
-## What Not To Reopen
+## Threading status
 
-Still rejected:
+This branch does **not** upgrade to a threaded accepted path.
 
-- refresh deep
-- residual/Jacobian deep
-- fullstep loop
-- build-flag experiments
-- `-march=native`
-- dispatch / bridge reshaping
+Reason:
 
-## Most Likely Next Blocker
+- serial native already reduced `dt_update.global_cfl` to `0.728253 s`
+- the stage is no longer large enough to justify a deterministic thread experiment inside the same round
 
-After this round, the largest remaining first-order blocker is back to:
+## Recommended next step
 
-- `boundary_updater / nodechain`
-
-But the previously rejected refresh-deep shapes should not be retried blindly. The next round should start from a fresh audit on this new `65.237010 s` baseline.
-
-## Excluded From Commit
-
-Do not stage:
-
-- generated `*.so`
-- generated `*.c` / `*.cpp`
-- `result/*`
-- compare/perf/summary json outputs
-- any local `bound` symlink or copied case-input mirror
+- treat this serial global-CFL deep path as the new accepted exact checkpoint for the branch family
+- if exact-only work continues, do a fresh audit from this new baseline before choosing the next single point
+- likely next point:
+  - `Assemble_Flux_2` deeper ownership re-audit on top of the new baseline
+  - unless a materially new, non-refresh-like nodechain ownership route is found

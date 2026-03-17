@@ -49,10 +49,12 @@ except Exception:
     cython_run_internal_node_iteration_exact = None
 try:
     from cython_cpp_bridge import (
+        calculate_global_cfl_exact_cpp as cpp_calculate_global_cfl_exact,
         run_cpp_network_evolve_serial as cpp_run_network_evolve_serial,
         run_cpp_network_evolve_threads as cpp_run_network_evolve_threads,
     )
 except Exception:
+    cpp_calculate_global_cfl_exact = None
     cpp_run_network_evolve_serial = None
     cpp_run_network_evolve_threads = None
 
@@ -160,12 +162,17 @@ class Rivernet():
         self.use_cython_nodechain_prebound_fast = False
         self.use_cpp_nodechain_deep_apply = False
         self.use_cpp_nodechain_commit_deep = False
+        self.use_cpp_global_cfl_deep = False
         self._cython_nodechain_plan = None
         self.use_cpp_evolve = False
         self.cpp_threads = False
         self.cpp_n_threads = max((os.cpu_count() or 1), 1)
         self.cpp_write_mode = 'buffered_end'
         self.cpp_threads_last_mode = 'disabled'
+        self._cpp_global_cfl_plan_ready = False
+        self._cpp_global_cfl_rivers = ()
+        self._cpp_global_cfl_names = ()
+        self._cpp_global_cfl_dt_values = None
         self.perf_profile_enabled = False
         self._perf_stats = {}
 
@@ -751,6 +758,9 @@ class Rivernet():
 
     # 计算全局CFL时间步长
     def Caculate_global_CFL(self):
+        if bool(getattr(self, 'use_cpp_global_cfl_deep', False)) and cpp_calculate_global_cfl_exact is not None:
+            if cpp_calculate_global_cfl_exact(self):
+                return
         dt_list = []
         dt_items = []
 

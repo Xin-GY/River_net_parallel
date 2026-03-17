@@ -1,52 +1,42 @@
-# C++ Accepted Reaudit Benchmark Matrix
+# C++ After Global CFL Benchmark Matrix
 
 ## Timing Policy
 
 - headline metric: `evolve/model time`
 - initialization excluded
-- single-process exact only
+- single-process exact only for accepted status
 
 ## Variants
 
 ### Accepted historical checkpoint
 
-- source checkpoint: `9535623`
+- source checkpoint: `9a7c094`
 - config:
-  - `ISLAM_USE_CPP_EVOLVE=1`
-  - `ISLAM_CPP_THREADS=0`
-  - `ISLAM_USE_CYTHON_NODECHAIN=1`
-  - `ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST=1`
-  - `ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST=1`
-  - `ISLAM_CPP_USE_NODECHAIN_DEEP_APPLY=1`
-  - `ISLAM_CPP_USE_NODECHAIN_COMMIT_DEEP=1`
-  - `ISLAM_USE_CYTHON_ROE_FLUX=1`
-  - `ISLAM_CPP_USE_ROE_FLUX_DEEP=1`
-  - `ISLAM_CPP_USE_UPDATE_CELL=1`
-  - `ISLAM_CPP_USE_ASSEMBLE=1`
-  - `ISLAM_CPP_USE_ROE_MATRIX=1`
-  - `ISLAM_CPP_USE_FACE_UC=1`
-  - `ISLAM_USE_CPP_BRIDGE_DIRECT_DISPATCH=0`
+  - accepted exact flags from `feature/cpp-exact-accepted-reaudit-next`
+  - `ISLAM_CPP_USE_GLOBAL_CFL_DEEP=0`
 
-### Fresh re-audit replay
+### Fresh replay on this branch
 
-- same code and same flags as `9535623`
-- rebuilt in the clean re-audit worktree
+- same code and same flags as `9a7c094`
+- rebuilt in the clean continuation worktree
 
 ### New candidate
 
-- fresh re-audit replay plus:
-  - `ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP=1`
+- fresh replay plus:
+  - `ISLAM_CPP_USE_GLOBAL_CFL_DEEP=1`
 
 ## Results
 
 | Variant | 10m evolve (s) | 2h evolve (s) | 40h evolve (s) | 40h wall (s) | Strict compare |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Accepted historical checkpoint `9535623` | 0.667691 | 5.103571 | 91.329929 | 95.239897 | yes |
-| Fresh re-audit replay | 1.233370 | 9.695405 | 101.177666 | 105.312057 | yes |
-| New candidate with deep rectangular Roe flux | 0.912919 | 6.680291 | 65.237010 | 69.804079 | yes |
+| Accepted historical `9a7c094` | `0.912919` | `6.680291` | `65.237010` | `69.804079` | yes |
+| Fresh replay | `1.039685` | `7.261597` | `69.479726` | `74.814494` | yes |
+| Candidate `+ ISLAM_CPP_USE_GLOBAL_CFL_DEEP=1` | `0.709517` | `4.607920` | `60.743103` | `65.648969` | yes |
 
 ## Acceptance
 
-The new candidate is accepted for this line because the gate metric improves clearly:
+The new candidate is accepted for this line because:
 
-- `91.329929 s -> 65.237010 s` on 40h exact
+- 10m / 2h / 40h strict compare all pass
+- 40h exact `evolve/model time` improves clearly:
+  - `65.237010 s -> 60.743103 s`

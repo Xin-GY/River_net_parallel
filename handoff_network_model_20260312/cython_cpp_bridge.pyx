@@ -10,6 +10,19 @@ import time as pytime
 import numpy as np
 cimport numpy as cnp
 
+cdef extern from "cpp/evolve_core.hpp" namespace "rivernet":
+    float compute_river_cfl_candidate_exact_cpp_kernel "rivernet::compute_river_cfl_candidate_exact"(
+        size_t n,
+        float cfl,
+        float dt_old,
+        float dt_increase_factor,
+        float min_dt,
+        const float* U,
+        const float* C,
+        const float* cell_lengths,
+        float* DTI,
+    ) noexcept
+
 
 cdef extern from "cpp/output_buffer.hpp" namespace "rivernet":
     cdef cppclass OutputBuffer:
@@ -102,6 +115,81 @@ cdef class CppOutputBuffer:
         else:
             raise KeyError(f'Unsupported output variable: {name}')
         return out
+
+
+cpdef bint calculate_global_cfl_exact_cpp(object net):
+    cdef object edges
+    cdef list river_list
+    cdef list name_list
+    cdef tuple rivers
+    cdef tuple names
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] dt_values
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] U_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] C_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] L_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] DTI_arr
+    cdef object river
+    cdef dict rec
+    cdef Py_ssize_t i, n_rivers
+    cdef cnp.float32_t dt_old
+    cdef cnp.float32_t dt_candidate
+    cdef cnp.float32_t dt_min
+
+    if not bool(getattr(net, "_cpp_global_cfl_plan_ready", False)):
+        edges = list(net._river_edges)
+        river_list = []
+        name_list = []
+        for _, _, data in edges:
+            river_list.append(data["river"])
+            name_list.append(data.get("name"))
+        net._cpp_global_cfl_rivers = tuple(river_list)
+        net._cpp_global_cfl_names = tuple(name_list)
+        net._cpp_global_cfl_dt_values = np.empty(len(edges), dtype=np.float32)
+        net._cpp_global_cfl_plan_ready = True
+
+    rivers = net._cpp_global_cfl_rivers
+    names = net._cpp_global_cfl_names
+    dt_values = net._cpp_global_cfl_dt_values
+    n_rivers = len(rivers)
+    if n_rivers == 0:
+        return False
+
+    for i in range(n_rivers):
+        river = rivers[i]
+        U_arr = river.U
+        C_arr = river.C
+        L_arr = river.cell_lengths
+        DTI_arr = river.DTI
+        dt_old = <cnp.float32_t>river.DT
+        dt_candidate = compute_river_cfl_candidate_exact_cpp_kernel(
+            <size_t>(river.cell_num + 2),
+            <float>river.CFL,
+            dt_old,
+            <float>river.DT_increase_factor,
+            <float>river.min_dt,
+            &U_arr[0],
+            &C_arr[0],
+            &L_arr[0],
+            &DTI_arr[0],
+        )
+        river.DT_old = np.float32(dt_old)
+        river.DT = np.float32(dt_candidate)
+        dt_values[i] = dt_candidate
+        if i == 0 or dt_candidate < dt_min:
+            dt_min = dt_candidate
+
+    net.cfl_allowed_dt = np.float32(dt_min)
+
+    if bool(net.save_cfl_history):
+        rec = {"time": float(net.current_sim_time)}
+        for i in range(n_rivers):
+            rec[str(names[i])] = float(dt_values[i])
+        rec["global_dt"] = float(net.cfl_allowed_dt)
+        net.cfl_history.append(rec)
+
+    if bool(net.verbos):
+        print(f'全局最小CFL时间步长: {float(net.cfl_allowed_dt):.4f} 秒')
+    return True
 
 
 def run_cpp_network_evolve_serial(object net, object yield_step):
