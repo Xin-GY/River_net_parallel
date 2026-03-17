@@ -6,7 +6,7 @@
 
 import numpy as np
 cimport numpy as cnp
-from libc.math cimport fabs, isnan, sqrt
+from libc.math cimport fabs, floor, isnan, sqrt
 import time as pytime
 
 from cython_cross_section cimport (
@@ -227,6 +227,332 @@ cdef class NodeBoundaryDeepPlan:
             float(self.face_discharge),
             float(self.face_width),
         )
+
+
+cdef int EXT_VALUE_CONSTANT = 0
+cdef int EXT_VALUE_INTERP = 1
+cdef int EXT_VALUE_INTERP_CYCLIC = 2
+
+cdef int EXT_CALL_IN_Q2 = 0
+cdef int EXT_CALL_IN_Q = 1
+cdef int EXT_CALL_IN_FIX_V2 = 2
+cdef int EXT_CALL_IN_FIX_V3 = 3
+cdef int EXT_CALL_OUT_FREE = 4
+cdef int EXT_CALL_OUT_FIX_V2 = 5
+cdef int EXT_CALL_OUT_FIX_V3 = 6
+
+
+cdef inline double _wrap_hours_exact(double h, double base, double period) noexcept:
+    cdef double p = period if period > 1.0e-6 else 1.0e-6
+    return (h - base) - p * floor((h - base) / p) + base
+
+
+cdef inline Py_ssize_t _searchsorted_left_double(cnp.float64_t[:] x, Py_ssize_t n, double t) noexcept:
+    cdef Py_ssize_t lo = 0
+    cdef Py_ssize_t hi = n
+    cdef Py_ssize_t mid
+    while lo < hi:
+        mid = lo + ((hi - lo) >> 1)
+        if x[mid] < t:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo
+
+
+cdef inline double _interp_scalar_exact(
+    cnp.float64_t[:] x,
+    cnp.float64_t[:] y,
+    double t,
+    bint allow_extrapolation,
+) noexcept:
+    cdef Py_ssize_t n = x.shape[0]
+    cdef Py_ssize_t idx
+    cdef double x0, x1, y0, y1, denom, w
+
+    if n <= 0:
+        return 0.0
+    if n == 1:
+        return y[0]
+
+    idx = _searchsorted_left_double(x, n, t)
+    if idx == 0:
+        if not allow_extrapolation:
+            return y[0]
+        x0 = x[0]
+        x1 = x[1]
+        y0 = y[0]
+        y1 = y[1]
+    elif idx == n:
+        if not allow_extrapolation:
+            return y[n - 1]
+        x0 = x[n - 2]
+        x1 = x[n - 1]
+        y0 = y[n - 2]
+        y1 = y[n - 1]
+    else:
+        x0 = x[idx - 1]
+        x1 = x[idx]
+        y0 = y[idx - 1]
+        y1 = y[idx]
+
+    denom = x1 - x0
+    if denom == 0.0:
+        return y0
+    w = (t - x0) / denom
+    return y0 * (1.0 - w) + y1 * w
+
+
+cdef class ExternalBoundaryDeepPlanItem:
+    cdef public object node_name
+    cdef int value_mode
+    cdef tuple rivers
+    cdef public object call_codes_arr
+    cdef public object x_arr
+    cdef public object y_arr
+    cdef double const_value
+    cdef double scale
+    cdef double bias
+    cdef double shift_hours
+    cdef double cycle_hours
+    cdef double base_hours
+    cdef bint allow_extrapolation
+    cdef Py_ssize_t n_rivers
+
+    cdef double eval_value(self, double t_seconds) noexcept:
+        cdef cnp.float64_t[:] x
+        cdef cnp.float64_t[:] y
+        cdef double h
+        if self.value_mode == EXT_VALUE_CONSTANT:
+            return self.const_value
+        h = t_seconds / 3600.0 + self.shift_hours
+        if self.value_mode == EXT_VALUE_INTERP_CYCLIC:
+            h = _wrap_hours_exact(h, self.base_hours, self.cycle_hours)
+        x = self.x_arr
+        y = self.y_arr
+        return self.bias + self.scale * _interp_scalar_exact(
+            x,
+            y,
+            h,
+            self.allow_extrapolation,
+        )
+
+
+cpdef object build_external_boundary_deep_plan(object net):
+    cdef list inflow_plans = []
+    cdef list outflow_plans = []
+    cdef object item
+    cdef object meta
+    cdef object interp_obj
+    cdef object river
+    cdef tuple rivers
+    cdef list river_list
+    cdef cnp.ndarray[cnp.int8_t, ndim=1] call_codes_arr
+    cdef cnp.int8_t[:] call_codes
+    cdef ExternalBoundaryDeepPlanItem plan
+    cdef Py_ssize_t i, n_rivers
+    cdef str btype
+    cdef str kind
+
+    for item in net.external_in_nodes:
+        if item not in net.boundaries:
+            return None
+        btype = str(net.boundaries[item]["type"])
+        meta = net.boundaries[item].get("native_meta")
+        if btype not in ("flow", "fix_level"):
+            return None
+        if meta is None:
+            return None
+
+        river_list = []
+        for river, _ in net._out_branches_by_node[item]:
+            river_list.append(river)
+        rivers = tuple(river_list)
+        n_rivers = len(rivers)
+        if n_rivers == 0:
+            continue
+
+        plan = ExternalBoundaryDeepPlanItem()
+        plan.node_name = item
+        plan.rivers = rivers
+        plan.n_rivers = n_rivers
+        plan.scale = float(meta.get("scale", 1.0))
+        plan.bias = float(meta.get("bias", 0.0))
+        plan.shift_hours = float(meta.get("shift_hours", 0.0))
+        plan.cycle_hours = float(meta.get("cycle_hours", 0.0))
+        plan.base_hours = float(meta.get("base_hours", 0.0))
+        kind = str(meta.get("kind", ""))
+        if kind.endswith("_constant"):
+            plan.value_mode = EXT_VALUE_CONSTANT
+            plan.const_value = float(meta["value"])
+            plan.allow_extrapolation = False
+        else:
+            interp_obj = meta.get("interp")
+            if interp_obj is None:
+                return None
+            plan.x_arr = np.ascontiguousarray(np.asarray(interp_obj.x, dtype=np.float64))
+            plan.y_arr = np.ascontiguousarray(np.asarray(interp_obj.y, dtype=np.float64))
+            plan.allow_extrapolation = bool(getattr(interp_obj, "allow_extrapolation", False))
+            plan.value_mode = EXT_VALUE_INTERP_CYCLIC if bool(meta.get("cyclic", False)) else EXT_VALUE_INTERP
+
+        call_codes_arr = np.empty(n_rivers, dtype=np.int8)
+        call_codes = call_codes_arr
+        for i in range(n_rivers):
+            river = rivers[i]
+            if btype == "flow":
+                if bool(net.external_flow_bc_use_characteristic) and hasattr(river, "InBound_In_Q2"):
+                    call_codes[i] = <cnp.int8_t>EXT_CALL_IN_Q2
+                else:
+                    call_codes[i] = <cnp.int8_t>EXT_CALL_IN_Q
+            else:
+                if bool(net.use_fix_level_bc_v2):
+                    call_codes[i] = <cnp.int8_t>EXT_CALL_IN_FIX_V2
+                else:
+                    call_codes[i] = <cnp.int8_t>EXT_CALL_IN_FIX_V3
+        plan.call_codes_arr = call_codes_arr
+        inflow_plans.append(plan)
+
+    for item in net.external_out_nodes:
+        if item not in net.boundaries:
+            return None
+        btype = str(net.boundaries[item]["type"])
+        if btype not in ("free", "fix_level"):
+            return None
+
+        river_list = []
+        for river, _ in net._in_branches_by_node[item]:
+            river_list.append(river)
+        rivers = tuple(river_list)
+        n_rivers = len(rivers)
+        if n_rivers == 0:
+            continue
+
+        plan = ExternalBoundaryDeepPlanItem()
+        plan.node_name = item
+        plan.rivers = rivers
+        plan.n_rivers = n_rivers
+
+        if btype == "free":
+            plan.value_mode = EXT_VALUE_CONSTANT
+            plan.const_value = 0.0
+            plan.scale = 1.0
+            plan.bias = 0.0
+            plan.allow_extrapolation = False
+            call_codes_arr = np.empty(n_rivers, dtype=np.int8)
+            call_codes_arr.fill(EXT_CALL_OUT_FREE)
+            plan.call_codes_arr = call_codes_arr
+            outflow_plans.append(plan)
+            continue
+
+        meta = net.boundaries[item].get("native_meta")
+        if meta is None:
+            return None
+        plan.scale = float(meta.get("scale", 1.0))
+        plan.bias = float(meta.get("bias", 0.0))
+        plan.shift_hours = float(meta.get("shift_hours", 0.0))
+        plan.cycle_hours = float(meta.get("cycle_hours", 0.0))
+        plan.base_hours = float(meta.get("base_hours", 0.0))
+        kind = str(meta.get("kind", ""))
+        if kind.endswith("_constant"):
+            plan.value_mode = EXT_VALUE_CONSTANT
+            plan.const_value = float(meta["value"])
+            plan.allow_extrapolation = False
+        else:
+            interp_obj = meta.get("interp")
+            if interp_obj is None:
+                return None
+            plan.x_arr = np.ascontiguousarray(np.asarray(interp_obj.x, dtype=np.float64))
+            plan.y_arr = np.ascontiguousarray(np.asarray(interp_obj.y, dtype=np.float64))
+            plan.allow_extrapolation = bool(getattr(interp_obj, "allow_extrapolation", False))
+            plan.value_mode = EXT_VALUE_INTERP_CYCLIC if bool(meta.get("cyclic", False)) else EXT_VALUE_INTERP
+
+        call_codes_arr = np.empty(n_rivers, dtype=np.int8)
+        call_codes = call_codes_arr
+        for i in range(n_rivers):
+            if bool(net.use_fix_level_bc_v2):
+                call_codes[i] = <cnp.int8_t>EXT_CALL_OUT_FIX_V2
+            else:
+                call_codes[i] = <cnp.int8_t>EXT_CALL_OUT_FIX_V3
+        plan.call_codes_arr = call_codes_arr
+        outflow_plans.append(plan)
+
+    return (tuple(inflow_plans), tuple(outflow_plans))
+
+
+cpdef bint apply_external_boundary_deep_exact(object net, object plan_obj, double t_seconds):
+    cdef tuple inflow_plans
+    cdef tuple outflow_plans
+    cdef ExternalBoundaryDeepPlanItem plan
+    cdef Py_ssize_t i, j, n_plans
+    cdef object river
+    cdef double value
+    cdef int code
+    cdef cnp.int8_t[:] call_codes
+    cdef bint use_inflow
+    cdef bint use_outflow
+
+    if plan_obj is None:
+        return False
+    inflow_plans, outflow_plans = <tuple>plan_obj
+    use_inflow = bool(getattr(net, "use_cython_external_boundary_inflow_deep", False))
+    use_outflow = bool(getattr(net, "use_cython_external_boundary_outflow_deep", False))
+    if not use_inflow and not use_outflow:
+        return False
+
+    if use_inflow:
+        n_plans = len(inflow_plans)
+        for i in range(n_plans):
+            plan = <ExternalBoundaryDeepPlanItem>inflow_plans[i]
+            value = plan.eval_value(t_seconds)
+            call_codes = plan.call_codes_arr
+            for j in range(plan.n_rivers):
+                river = plan.rivers[j]
+                code = <int>call_codes[j]
+                if code == EXT_CALL_IN_Q2:
+                    river.InBound_In_Q2(value)
+                elif code == EXT_CALL_IN_Q:
+                    river.InBound_In_Q(value)
+                elif code == EXT_CALL_IN_FIX_V2:
+                    river.InBound_Fix_level_V2(level=value)
+                else:
+                    river.InBound_Fix_level_V3(
+                        value,
+                        Fr_max=0.85,
+                        head_gain_factor=0.65,
+                        relax_Q=0.4,
+                        cap_du_factor=0.8,
+                        cap_dQ_factor=0.7,
+                        use_stabilizers=bool(net.external_bc_use_stabilizers),
+                        respect_supercritical=bool(net.external_bc_respect_supercritical),
+                        stage_on_face=bool(net.external_bc_stage_on_face),
+                    )
+
+    if use_outflow:
+        n_plans = len(outflow_plans)
+        for i in range(n_plans):
+            plan = <ExternalBoundaryDeepPlanItem>outflow_plans[i]
+            value = plan.eval_value(t_seconds)
+            call_codes = plan.call_codes_arr
+            for j in range(plan.n_rivers):
+                river = plan.rivers[j]
+                code = <int>call_codes[j]
+                if code == EXT_CALL_OUT_FREE:
+                    river.OutBound_Free_Outfall()
+                elif code == EXT_CALL_OUT_FIX_V2:
+                    river.OutBound_Fix_level_V2(level=value)
+                else:
+                    river.OutBound_Fix_level_V3(
+                        value,
+                        Fr_max=0.85,
+                        head_gain_factor=0.65,
+                        relax_Q=0.4,
+                        cap_du_factor=0.8,
+                        cap_dQ_factor=0.7,
+                        use_stabilizers=bool(net.external_bc_use_stabilizers),
+                        respect_supercritical=bool(net.external_bc_respect_supercritical),
+                        stage_on_face=bool(net.external_bc_stage_on_face),
+                    )
+    return True
 
 
 cpdef object build_nodechain_deep_apply_plan(

@@ -23,6 +23,9 @@ def main() -> int:
     parser.add_argument("--use-cython-nodechain", action="store_true", default=False)
     parser.add_argument("--use-cython-nodechain-direct-fast", action="store_true", default=False)
     parser.add_argument("--use-cython-nodechain-prebound-fast", action="store_true", default=False)
+    parser.add_argument("--use-cython-external-boundary-deep", action="store_true", default=False)
+    parser.add_argument("--use-cython-external-boundary-inflow-deep", action="store_true", default=False)
+    parser.add_argument("--use-cython-external-boundary-outflow-deep", action="store_true", default=False)
     parser.add_argument("--use-cpp-nodechain-deep-apply", action="store_true", default=False)
     parser.add_argument("--use-cpp-nodechain-commit-deep", action="store_true", default=False)
     parser.add_argument("--use-cython-roe-flux", action="store_true", default=False)
@@ -41,6 +44,9 @@ def main() -> int:
     os.environ["ISLAM_USE_CYTHON_NODECHAIN"] = "1" if args.use_cython_nodechain else "0"
     os.environ["ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST"] = "1" if args.use_cython_nodechain_direct_fast else "0"
     os.environ["ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST"] = "1" if args.use_cython_nodechain_prebound_fast else "0"
+    os.environ["ISLAM_USE_CYTHON_EXTERNAL_BOUNDARY_DEEP"] = "1" if args.use_cython_external_boundary_deep else "0"
+    os.environ["ISLAM_USE_CYTHON_EXTERNAL_BOUNDARY_INFLOW_DEEP"] = "1" if args.use_cython_external_boundary_inflow_deep else "0"
+    os.environ["ISLAM_USE_CYTHON_EXTERNAL_BOUNDARY_OUTFLOW_DEEP"] = "1" if args.use_cython_external_boundary_outflow_deep else "0"
     os.environ["ISLAM_CPP_USE_NODECHAIN_DEEP_APPLY"] = "1" if args.use_cpp_nodechain_deep_apply else "0"
     os.environ["ISLAM_CPP_USE_NODECHAIN_COMMIT_DEEP"] = "1" if args.use_cpp_nodechain_commit_deep else "0"
     os.environ["ISLAM_USE_CYTHON_ROE_FLUX"] = "1" if args.use_cython_roe_flux else "0"
@@ -93,6 +99,9 @@ def main() -> int:
         "use_cython_nodechain": bool(args.use_cython_nodechain),
         "use_cython_nodechain_direct_fast": bool(args.use_cython_nodechain_direct_fast),
         "use_cython_nodechain_prebound_fast": bool(args.use_cython_nodechain_prebound_fast),
+        "use_cython_external_boundary_deep": bool(args.use_cython_external_boundary_deep),
+        "use_cython_external_boundary_inflow_deep": bool(args.use_cython_external_boundary_inflow_deep),
+        "use_cython_external_boundary_outflow_deep": bool(args.use_cython_external_boundary_outflow_deep),
         "use_cpp_nodechain_deep_apply": bool(args.use_cpp_nodechain_deep_apply),
         "use_cpp_nodechain_commit_deep": bool(args.use_cpp_nodechain_commit_deep),
         "use_cython_roe_flux": bool(args.use_cython_roe_flux),

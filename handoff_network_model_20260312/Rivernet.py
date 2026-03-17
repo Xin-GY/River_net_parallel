@@ -41,10 +41,14 @@ from parallel_river_pool import (
 )
 try:
     from cython_node_iteration import (
+        apply_external_boundary_deep_exact as cython_apply_external_boundary_deep_exact,
+        build_external_boundary_deep_plan as cython_build_external_boundary_deep_plan,
         build_nodechain_deep_apply_plan as cython_build_nodechain_deep_apply_plan,
         run_internal_node_iteration_exact as cython_run_internal_node_iteration_exact,
     )
 except Exception:
+    cython_apply_external_boundary_deep_exact = None
+    cython_build_external_boundary_deep_plan = None
     cython_build_nodechain_deep_apply_plan = None
     cython_run_internal_node_iteration_exact = None
 try:
@@ -76,6 +80,10 @@ class Rivernet():
         self.boundaries = {} # 边界条件字典
         self.ALLOWED_OUT_BTYPE = {'free', 'fix_level'} # 允许的出边界类型
         self.ALLOWED_IN_BTYPE = {'flow', 'fix_level'} # 允许的入边界类型
+        self.use_cython_external_boundary_deep = False
+        self.use_cython_external_boundary_inflow_deep = False
+        self.use_cython_external_boundary_outflow_deep = False
+        self._external_boundary_deep_plan = None
 
         # 模拟时间参数
         self.sim_start_time = datetime.datetime.strptime(model_data['sim_start_time'], '%Y-%m-%d %H:%M:%S')
@@ -575,6 +583,7 @@ class Rivernet():
         if data is None:
             # 例如自由边界
             self.boundaries[node] = {"type": btype, "call": (lambda t: None)}
+            self._external_boundary_deep_plan = None
             return
 
         if callable(data):
@@ -588,6 +597,7 @@ class Rivernet():
                 "call": (lambda t, _box=box: _box[0]),
                 "_val": box
             }
+        self._external_boundary_deep_plan = None
 
     # 修改定值的边界条件
     def update_const(self, node: str, new_value: float):
@@ -596,6 +606,7 @@ class Rivernet():
         if not item or "_val" not in item:
             raise TypeError(f"{node} 不是常数边界或未设置")
         item["_val"][0] = float(new_value)
+        self._external_boundary_deep_plan = None
 
     # 替换边界条件函数
     def update_func(self, node: str, new_func):
@@ -606,6 +617,8 @@ class Rivernet():
         if not item:
             raise KeyError(f"{node} 边界未设置")
         item["call"] = new_func
+        item.pop("native_meta", None)
+        self._external_boundary_deep_plan = None
 
     # 更新边界类型
     def update_type(self, node: str, new_type: str):
@@ -613,6 +626,7 @@ class Rivernet():
         if node not in self.boundaries:
             raise KeyError(f"{node} 边界未设置")
         self.boundaries[node]["type"] = new_type
+        self._external_boundary_deep_plan = None
 
     # 获取边界值
     def get_boundary_value(self, node: str, t: float):
@@ -817,50 +831,79 @@ class Rivernet():
         perf_enabled = bool(self.perf_profile_enabled)
         if perf_enabled:
             t0 = time.perf_counter()
+        deep_in = bool(self.use_cython_external_boundary_inflow_deep)
+        deep_out = bool(self.use_cython_external_boundary_outflow_deep)
+        deep_applied = False
+        if (
+            (deep_in or deep_out)
+            and cython_build_external_boundary_deep_plan is not None
+            and cython_apply_external_boundary_deep_exact is not None
+        ):
+            if self._external_boundary_deep_plan is None:
+                self._external_boundary_deep_plan = cython_build_external_boundary_deep_plan(self)
+            if self._external_boundary_deep_plan is not None:
+                if cython_apply_external_boundary_deep_exact(
+                    self,
+                    self._external_boundary_deep_plan,
+                    float(self.current_sim_time),
+                ):
+                    deep_applied = True
+                    if perf_enabled:
+                        self._perf_add('boundary_updater.external', time.perf_counter() - t0)
+                        self._perf_inc('boundary_updater.external.calls')
+                        self._perf_inc('boundary_updater.external.deep_hits')
+                        if deep_in:
+                            self._perf_inc('boundary_updater.external.deep_inflow_hits')
+                        if deep_out:
+                            self._perf_inc('boundary_updater.external.deep_outflow_hits')
+                    if deep_in and deep_out:
+                        return
         if self.verbos: print('更新外部入流边界')
-        for n in self.external_in_nodes:
-            btype, value = self.get_boundary_value(n, self.current_sim_time)
-            for r, _ in self._out_branches_by_node[n]:
-                if btype == 'flow':
-                    if self.external_flow_bc_use_characteristic and hasattr(r, 'InBound_In_Q2'):
-                        r.InBound_In_Q2(value)
-                    else:
-                        r.InBound_In_Q(value)
-                elif btype == 'fix_level':
-                    # 用稳健版（一般断面 + Fr 限幅 + 水头限速 + ΔQ 限幅 + 欠松弛）
-                    if self.use_fix_level_bc_v2:
-                        r.InBound_Fix_level_V2(level=value)
-                    else:
-                        r.InBound_Fix_level_V3(
-                            value, Fr_max=0.85, head_gain_factor=0.65,
-                            relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7,
-                            use_stabilizers=self.external_bc_use_stabilizers,
-                            respect_supercritical=self.external_bc_respect_supercritical,
-                            stage_on_face=self.external_bc_stage_on_face
-                        )
-            if self.verbos: print(r.model_name, n, btype, value)
-        if perf_enabled:
-            self._perf_add('boundary_updater.external', time.perf_counter() - t0)
-            self._perf_inc('boundary_updater.external.calls')
+        if not deep_in:
+            for n in self.external_in_nodes:
+                btype, value = self.get_boundary_value(n, self.current_sim_time)
+                for r, _ in self._out_branches_by_node[n]:
+                    if btype == 'flow':
+                        if self.external_flow_bc_use_characteristic and hasattr(r, 'InBound_In_Q2'):
+                            r.InBound_In_Q2(value)
+                        else:
+                            r.InBound_In_Q(value)
+                    elif btype == 'fix_level':
+                        # 用稳健版（一般断面 + Fr 限幅 + 水头限速 + ΔQ 限幅 + 欠松弛）
+                        if self.use_fix_level_bc_v2:
+                            r.InBound_Fix_level_V2(level=value)
+                        else:
+                            r.InBound_Fix_level_V3(
+                                value, Fr_max=0.85, head_gain_factor=0.65,
+                                relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7,
+                                use_stabilizers=self.external_bc_use_stabilizers,
+                                respect_supercritical=self.external_bc_respect_supercritical,
+                                stage_on_face=self.external_bc_stage_on_face
+                            )
+                if self.verbos: print(r.model_name, n, btype, value)
 
         if self.verbos: print('更新外部出流边界')
-        for n in self.external_out_nodes:
-            btype, value = self.get_boundary_value(n, self.current_sim_time)
-            for r, _ in self._in_branches_by_node[n]:
-                if btype == 'free':
-                    r.OutBound_Free_Outfall()
-                elif btype == 'fix_level':
-                    if self.use_fix_level_bc_v2:
-                        r.OutBound_Fix_level_V2(level=value)
-                    else:
-                        r.OutBound_Fix_level_V3(
-                            value, Fr_max=0.85, head_gain_factor=0.65,
-                            relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7,
-                            use_stabilizers=self.external_bc_use_stabilizers,
-                            respect_supercritical=self.external_bc_respect_supercritical,
-                            stage_on_face=self.external_bc_stage_on_face
-                        )
-            if self.verbos: print(r.model_name, n, btype, value)
+        if not deep_out:
+            for n in self.external_out_nodes:
+                btype, value = self.get_boundary_value(n, self.current_sim_time)
+                for r, _ in self._in_branches_by_node[n]:
+                    if btype == 'free':
+                        r.OutBound_Free_Outfall()
+                    elif btype == 'fix_level':
+                        if self.use_fix_level_bc_v2:
+                            r.OutBound_Fix_level_V2(level=value)
+                        else:
+                            r.OutBound_Fix_level_V3(
+                                value, Fr_max=0.85, head_gain_factor=0.65,
+                                relax_Q=0.4, cap_du_factor=0.8, cap_dQ_factor=0.7,
+                                use_stabilizers=self.external_bc_use_stabilizers,
+                                respect_supercritical=self.external_bc_respect_supercritical,
+                                stage_on_face=self.external_bc_stage_on_face
+                            )
+                if self.verbos: print(r.model_name, n, btype, value)
+        if perf_enabled and (not (deep_in or deep_out) or not deep_applied):
+            self._perf_add('boundary_updater.external', time.perf_counter() - t0)
+            self._perf_inc('boundary_updater.external.calls')
 
     # 判断流态
     def _branch_regime(self, A, T, Q, flow_dir_sign):

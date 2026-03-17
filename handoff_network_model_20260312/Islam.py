@@ -620,6 +620,19 @@ def configure_net_options(net_obj, export_png=False):
     ) == '1'
     net_obj.use_cython_nodechain_direct_fast = os.environ.get('ISLAM_USE_CYTHON_NODECHAIN_DIRECT_FAST', '0') == '1'
     net_obj.use_cython_nodechain_prebound_fast = os.environ.get('ISLAM_USE_CYTHON_NODECHAIN_PREBOUND_FAST', '0') == '1'
+    external_boundary_deep = os.environ.get('ISLAM_USE_CYTHON_EXTERNAL_BOUNDARY_DEEP', '0') == '1'
+    net_obj.use_cython_external_boundary_inflow_deep = os.environ.get(
+        'ISLAM_USE_CYTHON_EXTERNAL_BOUNDARY_INFLOW_DEEP',
+        '1' if external_boundary_deep else '0',
+    ) == '1'
+    net_obj.use_cython_external_boundary_outflow_deep = os.environ.get(
+        'ISLAM_USE_CYTHON_EXTERNAL_BOUNDARY_OUTFLOW_DEEP',
+        '1' if external_boundary_deep else '0',
+    ) == '1'
+    net_obj.use_cython_external_boundary_deep = (
+        net_obj.use_cython_external_boundary_inflow_deep
+        or net_obj.use_cython_external_boundary_outflow_deep
+    )
     net_obj.use_cpp_nodechain_deep_apply = os.environ.get('ISLAM_CPP_USE_NODECHAIN_DEEP_APPLY', '0') == '1'
     net_obj.use_cpp_nodechain_commit_deep = os.environ.get('ISLAM_CPP_USE_NODECHAIN_COMMIT_DEEP', '0') == '1'
     save_interval_env = os.environ.get('ISLAM_SAVE_INTERVAL', '').strip()
@@ -683,24 +696,80 @@ def configure_net_options(net_obj, export_png=False):
 
 
 def apply_boundaries(net_obj, mode='main', warmup_shift_hours=0.0):
+    def _attach_native_meta(node_name, meta):
+        item = net_obj.boundaries.get(node_name)
+        if item is not None:
+            item['native_meta'] = meta
+
     if mode == 'constant':
         q0 = {f'n{i}': q_boundary_value(0.0, f'n{i}') for i in range(1, 8)}
         z0 = level_boundary_value(0.0)
         net_obj.set_boundary('n14', 'fix_level', lambda t, _z=z0: _z)
+        _attach_native_meta('n14', {
+            'kind': 'level_constant',
+            'value': float(z0),
+        })
         for i in range(1, 8):
-            net_obj.set_boundary(f'n{i}', 'flow', lambda t, _q=q0[f'n{i}']: _q)
+            node_name = f'n{i}'
+            net_obj.set_boundary(node_name, 'flow', lambda t, _q=q0[node_name]: _q)
+            _attach_native_meta(node_name, {
+                'kind': 'flow_constant',
+                'value': float(q0[node_name]),
+            })
     elif mode == 'cyclic':
         net_obj.set_boundary('n14', 'fix_level', lambda t, _s=warmup_shift_hours: level_boundary_value_cyclic(t, _s))
+        _attach_native_meta('n14', {
+            'kind': 'level_interp',
+            'interp': level,
+            'bias': float(level_bias),
+            'scale': 1.0,
+            'shift_hours': float(warmup_shift_hours),
+            'cyclic': True,
+            'cycle_hours': float(boundary_cycle_hours),
+            'base_hours': float(Q.x_min),
+        })
         for i in range(1, 8):
+            node_name = f'n{i}'
             net_obj.set_boundary(
-                f'n{i}',
+                node_name,
                 'flow',
-                lambda t, _n=f'n{i}', _s=warmup_shift_hours: q_boundary_value_cyclic(t, _n, _s)
+                lambda t, _n=node_name, _s=warmup_shift_hours: q_boundary_value_cyclic(t, _n, _s)
             )
+            _attach_native_meta(node_name, {
+                'kind': 'flow_interp',
+                'interp': Q,
+                'bias': 0.0,
+                'scale': float(q_scales[node_name]),
+                'shift_hours': float(q_shift_hours + warmup_shift_hours),
+                'cyclic': True,
+                'cycle_hours': float(boundary_cycle_hours),
+                'base_hours': float(Q.x_min),
+            })
     else:
         net_obj.set_boundary('n14', 'fix_level', lambda t: level_boundary_value(t))
+        _attach_native_meta('n14', {
+            'kind': 'level_interp',
+            'interp': level,
+            'bias': float(level_bias),
+            'scale': 1.0,
+            'shift_hours': 0.0,
+            'cyclic': False,
+            'cycle_hours': float(boundary_cycle_hours),
+            'base_hours': float(Q.x_min),
+        })
         for i in range(1, 8):
-            net_obj.set_boundary(f'n{i}', 'flow', lambda t, _n=f'n{i}': q_boundary_value(t, _n))
+            node_name = f'n{i}'
+            net_obj.set_boundary(node_name, 'flow', lambda t, _n=node_name: q_boundary_value(t, _n))
+            _attach_native_meta(node_name, {
+                'kind': 'flow_interp',
+                'interp': Q,
+                'bias': 0.0,
+                'scale': float(q_scales[node_name]),
+                'shift_hours': float(q_shift_hours),
+                'cyclic': False,
+                'cycle_hours': float(boundary_cycle_hours),
+                'base_hours': float(Q.x_min),
+            })
 
 
 def initialize_rivers(net_obj):
