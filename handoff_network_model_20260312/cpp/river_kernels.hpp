@@ -80,6 +80,32 @@ UpdateCellStats update_cell_properties_exact(
     int near_dry_derived_mode
 );
 
+UpdateCellStats update_single_cell_properties_exact(
+    const TableView& tbl,
+    float* S,
+    float* Q,
+    double* water_level,
+    double* water_depth,
+    float* U,
+    float* C,
+    float* FR,
+    float* P,
+    float* PRESS,
+    float* R,
+    std::uint8_t* forced_dry_recorded,
+    double area_limit,
+    double cell_bed,
+    double g,
+    double eps,
+    double water_depth_limit,
+    double velocity_depth_limit,
+    int preserve_true_width,
+    int near_dry_velocity_mode,
+    int near_dry_derived_mode,
+    double level_hint,
+    int use_level_hint
+);
+
 AssemblePostStepStats apply_explicit_manning_poststep_exact(
     const TableView* tables,
     std::size_t n,

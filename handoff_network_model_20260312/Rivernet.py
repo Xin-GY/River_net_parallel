@@ -160,6 +160,7 @@ class Rivernet():
         self.use_cython_nodechain_prebound_fast = False
         self.use_cpp_nodechain_deep_apply = False
         self.use_cpp_nodechain_commit_deep = False
+        self.use_cpp_nodechain_refresh_deep = False
         self._cython_nodechain_plan = None
         self.use_cpp_evolve = False
         self.cpp_threads = False

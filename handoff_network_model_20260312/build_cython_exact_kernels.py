@@ -15,7 +15,8 @@ def existing_extensions():
                 name="cython_node_iteration",
                 sources=["cython_node_iteration.pyx"],
                 include_dirs=[np.get_include()],
-                extra_compile_args=["-O3"],
+                language="c++",
+                extra_compile_args=["-O3", "-std=c++17"],
             )
         )
     if (root / "cython_river_kernels.pyx").exists():

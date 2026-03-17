@@ -263,6 +263,118 @@ UpdateCellStats update_cell_properties_exact(
     return stats;
 }
 
+UpdateCellStats update_single_cell_properties_exact(
+    const TableView& tbl,
+    float* S,
+    float* Q,
+    double* water_level,
+    double* water_depth,
+    float* U,
+    float* C,
+    float* FR,
+    float* P,
+    float* PRESS,
+    float* R,
+    std::uint8_t* forced_dry_recorded,
+    double area_limit,
+    double cell_bed,
+    double g,
+    double eps,
+    double water_depth_limit,
+    double velocity_depth_limit,
+    int preserve_true_width,
+    int near_dry_velocity_mode,
+    int near_dry_derived_mode,
+    double level_hint,
+    int use_level_hint
+) {
+    UpdateCellStats stats{};
+    const bool keep_true_width = preserve_true_width != 0;
+    const float g_f = static_cast<float>(g);
+    const float eps_f = static_cast<float>(eps);
+    const double prev_s = static_cast<double>(*S);
+    const double prev_depth = static_cast<double>(*water_depth);
+
+    double area_i = std::max(static_cast<double>(*S), 0.0);
+    *S = static_cast<float>(area_i);
+
+    double level_i = use_level_hint != 0 ? level_hint : table_level_by_area(tbl, area_i);
+    *water_level = level_i;
+    double depth_i = std::max(level_i - cell_bed, 0.0);
+    *water_depth = depth_i;
+
+    if (is_cell_dry(area_i, depth_i, static_cast<double>(*Q), area_limit, g, eps, water_depth_limit)) {
+        if (*forced_dry_recorded == 0 && (prev_s > area_limit || prev_depth > water_depth_limit)) {
+            *forced_dry_recorded = 1;
+            stats.forced_dry_increment += 1;
+        }
+        *S = 0.0f;
+        *Q = 0.0f;
+        *water_depth = 0.0;
+        *water_level = cell_bed;
+        *U = 0.0f;
+        *C = static_cast<float>(eps);
+        *FR = 0.0f;
+    } else {
+        if (depth_i <= velocity_depth_limit) {
+            if (near_dry_velocity_mode == ZERO_Q) {
+                *Q = 0.0f;
+                *U = 0.0f;
+                *C = static_cast<float>(eps);
+                *FR = 0.0f;
+            } else {
+                const double depth_actual = max3(depth_i, water_depth_limit, eps);
+                const double area_actual = max3(area_i, area_limit, eps);
+                double depth_floor = std::max(velocity_depth_limit, water_depth_limit);
+                if (near_dry_derived_mode == ACTUAL_U_SOFT_FLOOR_C) {
+                    depth_floor = std::max(depth_actual, std::sqrt(std::max(water_depth_limit, eps) * depth_floor));
+                } else if (near_dry_derived_mode == ACTUAL_U_WATERDEPTH_FLOOR_C) {
+                    depth_floor = max3(depth_actual, water_depth_limit, eps);
+                }
+                const double area_floor = std::max(
+                    area_actual,
+                    std::max(table_area_by_depth(tbl, depth_floor), std::max(area_limit, eps))
+                );
+                const double width_floor = resolve_width_exact(
+                    tbl,
+                    area_floor,
+                    depth_floor,
+                    eps,
+                    water_depth_limit,
+                    keep_true_width
+                );
+                if (near_dry_derived_mode == FLOOR_U_AND_C) {
+                    *U = static_cast<float>(static_cast<double>(*Q) / area_floor);
+                } else {
+                    *U = static_cast<float>(static_cast<double>(*Q) / area_actual);
+                }
+                *C = static_cast<float>(std::sqrt(g * area_floor / width_floor));
+                *FR = std::fabs(*U) / std::max(*C, eps_f);
+            }
+        } else {
+            const double width_i = resolve_width_exact(
+                tbl,
+                area_i,
+                depth_i,
+                eps,
+                water_depth_limit,
+                keep_true_width
+            );
+            const float area_f = *S;
+            const float width_f = std::max(static_cast<float>(width_i), eps_f);
+            *U = *Q / area_f;
+            *C = std::sqrt(g_f * area_f / width_f);
+            *FR = std::fabs(*U) / std::max(*C, eps_f);
+        }
+    }
+
+    const double final_area = static_cast<double>(*S);
+    *P = static_cast<float>(table_wetted_by_area(tbl, final_area));
+    *PRESS = static_cast<float>(table_press_by_area(tbl, final_area));
+    *R = static_cast<float>(table_hradius_by_area(tbl, final_area));
+    return stats;
+}
+
 AssemblePostStepStats apply_explicit_manning_poststep_exact(
     const TableView* tables,
     std::size_t n,

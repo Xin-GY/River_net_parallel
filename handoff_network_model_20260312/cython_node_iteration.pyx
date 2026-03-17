@@ -9,10 +9,59 @@ cimport numpy as cnp
 from libc.math cimport fabs, isnan, sqrt
 import time as pytime
 
+from libcpp cimport bool as cbool
+
 from cython_cross_section cimport (
     CrossSectionTableCython,
     compute_stage_boundary_mainline_fast,
 )
+
+cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
+    cdef cppclass TableView:
+        const double* area_axis
+        const double* depth_a
+        const double* level_a
+        const double* DEB_a
+        const double* width_a
+        const double* wetted_a
+        const double* press_a
+        const double* area_axis_wet
+        const double* width_a_wet
+        const double* depth_axis
+        const double* area_d
+        size_t area_len
+        size_t wet_len
+        size_t depth_len
+        double bed_level
+
+    cdef cppclass UpdateCellStats:
+        size_t forced_dry_increment
+
+    UpdateCellStats update_single_cell_properties_exact_cpp_kernel "update_single_cell_properties_exact"(
+        const TableView& tbl,
+        float* S,
+        float* Q,
+        double* water_level,
+        double* water_depth,
+        float* U,
+        float* C,
+        float* FR,
+        float* P,
+        float* PRESS,
+        float* R,
+        unsigned char* forced_dry_recorded,
+        double area_limit,
+        double cell_bed,
+        double g,
+        double eps,
+        double water_depth_limit,
+        double velocity_depth_limit,
+        int preserve_true_width,
+        int near_dry_velocity_mode,
+        int near_dry_derived_mode,
+        double level_hint,
+        int use_level_hint,
+    ) except +
 
 
 cdef inline double _maxd(double a, double b) noexcept:
@@ -68,6 +117,7 @@ cdef class NodeBoundaryDeepPlan:
     cdef CrossSectionTableCython tbl_inner
     cdef CrossSectionTableCython tbl_target
     cdef CrossSectionTableCython tbl_second
+    cdef TableView target_view
 
     cdef int side_code
     cdef int ghost_idx
@@ -117,10 +167,51 @@ cdef class NodeBoundaryDeepPlan:
     cdef void set_dt(self, double dt) noexcept:
         self.dt_moc = dt
 
-    cdef void _refresh_committed_state(self, double level, double Ab, double Qb, double Tb):
+    cdef void _record_forced_dry(self, double prev_s, double prev_depth):
+        if self.forced_dry_recorded[self.ghost_idx] != 0:
+            return
+        if prev_s > self.cell_s_limit[self.ghost_idx] or prev_depth > self.water_depth_limit:
+            self.river.current_forced_dry_count += 1
+            self.river.total_forced_dry_count += 1
+            self.forced_dry_recorded[self.ghost_idx] = 1
+
+    cdef void _refresh_boundary_cell_state_exact(self, double level):
+        cdef UpdateCellStats stats
+        stats = update_single_cell_properties_exact_cpp_kernel(
+            self.target_view,
+            &self.S[self.ghost_idx],
+            &self.Q[self.ghost_idx],
+            &self.water_level[self.ghost_idx],
+            &self.water_depth[self.ghost_idx],
+            &self.U[self.ghost_idx],
+            &self.C[self.ghost_idx],
+            &self.FR[self.ghost_idx],
+            &self.P[self.ghost_idx],
+            &self.PRESS[self.ghost_idx],
+            &self.R[self.ghost_idx],
+            &self.forced_dry_recorded[self.ghost_idx],
+            float(self.cell_s_limit[self.ghost_idx]),
+            float(self.cell_bed[self.ghost_idx]),
+            self.g,
+            self.eps,
+            self.water_depth_limit,
+            self.velocity_depth_limit,
+            1 if self.preserve_true_width else 0,
+            self.near_dry_velocity_mode,
+            self.near_dry_derived_mode,
+            level,
+            1,
+        )
+        if stats.forced_dry_increment:
+            self.river.current_forced_dry_count += int(stats.forced_dry_increment)
+            self.river.total_forced_dry_count += int(stats.forced_dry_increment)
+
+    cdef void _refresh_committed_state(self, double level, double Ab, double Qb, double Tb, bint use_refresh_deep):
         self.S[self.ghost_idx] = <cnp.float32_t>Ab
         self.Q[self.ghost_idx] = <cnp.float32_t>Qb
-        if self.side_code == 0:
+        if use_refresh_deep:
+            self._refresh_boundary_cell_state_exact(level)
+        elif self.side_code == 0:
             self.river._refresh_cell_state(0, level_hint=level)
         else:
             self.river._refresh_cell_state(-1, level_hint=level)
@@ -135,7 +226,7 @@ cdef class NodeBoundaryDeepPlan:
             self.V[0] = <cnp.float32_t>(float(self.S[self.ghost_idx]) - float(self.S_old[self.ghost_idx]))
             self.V[1] = <cnp.float32_t>(float(self.Q[self.ghost_idx]) - float(self.Q_old[self.ghost_idx]))
 
-    cdef bint apply_level(self, double level):
+    cdef bint apply_level(self, double level, bint use_refresh_deep):
         cdef double A2 = 0.0
         cdef double Q2 = 0.0
         cdef object result
@@ -172,6 +263,7 @@ cdef class NodeBoundaryDeepPlan:
             float(result[0]),
             float(result[2]),
             float(result[1]),
+            use_refresh_deep,
         )
         return True
 
@@ -258,6 +350,25 @@ cpdef object build_nodechain_deep_apply_plan(
         plan.tbl_target = <CrossSectionTableCython>ctx['tbl_target']
         plan.tbl_second = None if ctx['tbl_second'] is None else <CrossSectionTableCython>ctx['tbl_second']
         total_cells = len(river.cell_sections)
+        plan.target_view.area_axis = &plan.tbl_target._area_axis_mv[0]
+        plan.target_view.depth_a = &plan.tbl_target._depth_a_mv[0]
+        plan.target_view.level_a = &plan.tbl_target._level_a_mv[0]
+        plan.target_view.DEB_a = &plan.tbl_target._DEB_a_mv[0]
+        plan.target_view.width_a = &plan.tbl_target._width_a_mv[0]
+        plan.target_view.wetted_a = &plan.tbl_target._wetted_a_mv[0]
+        plan.target_view.press_a = &plan.tbl_target._press_a_mv[0]
+        if plan.tbl_target._area_axis_wet_mv.shape[0] > 0:
+            plan.target_view.area_axis_wet = &plan.tbl_target._area_axis_wet_mv[0]
+            plan.target_view.width_a_wet = &plan.tbl_target._width_a_wet_mv[0]
+        else:
+            plan.target_view.area_axis_wet = NULL
+            plan.target_view.width_a_wet = NULL
+        plan.target_view.depth_axis = &plan.tbl_target._depth_axis_mv[0]
+        plan.target_view.area_d = &plan.tbl_target._area_d_mv[0]
+        plan.target_view.area_len = <size_t>plan.tbl_target._area_axis_mv.shape[0]
+        plan.target_view.wet_len = <size_t>plan.tbl_target._area_axis_wet_mv.shape[0]
+        plan.target_view.depth_len = <size_t>plan.tbl_target._depth_axis_mv.shape[0]
+        plan.target_view.bed_level = plan.tbl_target._bed_level
 
         plan.side_code = side_code
         plan.ghost_idx = _to_positive_idx(int(ctx['ghost_idx']), total_cells)
@@ -365,6 +476,7 @@ cpdef bint run_internal_node_iteration_exact(
     cdef bint use_prebound_fast = bool(getattr(net, 'use_cython_nodechain_prebound_fast', False))
     cdef bint use_deep_apply = bool(getattr(net, 'use_cpp_nodechain_deep_apply', False)) and branch_deep_apply_plans is not None
     cdef bint use_commit_deep = bool(getattr(net, 'use_cpp_nodechain_commit_deep', False)) and use_deep_apply
+    cdef bint use_refresh_deep = bool(getattr(net, 'use_cpp_nodechain_refresh_deep', False)) and use_deep_apply
     cdef double perf_total_start = 0.0
     cdef double perf_stage_start = 0.0
     cdef Py_ssize_t closure_calls = 0
@@ -429,7 +541,7 @@ cpdef bint run_internal_node_iteration_exact(
                 side_code = <int>branch_side_codes[k]
                 if use_deep_apply:
                     deep_plan = <NodeBoundaryDeepPlan>branch_deep_apply_plans[k]
-                    if deep_plan.apply_level(float(levels[i])):
+                    if deep_plan.apply_level(float(levels[i]), use_refresh_deep):
                         prebound_fast_hits += 1
                         deep_apply_hits += 1
                         continue
@@ -691,7 +803,7 @@ cpdef bint run_internal_node_iteration_exact(
             side_code = <int>branch_side_codes[k]
             if use_deep_apply:
                 deep_plan = <NodeBoundaryDeepPlan>branch_deep_apply_plans[k]
-                if deep_plan.apply_level(float(levels[i])):
+                if deep_plan.apply_level(float(levels[i]), use_refresh_deep):
                     prebound_fast_hits += 1
                     deep_apply_hits += 1
                     if not use_commit_deep:
