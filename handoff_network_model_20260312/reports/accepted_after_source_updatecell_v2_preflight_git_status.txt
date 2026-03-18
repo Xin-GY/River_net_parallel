@@ -1,0 +1,6 @@
+branch: feature/cpp-exact-after-source-updatecell-v2
+head: c92a3ca
+worktree: /tmp/feature_cpp_exact_after_source_updatecell_v2
+git status --short:
+
+(clean)
