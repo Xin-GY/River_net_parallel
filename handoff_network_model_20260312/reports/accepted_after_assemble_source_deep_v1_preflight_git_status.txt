@@ -1,0 +1,15 @@
+worktree: /tmp/feature_cpp_exact_after_assemble_source_deep_v1
+branch: feature/cpp-exact-after-assemble-source-deep-v1
+base_commit: 445c2c9
+base_message: perf: deepen exact assemble ownership on global-cfl baseline (+22.5% 40h evolve)
+
+git status --short --branch
+## feature/cpp-exact-after-assemble-source-deep-v1
+
+git ls-files --others --exclude-standard
+(none)
+
+notes
+- This continuation starts cleanly from the accepted exact candidate 445c2c9.
+- No local source edits or untracked outputs were present at phase-0 capture time.
+- Benchmarks will be launched from the worktree root, not from a subdirectory.

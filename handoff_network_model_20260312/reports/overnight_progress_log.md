@@ -1,18 +1,17 @@
 # Overnight Progress Log
 
-## 2026-03-17
+## Phase 0
 
-- created `feature/cpp-exact-after-globalcfl-assemble-reaudit-v2` from accepted exact candidate `689ae0b`
-- created clean worktree at `/tmp/feature_cpp_exact_after_globalcfl_assemble_reaudit_v2`
-- recorded preflight git status and branch layout
-- rebuilt Cython/C++ extensions in the new worktree
-- replayed accepted exact config for 10m, 2h, and 40h
-- verified strict compare passes against `/tmp/feature_cpp_exact_accepted_after_global_cfl` outputs for all three cases
-- wrote `accepted_after_globalcfl_assemble_v2_hotspot_recheck.md`
-- conclusion from the fresh audit: `Assemble_Flux_2` remains the single highest-confidence next move on top of `689ae0b`
-- ported assemble deep ownership logic from the preserved prototype into the `689ae0b` baseline without mixing refresh/fullstep/external-boundary paths
-- rebuilt Cython/C++ river kernels
-- ran `assemble_deep_v2` exact gate for 10m / 2h / 40h
-- strict compare passed for all three cases
-- 40h model time improved from `50.941080 s` fresh replay / `60.743103 s` historical accepted gate to `47.053824 s`
-- threads were rechecked conceptually only; no threaded implementation was added in this round
+- Created continuation branch `feature/cpp-exact-after-assemble-source-deep-v1` from accepted exact candidate `445c2c9`.
+- Created dedicated worktree `/tmp/feature_cpp_exact_after_assemble_source_deep_v1`.
+- Recorded clean preflight status and branch layout.
+- Confirmed this worktree starts without local edits or untracked outputs.
+- Confirmed `Caculate_source_term_2` is still a Python per-cell loop on the accepted path and that no source-deep native feature flag exists yet.
+
+## Phase 1
+
+- Read the accepted assemble/global-CFL reports plus the boundary-shell and assemble-threads no-go reports.
+- Rechecked the accepted path ownership for `Caculate_source_term_2`.
+- Verified from fresh 2h cProfile that source-stage Python time is dominated by repeated `get_DEB_by_area` table dispatch and per-interface Python ownership, not by a native kernel.
+- Used the current accepted branch's own 40h stage breakdown to rank `source` against `update_cell`, `assemble`, `boundary_updater`, and `nodechain`.
+- Recorded a single continuation decision: proceed with source-term deepening, because it is the cleanest remaining non-nodechain / non-boundary exact ownership gap.
