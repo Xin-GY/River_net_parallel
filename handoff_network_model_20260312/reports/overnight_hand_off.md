@@ -3,7 +3,7 @@
 ## Current Branch
 
 - branch: `feature/cpp-exact-after-source-updatecell-v2`
-- head: `486b65b`
+- latest checkpoint: phase-1 no-go documentation synced on this branch
 - true accepted starting point for this round: `feature/cpp-exact-after-assemble-source-deep-v1@c92a3ca`
 
 This branch is already at its final documentation checkpoint for the phase-1 no-go outcome.
