@@ -545,6 +545,21 @@ def level_boundary_value_cyclic(t_seconds, shift_hours=0.0):
     return level(h) + level_bias
 
 
+def _attach_boundary_meta(func, *, kind, group_key, base_callable=None, scale=1.0, bias=0.0, shift_hours=0.0):
+    try:
+        func.__islam_boundary_meta__ = {
+            "kind": kind,
+            "group_key": group_key,
+            "base_callable": base_callable,
+            "scale": float(scale),
+            "bias": float(bias),
+            "shift_hours": float(shift_hours),
+        }
+    except Exception:
+        pass
+    return func
+
+
 def build_initial_discharge_guess():
     q_in = {
         f'n{i}': q_boundary_value(0.0, f'n{i}')
@@ -623,6 +638,7 @@ def configure_net_options(net_obj, export_png=False):
     net_obj.use_cpp_nodechain_deep_apply = os.environ.get('ISLAM_CPP_USE_NODECHAIN_DEEP_APPLY', '0') == '1'
     net_obj.use_cpp_nodechain_commit_deep = os.environ.get('ISLAM_CPP_USE_NODECHAIN_COMMIT_DEEP', '0') == '1'
     net_obj.use_cpp_global_cfl_deep = os.environ.get('ISLAM_CPP_USE_GLOBAL_CFL_DEEP', '0') == '1'
+    net_obj.use_cpp_boundary_shell_deep = os.environ.get('ISLAM_CPP_USE_BOUNDARY_SHELL_DEEP', '0') == '1'
     save_interval_env = os.environ.get('ISLAM_SAVE_INTERVAL', '').strip()
     net_obj.output_save_interval = float(save_interval_env) if save_interval_env else None
     net_obj.save_cfl_history = os.environ.get('ISLAM_SAVE_CFL_HISTORY', '0') == '1'
@@ -687,21 +703,57 @@ def apply_boundaries(net_obj, mode='main', warmup_shift_hours=0.0):
     if mode == 'constant':
         q0 = {f'n{i}': q_boundary_value(0.0, f'n{i}') for i in range(1, 8)}
         z0 = level_boundary_value(0.0)
-        net_obj.set_boundary('n14', 'fix_level', lambda t, _z=z0: _z)
+        outflow_func = _attach_boundary_meta(
+            (lambda t, _z=z0: _z),
+            kind='generic',
+            group_key='constant:level:n14',
+        )
+        net_obj.set_boundary('n14', 'fix_level', outflow_func)
         for i in range(1, 8):
-            net_obj.set_boundary(f'n{i}', 'flow', lambda t, _q=q0[f'n{i}']: _q)
+            inflow_func = _attach_boundary_meta(
+                (lambda t, _q=q0[f'n{i}']: _q),
+                kind='generic',
+                group_key=f'constant:flow:n{i}',
+            )
+            net_obj.set_boundary(f'n{i}', 'flow', inflow_func)
     elif mode == 'cyclic':
-        net_obj.set_boundary('n14', 'fix_level', lambda t, _s=warmup_shift_hours: level_boundary_value_cyclic(t, _s))
+        outflow_func = _attach_boundary_meta(
+            (lambda t, _s=warmup_shift_hours: level_boundary_value_cyclic(t, _s)),
+            kind='generic',
+            group_key='cyclic:level:n14',
+        )
+        net_obj.set_boundary('n14', 'fix_level', outflow_func)
         for i in range(1, 8):
+            inflow_func = _attach_boundary_meta(
+                (lambda t, _n=f'n{i}', _s=warmup_shift_hours: q_boundary_value_cyclic(t, _n, _s)),
+                kind='generic',
+                group_key=f'cyclic:flow:n{i}',
+            )
             net_obj.set_boundary(
                 f'n{i}',
                 'flow',
-                lambda t, _n=f'n{i}', _s=warmup_shift_hours: q_boundary_value_cyclic(t, _n, _s)
+                inflow_func
             )
     else:
-        net_obj.set_boundary('n14', 'fix_level', lambda t: level_boundary_value(t))
+        outflow_func = _attach_boundary_meta(
+            (lambda t: level_boundary_value(t)),
+            kind='shared_level_bias',
+            group_key='main:level:n14',
+            base_callable=level,
+            bias=level_bias,
+            shift_hours=0.0,
+        )
+        net_obj.set_boundary('n14', 'fix_level', outflow_func)
         for i in range(1, 8):
-            net_obj.set_boundary(f'n{i}', 'flow', lambda t, _n=f'n{i}': q_boundary_value(t, _n))
+            inflow_func = _attach_boundary_meta(
+                (lambda t, _n=f'n{i}': q_boundary_value(t, _n)),
+                kind='scaled_shared_q',
+                group_key='main:flow:shared_q',
+                base_callable=Q,
+                scale=q_scales[f'n{i}'],
+                shift_hours=q_shift_hours,
+            )
+            net_obj.set_boundary(f'n{i}', 'flow', inflow_func)
 
 
 def initialize_rivers(net_obj):

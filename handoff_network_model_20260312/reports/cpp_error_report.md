@@ -2,7 +2,7 @@
 
 ## Summary
 
-`assemble_deep_v2` is exact relative to the accepted global-CFL baseline outputs.
+`boundary_shell_v1` final exact candidate is numerically exact relative to the accepted serial path outputs in this branch.
 
 All three gates pass:
 
@@ -34,11 +34,12 @@ All three gates pass:
 - first diff: none
 - `global_dt max_abs = 0.0`
 
-## Conclusion
+## Important Failed Sub-Variant
 
-The deeper assemble ownership push does not introduce any observed drift in:
+The first grouped-evaluator implementation was not exact on 40h:
 
-- `cfl_history.csv`
-- `internal_node_history.csv`
-- control outputs
-- final 40h state files
+- baseline steps: `29783`
+- grouped candidate steps: `29810`
+- first drift time: about `23399.751953125 s`
+
+That grouped path is rejected and not the final candidate.

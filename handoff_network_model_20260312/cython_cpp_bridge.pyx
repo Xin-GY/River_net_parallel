@@ -192,6 +192,131 @@ cpdef bint calculate_global_cfl_exact_cpp(object net):
     return True
 
 
+cpdef bint run_external_boundary_shell_deep(object net):
+    cdef object builder
+    cdef object plan
+    cdef tuple ops
+    cdef tuple groups
+    cdef object op
+    cdef object group
+    cdef object generic_callable
+    cdef object method_callable
+    cdef object base_callable
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] group_values
+    cdef cnp.ndarray[cnp.uint8_t, ndim=1] group_ready
+    cdef Py_ssize_t n_groups
+    cdef Py_ssize_t i
+    cdef int method_kind
+    cdef int value_mode
+    cdef int group_idx
+    cdef object current_time_obj
+    cdef double current_time
+    cdef double time_hours
+    cdef double shift_hours
+    cdef double bias
+    cdef double scale
+    cdef double value
+    cdef double shell_time = 0.0
+    cdef double formula_time = 0.0
+    cdef double perf_t0
+    cdef bint perf_enabled = bool(getattr(net, "perf_profile_enabled", False))
+    cdef object cached_values
+    cdef object cached_ready
+
+    if not bool(getattr(net, "use_cpp_boundary_shell_deep", False)):
+        return False
+    if bool(getattr(net, "verbos", False)):
+        return False
+
+    builder = getattr(net, "_build_cpp_boundary_shell_plan", None)
+    if builder is None:
+        return False
+    plan = builder()
+    if plan is None:
+        return False
+
+    ops = <tuple>plan["ops"]
+    groups = <tuple>plan["groups"]
+    n_groups = len(groups)
+    if n_groups:
+        cached_values = getattr(net, "_cpp_boundary_shell_group_values", None)
+        cached_ready = getattr(net, "_cpp_boundary_shell_group_ready", None)
+        if cached_values is None or cached_ready is None:
+            cached_values = np.empty(n_groups, dtype=np.float64)
+            cached_ready = np.zeros(n_groups, dtype=np.uint8)
+            net._cpp_boundary_shell_group_values = cached_values
+            net._cpp_boundary_shell_group_ready = cached_ready
+        else:
+            if len(cached_values) != n_groups:
+                cached_values = np.empty(n_groups, dtype=np.float64)
+                net._cpp_boundary_shell_group_values = cached_values
+            if len(cached_ready) != n_groups:
+                cached_ready = np.zeros(n_groups, dtype=np.uint8)
+                net._cpp_boundary_shell_group_ready = cached_ready
+        group_values = <cnp.ndarray[cnp.float64_t, ndim=1]>cached_values
+        group_ready = <cnp.ndarray[cnp.uint8_t, ndim=1]>cached_ready
+        group_ready[:] = 0
+
+    current_time_obj = net.current_sim_time
+    current_time = float(current_time_obj)
+    time_hours = float(current_time_obj / 3600.0)
+
+    for op in ops:
+        method_kind = <int>op[0]
+        value_mode = <int>op[1]
+        group_idx = <int>op[2]
+        scale = float(op[3])
+        generic_callable = op[4]
+        method_callable = op[5]
+
+        if value_mode != 0:
+            if perf_enabled:
+                perf_t0 = pytime.perf_counter()
+            if value_mode == 1:
+                value = float(generic_callable(current_time_obj))
+            elif value_mode == 2:
+                if group_ready[group_idx] == 0:
+                    group = groups[group_idx]
+                    base_callable = group[1]
+                    shift_hours = float(group[2])
+                    group_values[group_idx] = float(base_callable((current_time_obj / 3600.0) + shift_hours))
+                    group_ready[group_idx] = 1
+                value = scale * group_values[group_idx]
+            elif value_mode == 3:
+                if group_ready[group_idx] == 0:
+                    group = groups[group_idx]
+                    base_callable = group[1]
+                    shift_hours = float(group[2])
+                    bias = float(group[3])
+                    group_values[group_idx] = float(base_callable((current_time_obj / 3600.0) + shift_hours)) + bias
+                    group_ready[group_idx] = 1
+                value = group_values[group_idx]
+            elif value_mode == 4:
+                generic_callable(current_time_obj)
+                value = 0.0
+            else:
+                return False
+            if perf_enabled:
+                shell_time += pytime.perf_counter() - perf_t0
+
+        if perf_enabled:
+            perf_t0 = pytime.perf_counter()
+        if method_kind == 0:
+            method_callable()
+        else:
+            method_callable(value)
+        if perf_enabled:
+            formula_time += pytime.perf_counter() - perf_t0
+
+    if perf_enabled:
+        net._perf_add("boundary_updater.external.shell_eval", shell_time)
+        net._perf_add("boundary_updater.external.formula_apply", formula_time)
+        net._perf_inc("boundary_updater.external.deep.calls")
+        net._perf_inc("boundary_updater.external.deep.ops", len(ops))
+        net._perf_set_max("boundary_updater.external.deep.group_count", float(n_groups))
+    return True
+
+
 def run_cpp_network_evolve_serial(object net, object yield_step):
     cdef bint yield_flag = False
     cdef bint finish_flag = False

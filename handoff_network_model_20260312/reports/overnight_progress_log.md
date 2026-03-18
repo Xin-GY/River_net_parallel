@@ -20,3 +20,23 @@ Phase-1 verdict:
 - go
 - `boundary_updater.external` remains the largest clean blocker outside the already-rejected nodechain-deeper families
 - proceed to boundary shell deeper ownership pushdown only
+
+## 2026-03-18 Phase 2 / Phase 3
+
+- implemented boundary-shell deep routing under `ISLAM_CPP_USE_BOUNDARY_SHELL_DEEP=1`
+- first implementation used shared-source evaluator batching
+- grouped version passed 10m / 2h but failed 40h exact compare
+- narrowed the failure to the grouped evaluator path rather than boundary formula bodies
+- repaired the implementation by:
+  - keeping the precompiled routing/method plan
+  - restoring per-op original callable evaluation
+  - restoring original `current_sim_time` callable argument semantics
+- reran 10m / 2h / 40h strict compare on the repaired candidate
+- final repaired candidate passed all exact gates
+
+Phase-3 verdict:
+
+- exact: yes
+- same-harness 40h net gain: no
+- keep as documented prototype only
+- do not upgrade accepted exact

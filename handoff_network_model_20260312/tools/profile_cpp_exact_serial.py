@@ -34,6 +34,7 @@ def main() -> int:
     parser.add_argument("--use-cpp-roe-matrix", action="store_true", default=False)
     parser.add_argument("--use-cpp-face-uc", action="store_true", default=False)
     parser.add_argument("--use-cpp-global-cfl-deep", action="store_true", default=False)
+    parser.add_argument("--use-cpp-boundary-shell-deep", action="store_true", default=False)
     args = parser.parse_args()
 
     os.environ["ISLAM_USE_PARALLEL"] = "0"
@@ -54,6 +55,7 @@ def main() -> int:
     os.environ["ISLAM_CPP_USE_ROE_MATRIX"] = "1" if args.use_cpp_roe_matrix else "0"
     os.environ["ISLAM_CPP_USE_FACE_UC"] = "1" if args.use_cpp_face_uc else "0"
     os.environ["ISLAM_CPP_USE_GLOBAL_CFL_DEEP"] = "1" if args.use_cpp_global_cfl_deep else "0"
+    os.environ["ISLAM_CPP_USE_BOUNDARY_SHELL_DEEP"] = "1" if args.use_cpp_boundary_shell_deep else "0"
     os.environ["ISLAM_OUTPUT_PATH"] = args.output_dir
     os.environ["ISLAM_SIM_END_TIME"] = args.sim_end_time
     os.environ["ISLAM_OUTPUT_RIVERS"] = "river11"
@@ -108,6 +110,7 @@ def main() -> int:
         "use_cpp_roe_matrix": bool(args.use_cpp_roe_matrix),
         "use_cpp_face_uc": bool(args.use_cpp_face_uc),
         "use_cpp_global_cfl_deep": bool(args.use_cpp_global_cfl_deep),
+        "use_cpp_boundary_shell_deep": bool(args.use_cpp_boundary_shell_deep),
     }
     perf_stats = net.export_perf_stats() if hasattr(net, "export_perf_stats") else {}
 

@@ -1,6 +1,7 @@
 import random
 import time
 import os
+import functools
 from copy import deepcopy
 
 from river_for_net import River
@@ -50,11 +51,13 @@ except Exception:
 try:
     from cython_cpp_bridge import (
         calculate_global_cfl_exact_cpp as cpp_calculate_global_cfl_exact,
+        run_external_boundary_shell_deep as cpp_run_boundary_shell_deep,
         run_cpp_network_evolve_serial as cpp_run_network_evolve_serial,
         run_cpp_network_evolve_threads as cpp_run_network_evolve_threads,
     )
 except Exception:
     cpp_calculate_global_cfl_exact = None
+    cpp_run_boundary_shell_deep = None
     cpp_run_network_evolve_serial = None
     cpp_run_network_evolve_threads = None
 
@@ -163,6 +166,7 @@ class Rivernet():
         self.use_cpp_nodechain_deep_apply = False
         self.use_cpp_nodechain_commit_deep = False
         self.use_cpp_global_cfl_deep = False
+        self.use_cpp_boundary_shell_deep = False
         self._cython_nodechain_plan = None
         self.use_cpp_evolve = False
         self.cpp_threads = False
@@ -173,6 +177,11 @@ class Rivernet():
         self._cpp_global_cfl_rivers = ()
         self._cpp_global_cfl_names = ()
         self._cpp_global_cfl_dt_values = None
+        self._cpp_boundary_shell_plan_ready = False
+        self._cpp_boundary_shell_plan = None
+        self._cpp_boundary_shell_signature = None
+        self._cpp_boundary_shell_group_values = None
+        self._cpp_boundary_shell_group_ready = None
         self.perf_profile_enabled = False
         self._perf_stats = {}
 
@@ -218,6 +227,14 @@ class Rivernet():
         self._river_method_cache = {}
         self._parallel_internal_node_specs_cache = None
         self._cython_nodechain_plan = None
+        self._invalidate_cpp_boundary_shell_plan()
+
+    def _invalidate_cpp_boundary_shell_plan(self):
+        self._cpp_boundary_shell_plan_ready = False
+        self._cpp_boundary_shell_plan = None
+        self._cpp_boundary_shell_signature = None
+        self._cpp_boundary_shell_group_values = None
+        self._cpp_boundary_shell_group_ready = None
 
     def _all_river_names(self):
         return [data.get('name') for _, _, data in self._river_edges]
@@ -582,6 +599,7 @@ class Rivernet():
         if data is None:
             # 例如自由边界
             self.boundaries[node] = {"type": btype, "call": (lambda t: None)}
+            self._invalidate_cpp_boundary_shell_plan()
             return
 
         if callable(data):
@@ -595,6 +613,7 @@ class Rivernet():
                 "call": (lambda t, _box=box: _box[0]),
                 "_val": box
             }
+        self._invalidate_cpp_boundary_shell_plan()
 
     # 修改定值的边界条件
     def update_const(self, node: str, new_value: float):
@@ -613,6 +632,7 @@ class Rivernet():
         if not item:
             raise KeyError(f"{node} 边界未设置")
         item["call"] = new_func
+        self._invalidate_cpp_boundary_shell_plan()
 
     # 更新边界类型
     def update_type(self, node: str, new_type: str):
@@ -620,6 +640,7 @@ class Rivernet():
         if node not in self.boundaries:
             raise KeyError(f"{node} 边界未设置")
         self.boundaries[node]["type"] = new_type
+        self._invalidate_cpp_boundary_shell_plan()
 
     # 获取边界值
     def get_boundary_value(self, node: str, t: float):
@@ -640,6 +661,174 @@ class Rivernet():
         for node, item in self.boundaries.items():
             out[node] = {"type": item["type"], "value": item["call"](t)}
         return out
+
+    def _boundary_shell_signature(self):
+        ordered_nodes = list(self.external_in_nodes) + list(self.external_out_nodes)
+        boundary_state = []
+        for node in ordered_nodes:
+            item = self.boundaries.get(node)
+            if item is None:
+                boundary_state.append((node, None, None))
+            else:
+                boundary_state.append((node, item.get("type"), id(item.get("call"))))
+        return (
+            tuple(boundary_state),
+            bool(self.external_flow_bc_use_characteristic),
+            bool(self.use_fix_level_bc_v2),
+            bool(self.external_bc_use_stabilizers),
+            bool(self.external_bc_respect_supercritical),
+            bool(self.external_bc_stage_on_face),
+        )
+
+    def _normalized_boundary_callable_meta(self, call):
+        meta = getattr(call, "__islam_boundary_meta__", None)
+        if not isinstance(meta, dict):
+            return None
+        kind = str(meta.get("kind", "")).strip().lower()
+        if kind not in {"scaled_shared_q", "shared_level_bias", "generic"}:
+            return None
+        base_callable = meta.get("base_callable")
+        if kind != "generic" and not callable(base_callable):
+            return None
+        return {
+            "kind": kind,
+            "group_key": str(meta.get("group_key", "")),
+            "base_callable": base_callable,
+            "scale": float(meta.get("scale", 1.0)),
+            "bias": float(meta.get("bias", 0.0)),
+            "shift_hours": float(meta.get("shift_hours", 0.0)),
+        }
+
+    def _build_cpp_boundary_shell_plan(self):
+        signature = self._boundary_shell_signature()
+        if (
+            self._cpp_boundary_shell_plan_ready
+            and self._cpp_boundary_shell_signature == signature
+            and self._cpp_boundary_shell_plan is not None
+        ):
+            return self._cpp_boundary_shell_plan
+
+        groups = []
+        group_index = {}
+        ops = []
+
+        def ensure_group(meta):
+            key = (
+                meta["kind"],
+                meta["group_key"],
+                id(meta["base_callable"]),
+                float(meta["shift_hours"]),
+                float(meta["bias"]),
+            )
+            idx = group_index.get(key)
+            if idx is not None:
+                return idx
+            idx = len(groups)
+            group_index[key] = idx
+            groups.append(
+                (
+                    meta["kind"],
+                    meta["base_callable"],
+                    float(meta["shift_hours"]),
+                    float(meta["bias"]),
+                    meta["group_key"],
+                )
+            )
+            return idx
+
+        def append_op(node_name, river_obj, river_name, btype, boundary_call, method_callable, takes_value):
+            meta = self._normalized_boundary_callable_meta(boundary_call)
+            if meta and meta["kind"] in {"scaled_shared_q", "shared_level_bias"}:
+                # Preserve the exact accepted callable semantics on the hot path.
+                # Shared-source batching looked safe on short cases but drifted on
+                # 40h exact compare, so the deep shell path keeps the precompiled
+                # routing/method ownership while evaluating the original callable
+                # once per boundary op.
+                value_mode = 1
+                group_idx = -1
+                scale = 1.0
+                generic_call = boundary_call
+            elif takes_value:
+                value_mode = 1
+                group_idx = -1
+                scale = 1.0
+                generic_call = boundary_call
+            else:
+                value_mode = 4 if boundary_call is not None else 0
+                group_idx = -1
+                scale = 1.0
+                generic_call = boundary_call
+            ops.append(
+                (
+                    1 if takes_value else 0,
+                    value_mode,
+                    int(group_idx),
+                    float(scale),
+                    generic_call,
+                    method_callable,
+                    node_name,
+                    river_name,
+                    btype,
+                )
+            )
+
+        v3_kwargs = {
+            "Fr_max": 0.85,
+            "head_gain_factor": 0.65,
+            "relax_Q": 0.4,
+            "cap_du_factor": 0.8,
+            "cap_dQ_factor": 0.7,
+            "use_stabilizers": self.external_bc_use_stabilizers,
+            "respect_supercritical": self.external_bc_respect_supercritical,
+            "stage_on_face": self.external_bc_stage_on_face,
+        }
+
+        for node_name in self.external_in_nodes:
+            item = self.boundaries.get(node_name)
+            if item is None:
+                raise KeyError(f"{node_name} 边界未设置")
+            btype = item["type"]
+            boundary_call = item["call"]
+            for river_obj, river_name in self._out_branches_by_node[node_name]:
+                if btype == "flow":
+                    method_callable = (
+                        river_obj.InBound_In_Q2
+                        if self.external_flow_bc_use_characteristic and hasattr(river_obj, "InBound_In_Q2")
+                        else river_obj.InBound_In_Q
+                    )
+                    append_op(node_name, river_obj, river_name, btype, boundary_call, method_callable, True)
+                elif btype == "fix_level":
+                    if self.use_fix_level_bc_v2:
+                        method_callable = river_obj.InBound_Fix_level_V2
+                    else:
+                        method_callable = functools.partial(river_obj.InBound_Fix_level_V3, **v3_kwargs)
+                    append_op(node_name, river_obj, river_name, btype, boundary_call, method_callable, True)
+
+        for node_name in self.external_out_nodes:
+            item = self.boundaries.get(node_name)
+            if item is None:
+                raise KeyError(f"{node_name} 边界未设置")
+            btype = item["type"]
+            boundary_call = item["call"]
+            for river_obj, river_name in self._in_branches_by_node[node_name]:
+                if btype == "free":
+                    append_op(node_name, river_obj, river_name, btype, boundary_call, river_obj.OutBound_Free_Outfall, False)
+                elif btype == "fix_level":
+                    if self.use_fix_level_bc_v2:
+                        method_callable = river_obj.OutBound_Fix_level_V2
+                    else:
+                        method_callable = functools.partial(river_obj.OutBound_Fix_level_V3, **v3_kwargs)
+                    append_op(node_name, river_obj, river_name, btype, boundary_call, method_callable, True)
+
+        plan = {
+            "signature": signature,
+            "groups": tuple(groups),
+            "ops": tuple(ops),
+        }
+        self._cpp_boundary_shell_plan = plan
+        self._cpp_boundary_shell_signature = signature
+        self._cpp_boundary_shell_plan_ready = True
+        return plan
 
     # 调用河道网格参数优化函数
     def Fine_cell_property_net(self):
@@ -827,6 +1016,16 @@ class Rivernet():
         perf_enabled = bool(self.perf_profile_enabled)
         if perf_enabled:
             t0 = time.perf_counter()
+        if (
+            bool(getattr(self, 'use_cpp_boundary_shell_deep', False))
+            and not bool(getattr(self, 'verbos', False))
+            and cpp_run_boundary_shell_deep is not None
+        ):
+            if cpp_run_boundary_shell_deep(self):
+                if perf_enabled:
+                    self._perf_add('boundary_updater.external', time.perf_counter() - t0)
+                    self._perf_inc('boundary_updater.external.calls')
+                return
         if self.verbos: print('更新外部入流边界')
         for n in self.external_in_nodes:
             btype, value = self.get_boundary_value(n, self.current_sim_time)
