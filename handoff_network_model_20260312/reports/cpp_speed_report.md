@@ -1,62 +1,42 @@
 # CPP Speed Report
 
-## Accepted Gate
+## Summary
 
-Historical accepted exact gate from the source branch:
+No new speed candidate was produced in the `updatecell_v2` round.
 
-- branch: `feature/cpp-exact-after-globalcfl-assemble-reaudit-v2`
-- commit: `445c2c9`
-- 40h `evolve/model time = 47.05382442474365 s`
+The continuation stopped at phase 1 after fresh audit showed that the accepted update-cell stage is already largely native-owned and that the remaining stage cost is not dominated by a removable Python/Cython wrapper shell.
 
-New candidate on this branch:
+## Current Accepted Reference
 
 - branch: `feature/cpp-exact-after-assemble-source-deep-v1`
-- candidate mode: `ISLAM_CPP_USE_SOURCE_DEEP=1`
+- commit: `c92a3ca`
 - 40h `evolve/model time = 34.26593613624573 s`
 
-Accepted-gate speedup:
+## Fresh Audit Evidence
 
-- absolute gain: `12.787888 s`
-- speedup: `1.373x`
+Current accepted 40h stage costs from the accepted branch-local reports:
 
-## Fresh Replay Before/After
+- `nodechain.total = 26.428349 s`
+- `boundary_updater.total = 25.179718 s`
+- `river_step.update_cell = 1.729327 s`
+- `river_step.assemble = 1.597568 s`
+- `river_step.source = 0.329018 s`
 
-Fresh replay on this worktree baseline:
+Fresh local 2h accepted-config attribution:
 
-- 10m: `0.352145 s`
-- 2h: `2.099734 s`
-- 40h: `39.178308 s`
+- `river_dispatch.Update_cell_proprity2.time = 8.398995 s`
+- `river_dispatch.Assemble_Flux_2.time = 5.926860 s`
+- `river_dispatch.Caculate_source_term_2.time = 0.096814 s`
+- `river_for_net.Update_cell_proprity2`: `tottime = 0.155999 s`, `cumtime = 8.383633 s`
 
-Source deep v1 candidate:
+Interpretation:
 
-- 10m: `0.306177 s`
-- 2h: `2.102745 s`
-- 40h: `34.265936 s`
+- `update_cell` is still larger than `assemble` and `source`
+- but the remaining cost is mostly inside the accepted native kernel rather than in a large removable wrapper shell
+- that makes a shell-only `updatecell_v2` continuation low-confidence
 
-Fresh-replay speedup on 40h:
+## Outcome
 
-- absolute gain: `4.912371 s`
-- speedup: `1.143x`
-
-## Stage Before/After On Fresh 40h Replay
-
-- `river_dispatch.Caculate_source_term_2.time`: `1.115864 s -> 0.298392 s`
-- `river_step.source`: `1.152433 s -> 0.329018 s`
-- `river_step.update_cell`: `1.830265 s -> 1.729327 s`
-- `river_step.assemble`: `1.697002 s -> 1.597568 s`
-- `boundary_updater.total`: `27.429416 s -> 25.179718 s`
-- `boundary_updater.external`: `11.841839 s -> 10.926264 s`
-- `nodechain.total`: `28.920906 s -> 26.428349 s`
-- `nodechain.apply_and_boundary_closure`: `11.871158 s -> 10.812318 s`
-- `nodechain.final_apply`: `1.986383 s -> 1.842736 s`
-
-## Interpretation
-
-The direct source-stage win is large and exact. On this machine it also reduces adjacent shell costs enough to produce a real full-case gain rather than a local-only micro-win.
-
-`source` itself is no longer a first-order blocker after this pushdown. The raw remaining heavy costs are back to:
-
-- `nodechain.total`
-- `boundary_updater.total`
-
-but those families still require more caution because the obvious deeper routes are close to already-rejected exact continuations.
+- accepted baseline before this round: `34.26593613624573 s`
+- new `updatecell_v2` candidate: not created
+- accepted result after this round: unchanged

@@ -2,71 +2,59 @@
 
 ## Current Branch
 
-- branch: `feature/cpp-exact-after-assemble-source-deep-v1`
-- head: pending final checkpoint on top of `348aadc`
-- true accepted starting point for this round: `feature/cpp-exact-after-globalcfl-assemble-reaudit-v2@445c2c9`
+- branch: `feature/cpp-exact-after-source-updatecell-v2`
+- head: pending final checkpoint on top of `1ad3d75`
+- true accepted starting point for this round: `feature/cpp-exact-after-assemble-source-deep-v1@c92a3ca`
 
 ## What This Round Did
 
-- Stayed on the true accepted exact baseline `445c2c9`, not the stale `main` index.
-- Re-audited only `Caculate_source_term_2`.
-- Added a new isolated exact feature flag:
-  - `ISLAM_CPP_USE_SOURCE_DEEP=1`
-- Kept the accepted serial baseline path unchanged when the new flag is off.
-- Moved the source-stage per-interface loop, left/right DEB lookup, denominator clip handling, and `friction_source` write-back into a serial native kernel.
+- Stayed on the true accepted exact baseline `c92a3ca`.
+- Re-audited only `Update_cell_proprity2`.
+- Did not implement any new kernel or shell path after phase 1.
 
-## Exact Gate Status
+## Why The Round Stopped
 
-Used the local no-`h5netcdf` strict-compare harness because this machine could not install `h5netcdf` successfully. The compare thresholds remained:
+Fresh audit showed that the accepted update-cell stage is already mostly native-owned.
 
-- `rtol = 1e-12`
-- `atol = 1e-12`
+The accepted kernel already owns:
 
-and the compared artifacts still included:
+- state derivation
+- width resolution
+- dry/wet guards
+- derived-state write-back
+- `QIN` zeroing
 
-- `cfl_history.csv`
-- `internal_node_history.csv`
-- saved CSV / netCDF outputs
+The remaining Python/Cython shell is too thin to justify a new `updatecell_v2` implementation.
 
-Results:
+## Fresh Evidence
 
-- 10m strict compare: pass
-- 2h strict compare: pass
-- 40h strict compare: pass
-- 40h compare: `allclose = true`
+Current accepted 40h stage costs from `c92a3ca` branch-local accepted reports:
 
-## Performance
+- `nodechain.total = 26.428349 s`
+- `boundary_updater.total = 25.179718 s`
+- `river_step.update_cell = 1.729327 s`
+- `river_step.assemble = 1.597568 s`
+- `river_step.source = 0.329018 s`
 
-Historical accepted 40h gate:
+Fresh local 2h accepted-config attribution:
 
-- `445c2c9`: `47.05382442474365 s`
+- `river_dispatch.Update_cell_proprity2.time = 8.398995 s`
+- `river_for_net.Update_cell_proprity2`: `tottime = 0.155999 s`, `cumtime = 8.383633 s`
+- `river_for_net._refresh_cell_state`: `cumtime = 14.571875 s`
 
-Same-harness fresh replay on this branch:
+Important interpretation:
 
-- baseline: `39.17830753326416 s`
-- source-deep candidate: `34.26593613624573 s`
-
-This means:
-
-- same-harness 40h A/B gain: `4.912371 s`
-- accepted-gate gain vs `445c2c9`: `12.787888 s`
-
-## Stage Impact On Fresh 40h Replay
-
-- `river_step.source`: `1.152433 s -> 0.329018 s`
-- `river_dispatch.Caculate_source_term_2.time`: `1.115864 s -> 0.298392 s`
-- `river_step.update_cell`: `1.830265 s -> 1.729327 s`
-- `river_step.assemble`: `1.697002 s -> 1.597568 s`
-- `boundary_updater.total`: `27.429416 s -> 25.179718 s`
-- `nodechain.total`: `28.920906 s -> 26.428349 s`
+- `_refresh_cell_state` remains expensive globally
+- but it is not being driven by the accepted update-cell stage itself
+- so a wrapper-only `updatecell_v2` pass would not remove the real remaining cost center
 
 ## Current Conclusion
 
-This round does produce a new accepted exact candidate if the modified source files and reports are committed:
+This round is a phase-1 no-go checkpoint.
 
-- candidate branch: `feature/cpp-exact-after-assemble-source-deep-v1`
-- candidate feature flag: `ISLAM_CPP_USE_SOURCE_DEEP=1`
-- candidate 40h exact evolve/model time: `34.26593613624573 s`
+- no new exact candidate was created
+- accepted exact baseline remains `c92a3ca`
+- accepted 40h `evolve/model time` remains `34.26593613624573 s`
 
 ## Remaining First-Order Blocker
 
@@ -75,7 +63,7 @@ Raw Top 1 remains:
 - `nodechain.total`
 - `boundary_updater.total`
 
-But the remaining obvious deeper routes there are still close to already-rejected exact families:
+But the remaining obvious deeper routes there are still too close to already rejected exact families:
 
 - refresh deep
 - residual / Jacobian deep
@@ -84,13 +72,14 @@ But the remaining obvious deeper routes there are still close to already-rejecte
 
 ## Threads Recheck
 
-Do not implement threads yet.
+Do not implement threads.
 
-After this round:
+After the accepted source-deep round:
 
-- `source` is now too small to be a first threads target
-- `assemble` is also smaller than before
-- the raw heavy remaining stages are `nodechain / boundary_updater`, which are not currently safe first thread targets
+- `source` is too small
+- `assemble` is smaller than before
+- `update_cell` no longer presents a meaningful removable shell
+- the remaining heavy stages are still the risky nodechain / boundary families
 
 ## Local State
 

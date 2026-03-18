@@ -71,24 +71,26 @@ Already native-owned on the accepted path:
 
 - accepted `update_cell_properties_exact_cpp` kernel
 - core state-derivation math inside that kernel
+- `water_level` / `water_depth` write-back
+- `U` / `C` / `FR` write-back
+- `P` / `PRESS` / `R` write-back
+- `QIN[i] = 0` write-back
 - dry/wet counter increment handoff from the kernel
 
-Still mixed / Python-owned around the accepted kernel:
+Still outside the kernel:
 
 - `Update_cell_proprity2()` wrapper dispatch
-- Python fallback routing
-- surrounding `_refresh_cell_state(i)` per-cell loop when the deep shell is not taken
-- Python/Cython state exposure for:
-  - `water_level`
-  - `water_depth`
-  - `U`
-  - `C`
-  - `FR`
-  - `P`
-  - `PRESS`
-  - `R`
-- Python width resolution via `_resolve_width_for_state(...)`
-- Python `QIN[i] = 0` loop
+- Python fallback routing when the accepted kernel is disabled
+- one-time near-dry mode selection before entering the kernel
+- one-time plan preparation / cached table-view binding
+
+Important clarification from the fresh audit:
+
+- the large `_refresh_cell_state` cumtime seen in the 2h cProfile is **not** evidence that the accepted update-cell stage still runs a Python per-cell refresh loop
+- on the accepted path, `Update_cell_proprity2()` returns immediately through `cpp_update_cell_properties_exact(...)`
+- the visible `_refresh_cell_state(...)` cost belongs to other paths such as ghost/boundary/state refresh work, not the accepted update-cell stage itself
+
+This means the remaining update-cell gap is much smaller than the stage-level timer alone suggests. The stage is still expensive, but most of that expense is already inside the accepted kernel rather than in a removable Python shell.
 
 ## Why This Round Should Target Update Cell
 
@@ -131,15 +133,29 @@ This round should not reopen them.
 This round is deliberately serial-only:
 
 - the user explicitly ruled out `update_cell threads` for this pass
-- the remaining issue is still ownership shape, not thread parallelism
-- the stage still exposes enough Python/Cython shell that serial deepening should come before any thread discussion
+- and the fresh audit shows the remaining issue is not a large removable wrapper shell anyway
 
 ## Unique Decision
 
-`Update_cell_proprity2` wrapper/state-exposure shell remains the single continuation target for this round.
+Do **not** implement `update_cell_v2` in this round.
 
 No parallel candidate is retained.
 
 ## Phase-1 Verdict
 
-Proceed to `Update_cell_proprity2` serial exact wrapper/state-exposure shell pushdown.
+Fresh audit overturns the initial assumption that `Update_cell_proprity2` still has a material wrapper/state-exposure shell to push down.
+
+The accepted kernel already owns almost all of:
+
+- state derivation
+- width resolution
+- derived-state write-back
+- `QIN` reset
+
+So a new `updatecell_v2` shell-deepening pass would mostly duplicate the accepted kernel boundary rather than remove a still-large Python ownership gap.
+
+Because the remaining obvious large costs still sit in the nodechain / boundary families that are already too close to rejected exact continuations, the correct decision for this round is:
+
+- stop after phase 1
+- keep `c92a3ca` as the accepted exact baseline
+- do not force a new implementation just to stay busy

@@ -2,60 +2,33 @@
 
 ## Summary
 
-`source_deep_v1` is exact relative to the accepted `445c2c9` serial baseline under the local no-`h5netcdf` strict-compare harness.
+No new exact candidate was implemented in the `updatecell_v2` round.
 
-All three gates pass:
+Fresh phase-1 audit overturned the initial assumption that `Update_cell_proprity2` still had a large removable Python/Cython wrapper shell. The continuation therefore stopped before any new kernel or shell implementation was introduced.
 
-- 10m: pass
-- 2h: pass
-- 40h: pass
+## Current Accepted Reference
 
-The local helper harness was used because this machine still lacks a working `h5netcdf` install. The compare thresholds remained strict:
+The accepted exact reference remains:
 
-- `rtol = 1e-12`
-- `atol = 1e-12`
+- branch: `feature/cpp-exact-after-assemble-source-deep-v1`
+- commit: `c92a3ca`
+- 10m strict compare: pass
+- 2h strict compare: pass
+- 40h strict compare: pass
+- 40h compare: `allclose = true`
 
-and the compared artifacts still included:
+## This Round
 
-- `cfl_history.csv`
-- `internal_node_history.csv`
-- saved output CSVs / netCDF files
+- new exact compare runs for an `updatecell_v2` candidate: not run
+- reason: phase-1 audit concluded no clean update-cell shell gap remained worth implementing
 
-## 10m
+## Important Audit Finding
 
-- `allclose = true`
-- `cfl_history.csv` rows: `182 / 182`
-- `internal_node_history.csv` rows: `181 / 181`
-- first diff: none
-- first diff time: none
-- first diff cell / river / source-stage index: none
-- `global_dt max_abs = 0.0`
+The visible `_refresh_cell_state` cost in the fresh 2h cProfile does not belong to the accepted `Update_cell_proprity2` stage itself.
 
-## 2h
+On the accepted path:
 
-- `allclose = true`
-- `cfl_history.csv` rows: `1483 / 1483`
-- `internal_node_history.csv` rows: `1482 / 1482`
-- first diff: none
-- first diff time: none
-- first diff cell / river / source-stage index: none
-- `global_dt max_abs = 0.0`
+- `Update_cell_proprity2()` returns through `cpp_update_cell_properties_exact(...)`
+- the large `_refresh_cell_state(...)` cumtime is coming from other paths
 
-## 40h
-
-- `allclose = true`
-- `cfl_history.csv` rows: `29784 / 29784`
-- `internal_node_history.csv` rows: `29783 / 29783`
-- first diff: none
-- first diff time: none
-- first diff cell / river / source-stage index: none
-- `global_dt max_abs = 0.0`
-
-## Conclusion
-
-The serial exact source deepening does not introduce any observed drift in:
-
-- `cfl_history.csv`
-- `internal_node_history.csv`
-- saved comparison outputs
-- final 40h state files
+So there is no new compare drift to report, because no new candidate path was introduced.

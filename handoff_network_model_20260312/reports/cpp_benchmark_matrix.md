@@ -1,35 +1,30 @@
 # CPP Benchmark Matrix
 
-## Historical Accepted Gate
+## Current Accepted Reference
 
-- source branch: `feature/cpp-exact-after-globalcfl-assemble-reaudit-v2`
-- source commit: `445c2c9`
+- branch: `feature/cpp-exact-after-assemble-source-deep-v1`
+- commit: `c92a3ca`
 
-| case | model/evolve time (s) |
-| --- | ---: |
-| 10m | unknown in this worktree handoff |
-| 2h | unknown in this worktree handoff |
-| 40h | `47.053824` |
+| case | model/evolve time (s) | strict compare |
+| --- | ---: | --- |
+| 10m | accepted on source-deep branch | pass |
+| 2h | accepted on source-deep branch | pass |
+| 40h | `34.265936` | pass |
 
-## Fresh Replay On This Branch Baseline
+## UpdateCell V2 Round
 
-| case | model/evolve time (s) | wall (s) | strict compare |
-| --- | ---: | ---: | --- |
-| 10m | `0.352145` | `0.378592` | pass |
-| 2h | `2.099734` | `2.265646` | pass |
-| 40h | `39.178308` | `41.383760` | pass |
+| phase | action | outcome |
+| --- | --- | --- |
+| 0 | clean continuation from `c92a3ca` | pass |
+| 1 | fresh update-cell audit | no-go |
+| 2 | implementation | not started |
+| 3 | exact compare | not run |
+| 4 | threads recheck | not applicable |
 
-## Source Deep V1 Candidate
+## Why No New Benchmark Row Exists
 
-| case | model/evolve time (s) | wall (s) | strict compare |
-| --- | ---: | ---: | --- |
-| 10m | `0.306177` | `0.331014` | pass |
-| 2h | `2.102745` | `2.271844` | pass |
-| 40h | `34.265936` | `38.366420` | pass |
+The round stopped after phase 1 because the fresh audit showed:
 
-## Gate Outcome
-
-- historical accepted 40h gate: `47.053824 s`
-- candidate 40h: `34.265936 s`
-- accepted-gate result: **pass**
-- same-harness fresh 40h A/B: `39.178308 s -> 34.265936 s`
+- the accepted update-cell kernel already owns the heavy state-exposure work
+- the visible remaining wrapper shell is too thin to justify a dedicated `updatecell_v2` implementation
+- the raw remaining heavy stages are still `nodechain / boundary_updater`, whose obvious deeper routes remain too close to rejected exact families
