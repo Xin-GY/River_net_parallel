@@ -1,0 +1,14 @@
+worktree: /tmp/feature_cpp_exact_after_assemble_boundary_shell_v1
+branch: feature/cpp-exact-after-assemble-boundary-shell-v1
+baseline branch: feature/cpp-exact-after-globalcfl-assemble-reaudit-v2
+baseline commit: 445c2c9
+baseline commit message: perf: deepen exact assemble ownership on global-cfl baseline (+22.5% 40h evolve)
+
+authoritative accepted exact baseline:
+- do not use stale main branch index
+- use feature/cpp-exact-after-globalcfl-assemble-reaudit-v2@445c2c9
+- accepted 40h evolve/model time = 47.05382442474365 s
+
+git status --short at phase-0 / phase-1 checkpoint:
+
+(clean working tree; local generated artifacts are excluded via .git/info/exclude and are documented in accepted_after_assemble_boundary_shell_v1_branch_layout.md)
