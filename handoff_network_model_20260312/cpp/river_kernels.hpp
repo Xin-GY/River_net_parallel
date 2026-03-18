@@ -31,6 +31,10 @@ struct AssemblePostStepStats {
     std::size_t forced_dry_increment;
 };
 
+struct SourceTermStats {
+    std::size_t friction_clip_increment;
+};
+
 struct RoeMatrixStats {
     std::size_t supercritical_pos;
     std::size_t supercritical_neg;
@@ -116,6 +120,21 @@ AssemblePostStepStats assemble_flux_exact_deep(
     double eps,
     double water_depth_limit,
     double friction_min_depth
+);
+
+SourceTermStats compute_source_term_exact(
+    const TableView* left_tables,
+    const TableView* right_tables,
+    std::size_t n,
+    const float* S,
+    const float* Q,
+    const double* water_depth,
+    double* friction_source,
+    double g,
+    double eps,
+    double friction_min_depth,
+    int frtimp_enabled,
+    int use_manning_friction
 );
 
 RoeMatrixStats compute_roe_matrix_exact(

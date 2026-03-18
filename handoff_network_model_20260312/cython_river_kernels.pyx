@@ -39,6 +39,9 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
     cdef cppclass AssemblePostStepStats:
         size_t forced_dry_increment
 
+    cdef cppclass SourceTermStats:
+        size_t friction_clip_increment
+
     cdef cppclass RoeMatrixStats:
         size_t supercritical_pos
         size_t supercritical_neg
@@ -111,6 +114,21 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double eps,
         double water_depth_limit,
         double friction_min_depth,
+    ) except +
+
+    SourceTermStats compute_source_term_exact_cpp_kernel "rivernet::compute_source_term_exact"(
+        const TableView* left_tables,
+        const TableView* right_tables,
+        size_t n,
+        const float* S,
+        const float* Q,
+        const double* water_depth,
+        double* friction_source,
+        double g,
+        double eps,
+        double friction_min_depth,
+        int frtimp_enabled,
+        int use_manning_friction,
     ) except +
 
     RoeMatrixStats compute_roe_matrix_exact_cpp_kernel "rivernet::compute_roe_matrix_exact"(
@@ -453,6 +471,27 @@ cpdef bint prepare_cpp_general_hr_flux_plan(object river):
     return True
 
 
+cpdef bint prepare_cpp_source_plan(object river):
+    cdef object plan = getattr(river, "_cpp_source_plan", None)
+    cdef tuple left_tables
+    cdef tuple right_tables
+    if plan is not None and bool(getattr(river, "_cpp_source_ready", False)):
+        return True
+    if not bool(getattr(river, "_cython_cell_state_ready", False)):
+        river._cpp_source_plan = None
+        river._cpp_source_ready = False
+        return False
+    left_tables = river._general_hr_left_tables
+    right_tables = river._general_hr_right_tables
+    if not left_tables or not right_tables:
+        river._cpp_source_plan = None
+        river._cpp_source_ready = False
+        return False
+    river._cpp_source_plan = CppGeneralHrFluxPlan(left_tables, right_tables)
+    river._cpp_source_ready = True
+    return True
+
+
 cpdef bint fill_general_hr_flux_exact_cpp_deep(object river):
     cdef CppGeneralHrFluxPlan plan
     cdef cnp.ndarray[cnp.float64_t, ndim=1] river_bed_height_arr
@@ -579,6 +618,42 @@ cpdef bint fill_rectangular_hr_flux_exact_cpp_deep(object river):
         &Flux_Friction_right_arr[0, 0],
         &cell_press_source_arr[0, 0],
     )
+    return True
+
+
+cpdef bint source_term_exact_deep_cpp(object river):
+    cdef CppGeneralHrFluxPlan plan
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] S_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Q_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] water_depth_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] friction_source_arr
+    cdef SourceTermStats stats
+
+    if not prepare_cpp_source_plan(river):
+        return False
+
+    plan = <CppGeneralHrFluxPlan>river._cpp_source_plan
+    S_arr = river.S
+    Q_arr = river.Q
+    water_depth_arr = river.water_depth
+    friction_source_arr = river.friction_source
+
+    stats = compute_source_term_exact_cpp_kernel(
+        plan.left_data(),
+        plan.right_data(),
+        river.cell_num + 1,
+        &S_arr[0],
+        &Q_arr[0],
+        &water_depth_arr[0],
+        &friction_source_arr[0, 0],
+        float(river.g),
+        float(river.EPSILON),
+        float(getattr(river, "friction_min_depth", 0.0)),
+        1 if bool(getattr(river, "FRTIMP", False)) else 0,
+        1 if str(getattr(river, "friction_model", "manning")).lower() == "manning" else 0,
+    )
+    river.current_friction_clip_count += int(stats.friction_clip_increment)
+    river.total_friction_clip_count += int(stats.friction_clip_increment)
     return True
 
 

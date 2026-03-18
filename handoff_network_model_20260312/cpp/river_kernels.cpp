@@ -469,6 +469,70 @@ AssemblePostStepStats assemble_flux_exact_deep(
     return stats;
 }
 
+SourceTermStats compute_source_term_exact(
+    const TableView* left_tables,
+    const TableView* right_tables,
+    std::size_t n,
+    const float* S,
+    const float* Q,
+    const double* water_depth,
+    double* friction_source,
+    double g,
+    double eps,
+    double friction_min_depth,
+    int frtimp_enabled,
+    int use_manning_friction
+) {
+    SourceTermStats stats{};
+    if (n == 0) {
+        return stats;
+    }
+
+    for (std::size_t i = 0; i < n; ++i) {
+        double* out = friction_source + i * 2;
+        if (frtimp_enabled != 0 || use_manning_friction == 0) {
+            out[0] = 0.0;
+            out[1] = 0.0;
+            continue;
+        }
+
+        const double sd = static_cast<double>(S[i + 1]);
+        const double sg = static_cast<double>(S[i]);
+        const double qd = static_cast<double>(Q[i + 1]);
+        const double qg = static_cast<double>(Q[i]);
+        const double smil = 0.5 * (sg + sd);
+        const double qmil = 0.5 * (qg + qd);
+        const double d_avg = 0.5 * (water_depth[i] + water_depth[i + 1]);
+
+        if (friction_min_depth > 0.0 && d_avg <= friction_min_depth) {
+            out[0] = 0.0;
+            out[1] = 0.0;
+            continue;
+        }
+
+        const double debd = table_deb_by_area(right_tables[i], sd);
+        const double debg = table_deb_by_area(left_tables[i], sg);
+        double deb;
+        if (std::fabs(sd - sg) > 0.001) {
+            deb = (debd * (smil - sg) + debg * (sd - smil)) / (sd - sg);
+        } else {
+            deb = 0.5 * (debd + debg);
+        }
+
+        double denom = deb * deb;
+        if (denom <= eps) {
+            stats.friction_clip_increment += 1;
+            denom = eps;
+        }
+
+        const double frot = qmil * std::fabs(qmil) / denom;
+        out[0] = 0.0;
+        out[1] = 2.0 * g * smil * frot;
+    }
+
+    return stats;
+}
+
 RoeMatrixStats compute_roe_matrix_exact(
     std::size_t n,
     float eps,

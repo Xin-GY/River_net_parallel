@@ -38,10 +38,12 @@ try:
         fill_general_hr_flux_exact as cython_fill_general_hr_flux_exact,
         fill_general_hr_flux_exact_cpp_deep as cpp_fill_general_hr_flux_exact_deep,
         fill_rectangular_hr_flux_exact_cpp_deep as cpp_fill_rectangular_hr_flux_exact_deep,
+        source_term_exact_deep_cpp as cpp_source_term_exact_deep,
         update_cell_properties_exact as cython_update_cell_properties_exact,
         update_cell_properties_exact_cpp as cpp_update_cell_properties_exact,
         prepare_cpp_update_cell_plan as prepare_cpp_update_cell_plan,
         prepare_cpp_general_hr_flux_plan as prepare_cpp_general_hr_flux_plan,
+        prepare_cpp_source_plan as prepare_cpp_source_plan,
         assemble_flux_poststep_exact_cpp as cpp_assemble_flux_poststep_exact,
         assemble_flux_exact_deep_cpp as cpp_assemble_flux_exact_deep,
         roe_matrix_exact_cpp as cpp_roe_matrix_exact,
@@ -51,10 +53,12 @@ except Exception:
     cython_fill_general_hr_flux_exact = None
     cpp_fill_general_hr_flux_exact_deep = None
     cpp_fill_rectangular_hr_flux_exact_deep = None
+    cpp_source_term_exact_deep = None
     cython_update_cell_properties_exact = None
     cpp_update_cell_properties_exact = None
     prepare_cpp_update_cell_plan = None
     prepare_cpp_general_hr_flux_plan = None
+    prepare_cpp_source_plan = None
     cpp_assemble_flux_poststep_exact = None
     cpp_assemble_flux_exact_deep = None
     cpp_roe_matrix_exact = None
@@ -880,6 +884,8 @@ class River(Process):
         self._general_hr_cython_batch_ready = False
         self._cpp_general_hr_flux_plan = None
         self._cpp_general_hr_flux_ready = False
+        self._cpp_source_plan = None
+        self._cpp_source_ready = False
         self._cpp_update_cell_plan = None
         self._cpp_update_cell_ready = False
         default_roe_flag = '1' if os.environ.get('ISLAM_USE_CPP_EVOLVE', '0') == '1' else '0'
@@ -888,6 +894,7 @@ class River(Process):
         self.use_cpp_roe_flux_rect_deep = os.environ.get('ISLAM_CPP_USE_ROE_FLUX_RECT_DEEP', '0') == '1'
         default_update_flag = os.environ.get('ISLAM_USE_CYTHON_UPDATE_CELL', '0')
         self.use_cython_update_cell = os.environ.get('ISLAM_CPP_USE_UPDATE_CELL', default_update_flag) == '1'
+        self.use_cpp_source_deep = os.environ.get('ISLAM_CPP_USE_SOURCE_DEEP', '0') == '1'
         self.use_cpp_assemble = os.environ.get('ISLAM_CPP_USE_ASSEMBLE', '0') == '1'
         self.use_cpp_assemble_deep = os.environ.get('ISLAM_CPP_USE_ASSEMBLE_DEEP', '0') == '1'
         self.use_cpp_roe_matrix = os.environ.get('ISLAM_CPP_USE_ROE_MATRIX', '0') == '1'
@@ -1003,6 +1010,10 @@ class River(Process):
         self._cpp_general_hr_flux_plan = None
         if prepare_cpp_general_hr_flux_plan is not None and bool(getattr(self, 'use_cpp_roe_flux_deep', False)):
             prepare_cpp_general_hr_flux_plan(self)
+        self._cpp_source_ready = False
+        self._cpp_source_plan = None
+        if prepare_cpp_source_plan is not None and bool(getattr(self, 'use_cpp_source_deep', False)):
+            prepare_cpp_source_plan(self)
         self._cpp_update_cell_ready = False
         self._cpp_update_cell_plan = None
         if prepare_cpp_update_cell_plan is not None and bool(getattr(self, 'use_cython_update_cell', False)):
@@ -1888,6 +1899,9 @@ class River(Process):
         self.F_C[:N] = F_C
 
     def Caculate_source_term_2(self):
+        if bool(getattr(self, 'use_cpp_source_deep', False)) and cpp_source_term_exact_deep is not None:
+            if cpp_source_term_exact_deep(self):
+                return
         for i in range(self.cell_num + 1):
             if self.FRTIMP or self.friction_model != 'manning':
                 self.friction_source[i, 0] = 0
