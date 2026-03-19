@@ -1,0 +1,5 @@
+branch: feature/cpp-exact-after-source-next-audit
+head: c92a3ca
+worktree: /tmp/feature_cpp_exact_after_source_next_audit
+status: clean
+accepted_starting_point: feature/cpp-exact-after-assemble-source-deep-v1@c92a3ca

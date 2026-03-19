@@ -54,3 +54,29 @@
 
 - Updated the benchmark, speed, error, and final recommendation reports.
 - Prepared the branch for a final source-deep candidate checkpoint if the modified source files and reports are committed together.
+
+## After Source Next Audit
+
+### Phase 0
+
+- Created audit-only continuation branch `feature/cpp-exact-after-source-next-audit` from the true accepted exact baseline `c92a3ca`.
+- Created dedicated worktree `/tmp/feature_cpp_exact_after_source_next_audit`.
+- Recorded preflight status and branch layout with generated-artifact exclusions.
+- Kept the branch in documentation-only mode pending the design audit outcome.
+
+### Phase 1
+
+- Re-read the current accepted `source_deep_v1` reports plus the boundary-shell, assemble-threads, and updatecell-v2 no-go reports.
+- Rebuilt the local Cython/C++ extensions in the audit worktree before trusting any fresh replay, because the initial worktree lacked in-place `.so` modules.
+- Re-ran fresh accepted-config profiling on a valid rebuilt runtime:
+  - 2h cProfile/perf for ownership attribution
+  - 40h perf replay for stage ranking
+- Reconfirmed that the remaining raw heavy costs are still `nodechain / boundary_updater`.
+- Reconfirmed that `flux`, `update_cell`, `assemble`, `source`, `roe_matrix`, `face_uc`, and `global_cfl` no longer expose a single large clean ownership gap outside the already-rejected families.
+
+### Final Audit Decision
+
+- Classified the remaining possibilities into A/B/C/D buckets.
+- `A class = none`
+- Concluded that no unique materially new exact-only serial candidate remains after `c92a3ca`.
+- Stopped the round at design/audit conclusion without starting a new implementation branch.
