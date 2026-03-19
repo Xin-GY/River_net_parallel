@@ -5,6 +5,8 @@
 # cython: initializedcheck=False
 # cython: cdivision=True
 
+import time as pytime
+
 import numpy as np
 from libc.math cimport fabs, sqrt
 from libc.stdint cimport uint8_t
@@ -76,7 +78,7 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         int preserve_true_width,
         int near_dry_velocity_mode,
         int near_dry_derived_mode,
-    ) except +
+    ) except + nogil
 
     AssemblePostStepStats apply_explicit_manning_poststep_exact_cpp_kernel "apply_explicit_manning_poststep_exact"(
         const TableView* tables,
@@ -91,7 +93,7 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double eps,
         double water_depth_limit,
         double friction_min_depth,
-    ) except +
+    ) except + nogil
 
     AssemblePostStepStats assemble_flux_exact_deep_cpp_kernel "rivernet::assemble_flux_exact_deep"(
         const TableView* tables,
@@ -114,7 +116,7 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double eps,
         double water_depth_limit,
         double friction_min_depth,
-    ) except +
+    ) except + nogil
 
     SourceTermStats compute_source_term_exact_cpp_kernel "rivernet::compute_source_term_exact"(
         const TableView* left_tables,
@@ -129,7 +131,7 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double friction_min_depth,
         int frtimp_enabled,
         int use_manning_friction,
-    ) except +
+    ) except + nogil
 
     RoeMatrixStats compute_roe_matrix_exact_cpp_kernel "rivernet::compute_roe_matrix_exact"(
         size_t n,
@@ -155,7 +157,7 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double* Vactor2,
         double* Vactor1_T,
         double* Vactor2_T,
-    ) except +
+    ) except + nogil
 
     void compute_face_uc_exact_cpp_kernel "rivernet::compute_face_uc_exact"(
         size_t n,
@@ -169,7 +171,7 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         const double* cell_s_limit,
         float* F_U,
         float* F_C,
-    ) except +
+    ) nogil
 
     void fill_general_hr_flux_exact_deep_cpp_kernel "rivernet::fill_general_hr_flux_exact_deep"(
         const TableView* left_tables,
@@ -191,7 +193,7 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double* flux_loc,
         double* flux_source_left,
         double* flux_source_right,
-    ) except +
+    ) nogil
 
     void fill_rectangular_hr_flux_exact_deep_cpp_kernel "rivernet::fill_rectangular_hr_flux_exact_deep"(
         size_t n,
@@ -214,7 +216,167 @@ cdef extern from "cpp/river_kernels.hpp" namespace "rivernet":
         double* flux_friction_left,
         double* flux_friction_right,
         double* cell_press_source,
-    ) except +
+    ) nogil
+
+
+cdef extern from "cpp/evolve_core.hpp" namespace "rivernet":
+    cdef enum FluxTaskMode:
+        FLUX_MODE_GENERAL
+        FLUX_MODE_RECTANGULAR
+
+    cdef cppclass FaceUcTask:
+        size_t n
+        double eps
+        double s_limit_default
+        int use_section_area_threshold
+        const float* S
+        const float* U
+        const float* C
+        const float* PRESS
+        const double* cell_s_limit
+        float* F_U
+        float* F_C
+
+    cdef cppclass RoeMatrixTask:
+        size_t n
+        float eps
+        float water_depth_limit
+        const float* F_C
+        const float* F_U
+        const float* BETA
+        const float* FR
+        const double* water_depth
+        const float* U
+        const float* C
+        const float* S
+        const float* Q
+        double* flag_LeVeque
+        float* abs_Lambda1
+        float* abs_Lambda2
+        float* alpha1
+        float* alpha2
+        float* Lambda1
+        float* Lambda2
+        double* Vactor1
+        double* Vactor2
+        double* Vactor1_T
+        double* Vactor2_T
+        RoeMatrixStats stats
+
+    cdef cppclass SourceTermTask:
+        const TableView* left_tables
+        const TableView* right_tables
+        size_t n
+        const float* S
+        const float* Q
+        const double* water_depth
+        double* friction_source
+        double g
+        double eps
+        double friction_min_depth
+        int frtimp_enabled
+        int use_manning_friction
+        SourceTermStats stats
+
+    cdef cppclass FluxTask:
+        int mode
+        const TableView* left_tables
+        const TableView* right_tables
+        size_t n
+        double g
+        double tiny
+        double roe_entropy_fix
+        double roe_entropy_fix_factor
+        const double* river_bed_height
+        const double* water_depth
+        const float* S
+        const float* Q
+        const float* PRESS
+        const float* QIN
+        const double* cell_lengths_double
+        const float* cell_lengths_float
+        double dt
+        int cell_num
+        double width
+        double* flux_loc
+        double* flux_source_left
+        double* flux_source_right
+        double* flux_source_center
+        double* flux_friction_left
+        double* flux_friction_right
+        double* cell_press_source
+
+    cdef cppclass AssembleTask:
+        const TableView* tables
+        size_t n
+        const double* flux_loc
+        const double* flux_source_left
+        const double* flux_source_right
+        const double* flux_source_center
+        const double* flux_friction_left
+        const double* flux_friction_right
+        double* flux
+        float* S
+        float* Q
+        const double* water_depth
+        const double* cell_s_limit
+        uint8_t* forced_dry_recorded
+        const float* cell_lengths
+        double g
+        double dt
+        double eps
+        double water_depth_limit
+        double friction_min_depth
+        AssemblePostStepStats stats
+
+    cdef cppclass UpdateCellTask:
+        const TableView* tables
+        size_t n
+        float* S
+        float* Q
+        double* water_level
+        double* water_depth
+        float* U
+        float* C
+        float* FR
+        float* P
+        float* PRESS
+        float* R
+        float* QIN
+        const double* cell_s_limit
+        const double* cell_bed
+        uint8_t* forced_dry_recorded
+        double g
+        double eps
+        double water_depth_limit
+        double velocity_depth_limit
+        int preserve_true_width
+        int near_dry_velocity_mode
+        int near_dry_derived_mode
+        UpdateCellStats stats
+
+    cdef cppclass CflTask:
+        size_t n
+        float cfl
+        float dt_old
+        float dt_increase_factor
+        float min_dt
+        const float* U
+        const float* C
+        const float* cell_lengths
+        float* DTI
+        float dt_candidate
+
+    cdef cppclass ThreadPool:
+        ThreadPool(size_t n_threads) except +
+        size_t size() const
+        void run_face_uc(FaceUcTask* tasks, size_t n_tasks) except + nogil
+        void run_roe_matrix(RoeMatrixTask* tasks, size_t n_tasks) except + nogil
+        void run_source(SourceTermTask* tasks, size_t n_tasks) except + nogil
+        void run_flux(FluxTask* tasks, size_t n_tasks) except + nogil
+        void run_assemble(AssembleTask* tasks, size_t n_tasks) except + nogil
+        void run_update_cell(UpdateCellTask* tasks, size_t n_tasks) except + nogil
+        void run_cfl(CflTask* tasks, size_t n_tasks) except + nogil
 
 
 cdef inline double _maxd(double a, double b) noexcept:
@@ -318,6 +480,532 @@ cpdef bint fill_general_hr_flux_exact(object river):
         Flux_Source_left[j, 0] += rain_half
         Flux_Source_right[j, 0] += rain_half
     return True
+
+
+cdef class CppUpdateCellPlan
+cdef class CppGeneralHrFluxPlan
+
+
+cdef class CppNativeThreadPoolHandle:
+    cdef ThreadPool* _pool
+    cdef int _workers
+
+    def __cinit__(self, int workers):
+        if workers <= 0:
+            workers = 1
+        self._workers = workers
+        self._pool = new ThreadPool(<size_t>workers)
+
+    def __dealloc__(self):
+        if self._pool != NULL:
+            del self._pool
+            self._pool = NULL
+
+    cdef ThreadPool* pool(self) noexcept:
+        return self._pool
+
+    cdef int worker_count(self) noexcept:
+        return self._workers
+
+
+cdef inline int _near_dry_velocity_mode_code(object river) noexcept:
+    if river.near_dry_velocity_cutoff_mode == "zero_q":
+        return 0
+    return 1
+
+
+cdef inline int _near_dry_derived_mode_code(object river) noexcept:
+    if river.near_dry_derived_mode == "floor_u_and_c":
+        return 0
+    if river.near_dry_derived_mode == "actual_u_floor_c":
+        return 1
+    if river.near_dry_derived_mode == "actual_u_soft_floor_c":
+        return 2
+    return 3
+
+
+cdef void _sync_roe_matrix_stats(object river, RoeMatrixStats stats):
+    river.current_interface_counts = {
+        'supercritical_pos': int(stats.supercritical_pos),
+        'supercritical_neg': int(stats.supercritical_neg),
+        'subcritical': int(stats.subcritical),
+    }
+    river.current_leveque_count = int(stats.leveque_count)
+    river.total_leveque_count += int(stats.leveque_count)
+    river.lambda_range_current = {
+        'lambda1_min': float(stats.lambda1_min),
+        'lambda1_max': float(stats.lambda1_max),
+        'lambda2_min': float(stats.lambda2_min),
+        'lambda2_max': float(stats.lambda2_max),
+    }
+
+
+cdef void _sync_source_stats(object river, SourceTermStats stats):
+    river.current_friction_clip_count += int(stats.friction_clip_increment)
+    river.total_friction_clip_count += int(stats.friction_clip_increment)
+
+
+cdef void _sync_forced_dry_stats(object river, size_t increment):
+    river.current_forced_dry_count += int(increment)
+    river.total_forced_dry_count += int(increment)
+
+
+cdef CppNativeThreadPoolHandle _ensure_cpp_native_thread_pool(object net, int worker_count):
+    cdef object existing = getattr(net, "_cpp_native_stage_thread_pool", None)
+    cdef CppNativeThreadPoolHandle handle
+    if existing is not None and isinstance(existing, CppNativeThreadPoolHandle):
+        handle = <CppNativeThreadPoolHandle>existing
+        if handle.worker_count() == worker_count:
+            return handle
+    handle = CppNativeThreadPoolHandle(worker_count)
+    net._cpp_native_stage_thread_pool = handle
+    return handle
+
+
+cpdef bint prepare_cpp_thread_stage_plans(object net):
+    cdef list river_list = []
+    cdef list name_list = []
+    cdef list flux_mode_list = []
+    cdef object river
+    cdef object data
+    cdef int flux_mode
+
+    if bool(getattr(net, "use_implicit_branch_update", False)):
+        net._cpp_thread_stage_plan_ready = False
+        return False
+
+    for _, _, data in net._river_edges:
+        river = data["river"]
+        if river is None:
+            net._cpp_thread_stage_plan_ready = False
+            return False
+        if not bool(getattr(river, "use_cpp_face_uc", False)):
+            net._cpp_thread_stage_plan_ready = False
+            return False
+        if not bool(getattr(river, "use_cpp_roe_matrix", False)):
+            net._cpp_thread_stage_plan_ready = False
+            return False
+        if not bool(getattr(river, "use_cpp_source_deep", False)):
+            net._cpp_thread_stage_plan_ready = False
+            return False
+        if not bool(getattr(river, "use_cpp_assemble_deep", False)):
+            net._cpp_thread_stage_plan_ready = False
+            return False
+        if not bool(getattr(river, "use_cython_update_cell", False)):
+            net._cpp_thread_stage_plan_ready = False
+            return False
+        if not prepare_cpp_update_cell_plan(river):
+            net._cpp_thread_stage_plan_ready = False
+            return False
+        if not prepare_cpp_source_plan(river):
+            net._cpp_thread_stage_plan_ready = False
+            return False
+
+        flux_mode = 0
+        if bool(getattr(river, "use_rectangular_hr_flux", False)) and getattr(river, "constant_rectangular_width", None) is not None:
+            if bool(getattr(river, "use_explicit_tvd_limiter", False)):
+                net._cpp_thread_stage_plan_ready = False
+                return False
+            if not bool(getattr(river, "use_cpp_roe_flux_rect_deep", False)):
+                net._cpp_thread_stage_plan_ready = False
+                return False
+            flux_mode = FLUX_MODE_RECTANGULAR
+        elif bool(getattr(river, "use_general_hr_flux", False)):
+            if not bool(getattr(river, "use_cpp_roe_flux_deep", False)):
+                net._cpp_thread_stage_plan_ready = False
+                return False
+            if not prepare_cpp_general_hr_flux_plan(river):
+                net._cpp_thread_stage_plan_ready = False
+                return False
+            flux_mode = FLUX_MODE_GENERAL
+        else:
+            net._cpp_thread_stage_plan_ready = False
+            return False
+
+        river_list.append(river)
+        name_list.append(data.get("name"))
+        flux_mode_list.append(int(flux_mode))
+
+    net._cpp_threaded_rivers = tuple(river_list)
+    net._cpp_threaded_names = tuple(name_list)
+    net._cpp_threaded_flux_modes = tuple(flux_mode_list)
+    net._cpp_thread_stage_plan_ready = True
+    return True
+
+
+cpdef object run_cpp_threaded_local_step_batch(object net, int n_threads):
+    cdef tuple rivers
+    cdef tuple names
+    cdef tuple flux_modes
+    cdef Py_ssize_t n_rivers
+    cdef Py_ssize_t i
+    cdef object river
+    cdef int worker_count
+    cdef CppNativeThreadPoolHandle handle
+    cdef ThreadPool* pool
+    cdef vector[FaceUcTask] face_tasks
+    cdef vector[RoeMatrixTask] roe_tasks
+    cdef vector[SourceTermTask] source_tasks
+    cdef vector[FluxTask] flux_tasks
+    cdef vector[AssembleTask] assemble_tasks
+    cdef vector[UpdateCellTask] update_tasks
+    cdef vector[CflTask] cfl_tasks
+    cdef FaceUcTask face_task
+    cdef RoeMatrixTask roe_task
+    cdef SourceTermTask source_task
+    cdef FluxTask flux_task
+    cdef AssembleTask assemble_task
+    cdef UpdateCellTask update_task
+    cdef CflTask cfl_task
+    cdef CppUpdateCellPlan update_plan
+    cdef CppGeneralHrFluxPlan source_plan
+    cdef CppGeneralHrFluxPlan general_flux_plan
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] S_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Q_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] U_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] C_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] PRESS_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] F_U_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] F_C_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] BETA_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] FR_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] abs_Lambda1_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] abs_Lambda2_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] alpha1_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] alpha2_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Lambda1_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] Lambda2_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] P_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] R_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] QIN_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] cell_lengths_f32_arr
+    cdef cnp.ndarray[cnp.float32_t, ndim=1] DTI_f32_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] water_depth_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] water_level_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] cell_s_limit_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] cell_bed_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] river_bed_height_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] general_cell_lengths_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] flag_LeVeque_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Vactor1_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Vactor2_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Vactor1_T_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Vactor2_T_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] friction_source_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_LOC_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_left_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_right_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Source_center_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Friction_left_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_Friction_right_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] cell_press_source_f64_arr
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Flux_f64_arr
+    cdef cnp.ndarray[cnp.uint8_t, ndim=1] forced_dry_flags
+    cdef list dt_items = []
+    cdef double face_t0
+    cdef double roe_t0
+    cdef double source_t0
+    cdef double flux_t0
+    cdef double assemble_t0
+    cdef double update_t0
+    cdef double cfl_t0
+    cdef double face_t
+    cdef double roe_t
+    cdef double source_t
+    cdef double flux_t
+    cdef double assemble_t
+    cdef double update_t
+    cdef double cfl_t
+    cdef cnp.float32_t dt_min
+    cdef cnp.float32_t dt_candidate
+
+    if not bool(getattr(net, "_cpp_thread_stage_plan_ready", False)):
+        if not prepare_cpp_thread_stage_plans(net):
+            raise ValueError("cpp threaded stage plans are not ready")
+
+    rivers = net._cpp_threaded_rivers
+    names = net._cpp_threaded_names
+    flux_modes = net._cpp_threaded_flux_modes
+    n_rivers = len(rivers)
+    if n_rivers <= 0:
+        return 0, [], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+    worker_count = int(n_threads)
+    if worker_count <= 0:
+        worker_count = n_rivers
+    if worker_count > n_rivers:
+        worker_count = n_rivers
+    if worker_count <= 0:
+        worker_count = 1
+
+    handle = _ensure_cpp_native_thread_pool(net, worker_count)
+    pool = handle.pool()
+
+    face_tasks.reserve(<size_t>n_rivers)
+    roe_tasks.reserve(<size_t>n_rivers)
+    source_tasks.reserve(<size_t>n_rivers)
+    flux_tasks.reserve(<size_t>n_rivers)
+    assemble_tasks.reserve(<size_t>n_rivers)
+    update_tasks.reserve(<size_t>n_rivers)
+    cfl_tasks.reserve(<size_t>n_rivers)
+
+    for i in range(n_rivers):
+        river = rivers[i]
+        S_f32_arr = river.S
+        Q_f32_arr = river.Q
+        U_f32_arr = river.U
+        C_f32_arr = river.C
+        PRESS_f32_arr = river.PRESS
+        F_U_f32_arr = river.F_U
+        F_C_f32_arr = river.F_C
+        BETA_f32_arr = river.BETA
+        FR_f32_arr = river.FR
+        abs_Lambda1_f32_arr = river.abs_Lambda1
+        abs_Lambda2_f32_arr = river.abs_Lambda2
+        alpha1_f32_arr = river.alpha1
+        alpha2_f32_arr = river.alpha2
+        Lambda1_f32_arr = river.Lambda1
+        Lambda2_f32_arr = river.Lambda2
+        P_f32_arr = river.P
+        R_f32_arr = river.R
+        QIN_f32_arr = river.QIN
+        cell_lengths_f32_arr = river.cell_lengths
+        DTI_f32_arr = river.DTI
+        water_depth_f64_arr = river.water_depth
+        water_level_f64_arr = river.water_level
+        cell_s_limit_f64_arr = river._cell_s_limit_arr
+        cell_bed_f64_arr = river._cell_bed_level_arr
+        river_bed_height_f64_arr = river.river_bed_height
+        flag_LeVeque_f64_arr = river.flag_LeVeque
+        Vactor1_f64_arr = river.Vactor1
+        Vactor2_f64_arr = river.Vactor2
+        Vactor1_T_f64_arr = river.Vactor1_T
+        Vactor2_T_f64_arr = river.Vactor2_T
+        friction_source_f64_arr = river.friction_source
+        Flux_LOC_f64_arr = river.Flux_LOC
+        Flux_Source_left_f64_arr = river.Flux_Source_left
+        Flux_Source_right_f64_arr = river.Flux_Source_right
+        Flux_Source_center_f64_arr = river.Flux_Source_center
+        Flux_Friction_left_f64_arr = river.Flux_Friction_left
+        Flux_Friction_right_f64_arr = river.Flux_Friction_right
+        cell_press_source_f64_arr = river.cell_press_source
+        Flux_f64_arr = river.Flux
+        forced_dry_flags = river._forced_dry_recorded.view(np.uint8)
+
+        face_task.n = <size_t>(river.cell_num + 1)
+        face_task.eps = float(river.EPSILON)
+        face_task.s_limit_default = float(river.S_limit)
+        face_task.use_section_area_threshold = 1 if bool(river.fix_06_section_area_threshold) else 0
+        face_task.S = &S_f32_arr[0]
+        face_task.U = &U_f32_arr[0]
+        face_task.C = &C_f32_arr[0]
+        face_task.PRESS = &PRESS_f32_arr[0]
+        face_task.cell_s_limit = &cell_s_limit_f64_arr[0]
+        face_task.F_U = &F_U_f32_arr[0]
+        face_task.F_C = &F_C_f32_arr[0]
+        face_tasks.push_back(face_task)
+
+        roe_task.n = <size_t>(river.cell_num + 1)
+        roe_task.eps = <float>float(river.EPSILON)
+        roe_task.water_depth_limit = <float>float(river.water_depth_limit)
+        roe_task.F_C = &F_C_f32_arr[0]
+        roe_task.F_U = &F_U_f32_arr[0]
+        roe_task.BETA = &BETA_f32_arr[0]
+        roe_task.FR = &FR_f32_arr[0]
+        roe_task.water_depth = &water_depth_f64_arr[0]
+        roe_task.U = &U_f32_arr[0]
+        roe_task.C = &C_f32_arr[0]
+        roe_task.S = &S_f32_arr[0]
+        roe_task.Q = &Q_f32_arr[0]
+        roe_task.flag_LeVeque = &flag_LeVeque_f64_arr[0]
+        roe_task.abs_Lambda1 = &abs_Lambda1_f32_arr[0]
+        roe_task.abs_Lambda2 = &abs_Lambda2_f32_arr[0]
+        roe_task.alpha1 = &alpha1_f32_arr[0]
+        roe_task.alpha2 = &alpha2_f32_arr[0]
+        roe_task.Lambda1 = &Lambda1_f32_arr[0]
+        roe_task.Lambda2 = &Lambda2_f32_arr[0]
+        roe_task.Vactor1 = &Vactor1_f64_arr[0, 0]
+        roe_task.Vactor2 = &Vactor2_f64_arr[0, 0]
+        roe_task.Vactor1_T = &Vactor1_T_f64_arr[0, 0]
+        roe_task.Vactor2_T = &Vactor2_T_f64_arr[0, 0]
+        roe_tasks.push_back(roe_task)
+
+        source_plan = <CppGeneralHrFluxPlan>river._cpp_source_plan
+        source_task.left_tables = source_plan.left_data()
+        source_task.right_tables = source_plan.right_data()
+        source_task.n = <size_t>(river.cell_num + 1)
+        source_task.S = &S_f32_arr[0]
+        source_task.Q = &Q_f32_arr[0]
+        source_task.water_depth = &water_depth_f64_arr[0]
+        source_task.friction_source = &friction_source_f64_arr[0, 0]
+        source_task.g = float(river.g)
+        source_task.eps = float(river.EPSILON)
+        source_task.friction_min_depth = float(getattr(river, "friction_min_depth", 0.0))
+        source_task.frtimp_enabled = 1 if bool(getattr(river, "FRTIMP", False)) else 0
+        source_task.use_manning_friction = 1 if str(getattr(river, "friction_model", "manning")).lower() == "manning" else 0
+        source_tasks.push_back(source_task)
+
+        flux_task.mode = int(flux_modes[i])
+        flux_task.left_tables = NULL
+        flux_task.right_tables = NULL
+        flux_task.g = float(river.g)
+        flux_task.tiny = float(max(river.S_limit, river.EPSILON))
+        flux_task.roe_entropy_fix = float(river.roe_entropy_fix)
+        flux_task.roe_entropy_fix_factor = float(river.roe_entropy_fix_factor)
+        flux_task.river_bed_height = &river_bed_height_f64_arr[0]
+        flux_task.water_depth = &water_depth_f64_arr[0]
+        flux_task.S = &S_f32_arr[0]
+        flux_task.Q = &Q_f32_arr[0]
+        flux_task.PRESS = &PRESS_f32_arr[0]
+        flux_task.QIN = &QIN_f32_arr[0]
+        flux_task.cell_lengths_double = NULL
+        flux_task.cell_lengths_float = NULL
+        flux_task.dt = float(river.DT)
+        flux_task.cell_num = int(river.cell_num)
+        flux_task.width = 0.0
+        flux_task.flux_loc = &Flux_LOC_f64_arr[0, 0]
+        flux_task.flux_source_left = &Flux_Source_left_f64_arr[0, 0]
+        flux_task.flux_source_right = &Flux_Source_right_f64_arr[0, 0]
+        flux_task.flux_source_center = &Flux_Source_center_f64_arr[0, 0]
+        flux_task.flux_friction_left = &Flux_Friction_left_f64_arr[0, 0]
+        flux_task.flux_friction_right = &Flux_Friction_right_f64_arr[0, 0]
+        flux_task.cell_press_source = &cell_press_source_f64_arr[0, 0]
+        if int(flux_modes[i]) == FLUX_MODE_GENERAL:
+            general_flux_plan = <CppGeneralHrFluxPlan>river._cpp_general_hr_flux_plan
+            general_cell_lengths_f64_arr = river._general_hr_cell_length_buf
+            flux_task.left_tables = general_flux_plan.left_data()
+            flux_task.right_tables = general_flux_plan.right_data()
+            flux_task.n = general_flux_plan.size()
+            flux_task.cell_lengths_double = &general_cell_lengths_f64_arr[0]
+        else:
+            flux_task.n = <size_t>(river.cell_num + 1)
+            flux_task.cell_lengths_float = &cell_lengths_f32_arr[0]
+            flux_task.width = float(river.constant_rectangular_width)
+        flux_tasks.push_back(flux_task)
+
+        update_plan = <CppUpdateCellPlan>river._cpp_update_cell_plan
+        assemble_task.tables = update_plan.data() + 1
+        assemble_task.n = <size_t>river.cell_num
+        assemble_task.flux_loc = &Flux_LOC_f64_arr[0, 0]
+        assemble_task.flux_source_left = &Flux_Source_left_f64_arr[0, 0]
+        assemble_task.flux_source_right = &Flux_Source_right_f64_arr[0, 0]
+        assemble_task.flux_source_center = &Flux_Source_center_f64_arr[0, 0]
+        assemble_task.flux_friction_left = &Flux_Friction_left_f64_arr[0, 0]
+        assemble_task.flux_friction_right = &Flux_Friction_right_f64_arr[0, 0]
+        assemble_task.flux = &Flux_f64_arr[0, 0]
+        assemble_task.S = &S_f32_arr[1]
+        assemble_task.Q = &Q_f32_arr[1]
+        assemble_task.water_depth = &water_depth_f64_arr[1]
+        assemble_task.cell_s_limit = &cell_s_limit_f64_arr[1]
+        assemble_task.forced_dry_recorded = &forced_dry_flags[1]
+        assemble_task.cell_lengths = &cell_lengths_f32_arr[1]
+        assemble_task.g = float(river.g)
+        assemble_task.dt = float(river.DT)
+        assemble_task.eps = float(river.EPSILON)
+        assemble_task.water_depth_limit = float(river.water_depth_limit)
+        assemble_task.friction_min_depth = float(getattr(river, "friction_min_depth", 0.0))
+        assemble_tasks.push_back(assemble_task)
+
+        update_task.tables = update_plan.data()
+        update_task.n = update_plan.size()
+        update_task.S = &S_f32_arr[0]
+        update_task.Q = &Q_f32_arr[0]
+        update_task.water_level = &water_level_f64_arr[0]
+        update_task.water_depth = &water_depth_f64_arr[0]
+        update_task.U = &U_f32_arr[0]
+        update_task.C = &C_f32_arr[0]
+        update_task.FR = &FR_f32_arr[0]
+        update_task.P = &P_f32_arr[0]
+        update_task.PRESS = &PRESS_f32_arr[0]
+        update_task.R = &R_f32_arr[0]
+        update_task.QIN = &QIN_f32_arr[0]
+        update_task.cell_s_limit = &cell_s_limit_f64_arr[0]
+        update_task.cell_bed = &cell_bed_f64_arr[0]
+        update_task.forced_dry_recorded = &forced_dry_flags[0]
+        update_task.g = float(river.g)
+        update_task.eps = float(river.EPSILON)
+        update_task.water_depth_limit = float(river.water_depth_limit)
+        update_task.velocity_depth_limit = float(river.velocity_depth_limit)
+        update_task.preserve_true_width = 1 if bool(river.fix_02_preserve_true_width) else 0
+        update_task.near_dry_velocity_mode = _near_dry_velocity_mode_code(river)
+        update_task.near_dry_derived_mode = _near_dry_derived_mode_code(river)
+        update_tasks.push_back(update_task)
+
+        cfl_task.n = <size_t>(river.cell_num + 2)
+        cfl_task.cfl = <float>river.CFL
+        cfl_task.dt_old = <float>river.DT
+        cfl_task.dt_increase_factor = <float>river.DT_increase_factor
+        cfl_task.min_dt = <float>river.min_dt
+        cfl_task.U = &U_f32_arr[0]
+        cfl_task.C = &C_f32_arr[0]
+        cfl_task.cell_lengths = &cell_lengths_f32_arr[0]
+        cfl_task.DTI = &DTI_f32_arr[0]
+        cfl_task.dt_candidate = cfl_task.dt_old
+        cfl_tasks.push_back(cfl_task)
+
+    face_t0 = pytime.perf_counter()
+    with nogil:
+        pool.run_face_uc(&face_tasks[0], face_tasks.size())
+    face_t = pytime.perf_counter() - face_t0
+
+    roe_t0 = pytime.perf_counter()
+    with nogil:
+        pool.run_roe_matrix(&roe_tasks[0], roe_tasks.size())
+    roe_t = pytime.perf_counter() - roe_t0
+    for i in range(n_rivers):
+        _sync_roe_matrix_stats(rivers[i], roe_tasks[i].stats)
+
+    source_t0 = pytime.perf_counter()
+    with nogil:
+        pool.run_source(&source_tasks[0], source_tasks.size())
+    source_t = pytime.perf_counter() - source_t0
+    for i in range(n_rivers):
+        _sync_source_stats(rivers[i], source_tasks[i].stats)
+
+    flux_t0 = pytime.perf_counter()
+    for i in range(n_rivers):
+        river = rivers[i]
+        river.Flux_LOC.fill(0.0)
+        river.Flux_Source_left.fill(0.0)
+        river.Flux_Source_right.fill(0.0)
+        river.Flux_Source_center.fill(0.0)
+        river.Flux_Friction_left.fill(0.0)
+        river.Flux_Friction_right.fill(0.0)
+        river.cell_press_source.fill(0.0)
+    with nogil:
+        pool.run_flux(&flux_tasks[0], flux_tasks.size())
+    flux_t = pytime.perf_counter() - flux_t0
+
+    assemble_t0 = pytime.perf_counter()
+    with nogil:
+        pool.run_assemble(&assemble_tasks[0], assemble_tasks.size())
+    assemble_t = pytime.perf_counter() - assemble_t0
+    for i in range(n_rivers):
+        _sync_forced_dry_stats(rivers[i], assemble_tasks[i].stats.forced_dry_increment)
+
+    update_t0 = pytime.perf_counter()
+    with nogil:
+        pool.run_update_cell(&update_tasks[0], update_tasks.size())
+    update_t = pytime.perf_counter() - update_t0
+    for i in range(n_rivers):
+        _sync_forced_dry_stats(rivers[i], update_tasks[i].stats.forced_dry_increment)
+
+    cfl_t0 = pytime.perf_counter()
+    with nogil:
+        pool.run_cfl(&cfl_tasks[0], cfl_tasks.size())
+    cfl_t = pytime.perf_counter() - cfl_t0
+
+    for i in range(n_rivers):
+        river = rivers[i]
+        river.DT_old = np.float32(cfl_tasks[i].dt_old)
+        river.DT = np.float32(cfl_tasks[i].dt_candidate)
+        dt_candidate = <cnp.float32_t>cfl_tasks[i].dt_candidate
+        dt_items.append((names[i], float(dt_candidate)))
+        if i == 0 or dt_candidate < dt_min:
+            dt_min = dt_candidate
+
+    net.cfl_allowed_dt = np.float32(dt_min)
+    return worker_count, dt_items, face_t, roe_t, source_t, flux_t, assemble_t, update_t, cfl_t
 
 
 cdef class CppUpdateCellPlan:

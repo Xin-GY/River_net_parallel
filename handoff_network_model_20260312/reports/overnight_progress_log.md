@@ -2,55 +2,57 @@
 
 ## Phase 0
 
-- Created continuation branch `feature/cpp-exact-after-assemble-source-deep-v1` from accepted exact candidate `445c2c9`.
-- Created dedicated worktree `/tmp/feature_cpp_exact_after_assemble_source_deep_v1`.
-- Recorded clean preflight status and branch layout.
-- Confirmed this worktree starts without local edits or untracked outputs.
-- Confirmed `Caculate_source_term_2` is still a Python per-cell loop on the accepted path and that no source-deep native feature flag exists yet.
+- Created clean continuation branch `feature/cpp-exact-after-source-riverthreads-v2-clean` from the accepted exact baseline `c92a3ca`.
+- Used dedicated worktree `/tmp/feature_cpp_exact_after_source_riverthreads_v2_clean`.
+- Recorded preflight branch layout and source-edit scope.
+- Locked the round to a deterministic C++ thread runtime only; no nodechain, boundary shell, refresh, or threads-on-rejected-families work was allowed in scope.
 
 ## Phase 1
 
-- Read the accepted assemble/global-CFL reports plus the boundary-shell and assemble-threads no-go reports.
-- Rechecked the accepted path ownership for `Caculate_source_term_2`.
-- Verified from fresh 2h cProfile that source-stage Python time is dominated by repeated `get_DEB_by_area` table dispatch and per-interface Python ownership, not by a native kernel.
-- Used the current accepted branch's own 40h stage breakdown to rank `source` against `update_cell`, `assemble`, `boundary_updater`, and `nodechain`.
-- Recorded a single continuation decision: proceed with source-term deepening, because it is the cleanest remaining non-nodechain / non-boundary exact ownership gap.
+- Re-audited the accepted serial evolve order in `cython_cpp_bridge.pyx` and used it as the exact threaded stage order.
+- Verified the v1 drift explanation: the old prototype deviated from the accepted path by using per-river `Caculate_CFL_time_for_river_net()` instead of the accepted `GLOBAL_CFL_DEEP` kernel path.
+- Chose to preserve only the safe prototype idea: compiled kernel wrappers can run without Python hot-loop dispatch.
 
 ## Phase 2
 
-- Added a dedicated serial exact source-deep feature flag: `ISLAM_CPP_USE_SOURCE_DEEP=1`.
-- Added a precompiled source plan that reuses the accepted left/right cross-section table layout.
-- Moved the per-interface source loop, DEB lookup, denominator clip handling, and `friction_source` write-back into a native kernel.
-- Kept the accepted Python fallback path unchanged when the new flag is off.
-- Rebuilt the Cython/C++ extensions and verified imports plus Python syntax.
+- Added a native persistent `std::thread` stage-barrier runtime in `cpp/evolve_core.*`.
+- Added deterministic contiguous worker ownership in canonical `_river_edges` order.
+- Kept main-thread ownership for:
+  - `Update_boundary_conditions`
+  - internal-node history recording
+  - output writing
+  - final `DT` decision
+- Added compiled per-river plan preparation in `cython_river_kernels.pyx` for:
+  - update-cell
+  - source
+  - flux
+  - face-UC / Roe-matrix / CFL raw array access
+- Rewired `cython_cpp_bridge.pyx` to call the new native threaded runtime instead of the earlier Python futures-per-stage path.
 
 ## Phase 3
 
-- Ran 10m baseline vs candidate with the local no-`h5netcdf` exact harness.
-- 10m strict compare passed with:
-  - `cfl_history.csv` rows `182 / 182`
-  - `internal_node_history.csv` rows `181 / 181`
-  - `global_dt max_abs = 0.0`
-- Ran 2h baseline vs candidate with the same harness.
-- 2h strict compare passed with:
-  - `cfl_history.csv` rows `1483 / 1483`
-  - `internal_node_history.csv` rows `1482 / 1482`
-  - `global_dt max_abs = 0.0`
-- Ran 40h baseline vs candidate with the same harness.
-- 40h strict compare passed with:
-  - `cfl_history.csv` rows `29784 / 29784`
-  - `internal_node_history.csv` rows `29783 / 29783`
-  - `global_dt max_abs = 0.0`
-- Same-harness 40h performance improved from `39.178308 s` to `34.265936 s`.
-- Historical accepted 40h gate improved from `47.053824 s` at `445c2c9` to `34.265936 s` on this branch.
+- Rebuilt the Cython/C++ extensions successfully.
+- Ran 10m exact gate against the accepted serial baseline for thread counts `1 / 2 / 4 / 8 / 14`.
+- Restored exactness for the threaded path:
+  - all five thread counts passed strict compare
+  - `cfl_history.csv` matched exactly
+  - `internal_node_history.csv` matched exactly
+  - saved outputs matched exactly
 
 ## Phase 4
 
-- Rechecked whether any C++ threads experiment should follow immediately.
-- Conclusion: do not enter threads now.
-- `assemble` and `source` are both smaller after the new accepted candidate, while the remaining raw top costs are still `nodechain / boundary_updater`, which remain tightly entangled with already-rejected exact families.
+- Benchmarked 10m model time and wall time for serial and all exact thread counts.
+- Observed that none of the exact threaded cases beats serial:
+  - serial: `4.83 s`
+  - threaded-1: `5.02 s`
+  - threaded-2: `4.99 s`
+  - threaded-4: `5.20 s`
+  - threaded-8: `4.99 s`
+  - threaded-14: `4.91 s`
+- Stopped before 2h because the speed gate was not met at 10m.
 
 ## Phase 5
 
-- Updated the benchmark, speed, error, and final recommendation reports.
-- Prepared the branch for a final source-deep candidate checkpoint if the modified source files and reports are committed together.
+- Wrote implementation, compare, before/after, and final recommendation reports.
+- Preserved this branch as an exact threaded prototype below the speed gate.
+- Kept the accepted exact baseline unchanged at `feature/cpp-exact-after-assemble-source-deep-v1@c92a3ca`.

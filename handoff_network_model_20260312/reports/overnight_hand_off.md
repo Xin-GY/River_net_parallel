@@ -2,104 +2,93 @@
 
 ## Current Branch
 
-- branch: `feature/cpp-exact-after-assemble-source-deep-v1`
-- head: pending final checkpoint on top of `348aadc`
-- true accepted starting point for this round: `feature/cpp-exact-after-globalcfl-assemble-reaudit-v2@445c2c9`
+- branch: `feature/cpp-exact-after-source-riverthreads-v2-clean`
+- base accepted branch: `feature/cpp-exact-after-assemble-source-deep-v1`
+- base accepted commit: `c92a3ca`
+- current branch status: exact threaded prototype below speed gate
 
 ## What This Round Did
 
-- Stayed on the true accepted exact baseline `445c2c9`, not the stale `main` index.
-- Re-audited only `Caculate_source_term_2`.
-- Added a new isolated exact feature flag:
-  - `ISLAM_CPP_USE_SOURCE_DEEP=1`
-- Kept the accepted serial baseline path unchanged when the new flag is off.
-- Moved the source-stage per-interface loop, left/right DEB lookup, denominator clip handling, and `friction_source` write-back into a serial native kernel.
+- started cleanly from the accepted exact baseline `c92a3ca`
+- did not continue on the older prototype branch `feature/cpp-exact-after-source-riverthreads-v1`
+- replaced the previous Python threadpool orchestration with a native persistent `std::thread` stage-barrier runtime
+- kept `boundary_updater`, nodechain, internal-node history recording, output writing, and final `DT` ownership on the main thread
+- threaded only the river-local accepted stages:
+  - `face_uc`
+  - `roe_matrix`
+  - `source`
+  - `flux`
+  - `assemble`
+  - `update_cell`
+  - river-local CFL candidate computation
 
-## Exact Gate Status
+## Exact Repair
 
-Used the local no-`h5netcdf` strict-compare harness because this machine could not install `h5netcdf` successfully. The compare thresholds remained:
+The main v1 numerical mismatch was partly caused by a CFL code-path mismatch. V1 used per-river `Caculate_CFL_time_for_river_net()` instead of the accepted exact `GLOBAL_CFL_DEEP` path.
 
-- `rtol = 1e-12`
-- `atol = 1e-12`
+V2 repaired this by:
 
-and the compared artifacts still included:
+- reusing `compute_river_cfl_candidate_exact`
+- storing candidates in fixed river order
+- merging the global minimum on the main thread in that same fixed order
 
-- `cfl_history.csv`
-- `internal_node_history.csv`
-- saved CSV / netCDF outputs
+After this repair, the threaded path became exact at 10m for every tested thread count.
 
-Results:
+## 10m Exact Gate Status
 
-- 10m strict compare: pass
-- 2h strict compare: pass
-- 40h strict compare: pass
-- 40h compare: `allclose = true`
+Baseline:
 
-## Performance
+- `result/riverthreads_v2_clean_serial_10m`
+- model time: `4.83 s`
+- wall time: `25.779418 s`
 
-Historical accepted 40h gate:
+Threaded results:
 
-- `445c2c9`: `47.05382442474365 s`
+- threaded-1: model `5.02 s`, wall `27.481741 s`, strict compare pass
+- threaded-2: model `4.99 s`, wall `25.804064 s`, strict compare pass
+- threaded-4: model `5.20 s`, wall `27.570873 s`, strict compare pass
+- threaded-8: model `4.99 s`, wall `25.792615 s`, strict compare pass
+- threaded-14: model `4.91 s`, wall `26.685991 s`, strict compare pass
 
-Same-harness fresh replay on this branch:
+All compare runs reported:
 
-- baseline: `39.17830753326416 s`
-- source-deep candidate: `34.26593613624573 s`
+- `cfl_history.csv` identical
+- `internal_node_history.csv` identical
+- saved outputs identical
+- `allclose = true`
 
-This means:
+## Why This Is Not A New Accepted Candidate
 
-- same-harness 40h A/B gain: `4.912371 s`
-- accepted-gate gain vs `445c2c9`: `12.787888 s`
+The plan required two things:
 
-## Stage Impact On Fresh 40h Replay
+1. exactness
+2. real speedup
 
-- `river_step.source`: `1.152433 s -> 0.329018 s`
-- `river_dispatch.Caculate_source_term_2.time`: `1.115864 s -> 0.298392 s`
-- `river_step.update_cell`: `1.830265 s -> 1.729327 s`
-- `river_step.assemble`: `1.697002 s -> 1.597568 s`
-- `boundary_updater.total`: `27.429416 s -> 25.179718 s`
-- `nodechain.total`: `28.920906 s -> 26.428349 s`
+This branch achieves the first and fails the second. No exact thread count beats the serial 10m baseline, so the branch does not qualify for 2h or 40h escalation.
 
-## Current Conclusion
+## Current Accepted Baseline
 
-This round does produce a new accepted exact candidate if the modified source files and reports are committed:
+The accepted exact baseline remains unchanged:
 
-- candidate branch: `feature/cpp-exact-after-assemble-source-deep-v1`
-- candidate feature flag: `ISLAM_CPP_USE_SOURCE_DEEP=1`
-- candidate 40h exact evolve/model time: `34.26593613624573 s`
+- branch: `feature/cpp-exact-after-assemble-source-deep-v1`
+- commit: `c92a3ca`
+- 40h exact evolve/model time: `34.26593613624573 s`
 
-## Remaining First-Order Blocker
+## Recommended Interpretation
 
-Raw Top 1 remains:
+Treat this branch as:
 
-- `nodechain.total`
-- `boundary_updater.total`
-
-But the remaining obvious deeper routes there are still close to already-rejected exact families:
-
-- refresh deep
-- residual / Jacobian deep
-- fullstep / dispatch reshaping
-- boundary grouped-evaluator batching
-
-## Threads Recheck
-
-Do not implement threads yet.
-
-After this round:
-
-- `source` is now too small to be a first threads target
-- `assemble` is also smaller than before
-- the raw heavy remaining stages are `nodechain / boundary_updater`, which are not currently safe first thread targets
+- a successful exact repair of the earlier thread prototype
+- useful evidence that deterministic river-local threading is numerically feasible
+- not yet a performance win on the current network
 
 ## Local State
 
-Generated artifacts remain untracked and must stay out of the commit:
+Keep generated artifacts out of source commits:
 
 - `*.so`
 - generated `*.c` / `*.cpp`
-- `reports/*_summary.json`
-- `reports/*_perf.json`
-- `reports/*_compare.json`
-- `reports/*.prof`
-- `result/**`
+- `reports/riverthreads_v2_clean_*_summary.json`
+- `reports/riverthreads_v2_clean_*_compare.json`
+- `reports/riverthreads_v2_clean_*_stdout.log`
+- `result/riverthreads_v2_clean_*`

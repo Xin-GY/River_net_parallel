@@ -10,6 +10,15 @@ import time as pytime
 import numpy as np
 cimport numpy as cnp
 
+try:
+    from cython_river_kernels import (
+        prepare_cpp_thread_stage_plans,
+        run_cpp_threaded_local_step_batch,
+    )
+except Exception:
+    prepare_cpp_thread_stage_plans = None
+    run_cpp_threaded_local_step_batch = None
+
 cdef extern from "cpp/evolve_core.hpp" namespace "rivernet":
     float compute_river_cfl_candidate_exact_cpp_kernel "rivernet::compute_river_cfl_candidate_exact"(
         size_t n,
@@ -340,5 +349,159 @@ def run_cpp_network_evolve_serial(object net, object yield_step):
 
 
 def run_cpp_network_evolve_threads(object net, object yield_step, int n_threads):
-    net.cpp_threads_last_mode = f'serial_fallback:{n_threads}'
-    return run_cpp_network_evolve_serial(net, yield_step)
+    cdef bint yield_flag = False
+    cdef bint finish_flag = False
+    cdef bint perf_enabled = bool(getattr(net, 'perf_profile_enabled', False))
+    cdef list emitted_times = []
+    cdef double perf_t0
+    cdef list rivers = []
+    cdef int worker_count
+    cdef object threaded_result
+    cdef list dt_items
+    cdef double face_t
+    cdef double roe_t
+    cdef double source_t
+    cdef double flux_t
+    cdef double assemble_t
+    cdef double update_t
+    cdef double cfl_t
+
+    if prepare_cpp_thread_stage_plans is None or run_cpp_threaded_local_step_batch is None:
+        net.cpp_threads_last_mode = f'serial_fallback:missing_helper:{n_threads}'
+        return run_cpp_network_evolve_serial(net, yield_step)
+
+    for _, _, data in net._river_edges:
+        rivers.append(data['river'])
+    if not rivers:
+        net.cpp_threads_last_mode = f'serial_fallback:no_rivers:{n_threads}'
+        return run_cpp_network_evolve_serial(net, yield_step)
+
+    worker_count = int(n_threads)
+    if worker_count <= 0:
+        worker_count = len(rivers)
+    if worker_count > len(rivers):
+        worker_count = len(rivers)
+    if worker_count <= 0:
+        worker_count = 1
+
+    if not prepare_cpp_thread_stage_plans(net):
+        net.cpp_threads_last_mode = f'serial_fallback:plan_reject:{worker_count}'
+        return run_cpp_network_evolve_serial(net, yield_step)
+
+    net.cpp_threads_last_mode = f'native_stage_barrier:{worker_count}'
+    net.sub_step_start_time = pytime.time()
+    net.caculation_start_time = pytime.time()
+
+    while net.current_sim_time < net.total_sim_time:
+        if perf_enabled:
+            net._perf_inc('bridge.step_iterations')
+        net.Set_global_time_step(net.DT)
+        net.current_sim_time += net.DT
+        net.step_count += 1
+        net.sub_step_time += net.DT
+        net.sub_step_count += 1
+        net.sub_step_max_dt = max(net.sub_step_max_dt, net.DT)
+        net.sub_step_min_dt = min(net.sub_step_min_dt, net.DT)
+
+        if perf_enabled:
+            perf_t0 = pytime.perf_counter()
+        net.Update_boundary_conditions()
+        if perf_enabled:
+            net._perf_add('bridge.crossing.Update_boundary_conditions.time', pytime.perf_counter() - perf_t0)
+            net._perf_inc('bridge.crossing.Update_boundary_conditions.calls')
+            net._perf_inc('bridge.python_crossings')
+        if bool(net.save_outputs) and bool(net.internal_nodes):
+            if perf_enabled:
+                perf_t0 = pytime.perf_counter()
+            net._record_internal_node_history_current_state()
+            if perf_enabled:
+                net._perf_add('bridge.crossing._record_internal_node_history_current_state.time', pytime.perf_counter() - perf_t0)
+                net._perf_inc('bridge.crossing._record_internal_node_history_current_state.calls')
+                net._perf_inc('bridge.python_crossings')
+
+        threaded_result = run_cpp_threaded_local_step_batch(net, worker_count)
+        worker_count = int(threaded_result[0])
+        dt_items = threaded_result[1]
+        face_t = float(threaded_result[2])
+        roe_t = float(threaded_result[3])
+        source_t = float(threaded_result[4])
+        flux_t = float(threaded_result[5])
+        assemble_t = float(threaded_result[6])
+        update_t = float(threaded_result[7])
+        cfl_t = float(threaded_result[8])
+        net.cpp_threads_last_mode = f'native_stage_barrier:{worker_count}'
+
+        if perf_enabled:
+            net._perf_add('river_step.face_uc', face_t)
+            net._perf_inc('river_step.face_uc.calls')
+            net._perf_inc('bridge.crossing.Caculate_face_U_C_net.calls')
+            net._perf_inc('bridge.python_crossings')
+
+            net._perf_add('river_step.roe_matrix', roe_t)
+            net._perf_inc('river_step.roe_matrix.calls')
+            net._perf_inc('bridge.crossing.Caculate_Roe_matrix_net.calls')
+            net._perf_inc('bridge.python_crossings')
+
+            net._perf_add('river_step.source', source_t)
+            net._perf_inc('river_step.source.calls')
+            net._perf_inc('bridge.crossing.Caculate_Source_term_net.calls')
+            net._perf_inc('bridge.python_crossings')
+
+            net._perf_add('river_step.flux', flux_t)
+            net._perf_inc('river_step.flux.calls')
+            net._perf_inc('bridge.crossing.Caculate_Roe_flux_net.calls')
+            net._perf_inc('bridge.python_crossings')
+
+            net._perf_add('river_step.assemble', assemble_t)
+            net._perf_inc('river_step.assemble.calls')
+            net._perf_inc('bridge.crossing.Assemble_flux_net.calls')
+            net._perf_inc('bridge.python_crossings')
+
+            net._perf_add('river_step.update_cell', update_t)
+            net._perf_inc('river_step.update_cell.calls')
+            net._perf_inc('bridge.crossing.Update_cell_property_net.calls')
+            net._perf_inc('bridge.python_crossings')
+
+        if bool(net.save_outputs):
+            if perf_enabled:
+                perf_t0 = pytime.perf_counter()
+            net.Save_step_result_net()
+            if perf_enabled:
+                net._perf_add('bridge.crossing.Save_step_result_net.time', pytime.perf_counter() - perf_t0)
+                net._perf_inc('bridge.crossing.Save_step_result_net.calls')
+                net._perf_inc('bridge.python_crossings')
+
+        if yield_flag:
+            net.sub_step_caculation_time_using = pytime.time() - net.sub_step_start_time
+            emitted_times.append(net.current_sim_time)
+            yield_flag = False
+            net.sub_step_start_time = pytime.time()
+            net.sub_step_time = 0.0
+            net.sub_step_count = 0
+            net.sub_step_max_dt = 0.0
+            net.sub_step_min_dt = 999999
+
+        if finish_flag:
+            break
+
+        if perf_enabled:
+            net._perf_add('dt_update.global_cfl', cfl_t)
+            net._perf_inc('dt_update.global_cfl.calls')
+            net._perf_inc('bridge.crossing.Caculate_global_CFL.calls')
+            net._perf_inc('bridge.python_crossings')
+        net._record_cfl_history(dt_items)
+        if bool(net.verbos):
+            print(f'全局最小CFL时间步长: {float(net.cfl_allowed_dt):.4f} 秒')
+
+        if net.current_sim_time + net.cfl_allowed_dt > net.total_sim_time + 1.0e-5:
+            net.DT = net.total_sim_time - net.current_sim_time
+        elif net.sub_step_time + net.cfl_allowed_dt > yield_step + 1.0e-5:
+            net.DT = yield_step - net.sub_step_time
+            yield_flag = True
+        else:
+            net.DT = net.cfl_allowed_dt
+
+    net.caculation_time = pytime.time() - net.caculation_start_time
+    print(f'计算结束，保存结果...\n共计算 {net.step_count} 步，总耗时: {net.caculation_time:.2f} 秒')
+    net._finalize_evolve_outputs()
+    return emitted_times

@@ -1,0 +1,29 @@
+branch: feature/cpp-exact-after-source-riverthreads-v2-clean
+base_commit: c92a3ca
+base_commit_message: perf: deepen exact source-term ownership (+27.2% 40h evolve)
+worktree: /tmp/feature_cpp_exact_after_source_riverthreads_v2_clean
+
+tracked source edits for this round:
+- handoff_network_model_20260312/build_cython_exact_kernels.py
+- handoff_network_model_20260312/cpp/evolve_core.cpp
+- handoff_network_model_20260312/cpp/evolve_core.hpp
+- handoff_network_model_20260312/cython_cpp_bridge.pyx
+- handoff_network_model_20260312/cython_river_kernels.pyx
+
+local generated artifacts kept out of source commit:
+- handoff_network_model_20260312/result/riverthreads_v2_clean_serial_10m/**
+- handoff_network_model_20260312/result/riverthreads_v2_clean_threaded1_10m/**
+- handoff_network_model_20260312/result/riverthreads_v2_clean_threaded2_10m/**
+- handoff_network_model_20260312/result/riverthreads_v2_clean_threaded4_10m/**
+- handoff_network_model_20260312/result/riverthreads_v2_clean_threaded8_10m/**
+- handoff_network_model_20260312/result/riverthreads_v2_clean_threaded14_10m/**
+- handoff_network_model_20260312/reports/riverthreads_v2_clean_*_summary.json
+- handoff_network_model_20260312/reports/riverthreads_v2_clean_*_compare.json
+- handoff_network_model_20260312/reports/riverthreads_v2_clean_*_stdout.log
+- handoff_network_model_20260312/*.so
+- generated *.c / *.cpp
+
+scope guard:
+- started cleanly from accepted exact baseline c92a3ca
+- did not continue directly on feature/cpp-exact-after-source-riverthreads-v1
+- did not mix boundary shell, nodechain refresh, external-boundary-deep, or other rejected families
